@@ -48,7 +48,7 @@ outputs/
   provenance/
     run-<timestamp>.jsonl
   artifacts/
-    run-<timestamp>-highlights.json   # slice of concepts/timeline/citations powering the run
+    run-<timestamp>-highlights.json   # slice of concepts/timeline/citations powering the run (manifest includes highlight_source="world_model" or "dataset")
 history/
   *.md (planning logs – ignored or pruned later)
 ```
@@ -57,24 +57,33 @@ history/
 
 ### 2.1 `config/course_config.yaml`
 ```yaml
-course_name: "Database Systems"
-level: "upper-undergrad"
-audience_prereqs:
-  - "Discrete math"
-  - "Intro programming"
-format: "10-week"
-constraints:
-  tone: "studio"
-  required_sources:
-    - "Codd1970"
-    - "SystemR1976"
-  forbidden_sources: []
+title: "Database Systems"
+description: "Sample constraints for the CourseGen PoC upper-undergrad track."
+duration_weeks: 10
+tone: mentor
+focus_areas:
+  - "relational model"
+  - "transactions and recovery"
+  - "distributed storage"
+audience:
+  persona: "upper-undergrad"
+  prior_knowledge:
+    - "Discrete mathematics"
+    - "Intro to programming"
+    - "Basic SQL"
+  goals:
+    - "Build production-quality data projects"
+    - "Understand modern database trade-offs"
+required_sources:
+  - "codd-1970"
+  - "system-r-1976"
+  - "aries-1992"
+banned_sources:
+  - "Wikipedia"
 learning_objectives:
-  - id: LO1
-    text: "Explain the relational model and relational algebra."
-assessment_emphasis:
-  projects: true
-  quizzes: true
+  - "Explain the relational model, relational algebra, and SQL basics."
+  - "Design normalized schemas with functional dependencies and normal forms."
+  - "Analyze transaction processing, concurrency control, and recovery strategies."
 ```
 
 ### 2.2 `config/model_config.yaml`
@@ -146,7 +155,7 @@ CREATE TABLE timeline (
   related_concepts TEXT
 );
 ```
-Run `python scripts/ingest_handcrafted.py data/handcrafted/database_systems world_model/state.sqlite --jsonl outputs/world_model/latest.jsonl` to refresh the snapshot consumed by CodeAct tools.
+Run `python scripts/ingest_handcrafted.py data/handcrafted/database_systems outputs/world_model/state.sqlite --jsonl outputs/world_model/latest.jsonl` to refresh the snapshot consumed by CodeAct tools.
 
 ### 3.3 Tool consumption format
 - World model tools operate on SQLite file; they return dictionaries (`list[dict[str, Any]]`) ready for CodeAct JSON serialization.
@@ -181,8 +190,8 @@ All tools must be synchronous, side-effect free except for `record_claim` + `pus
    - Stage 3: run `grade_module` student loop; if score < threshold, mutate prompts/policy and re-run (max 2 passes).
    - Stage 4: export plan + lecture via `push_notebook_section` and log run metadata.
 4. **Evaluation hooks**: `apps/orchestrator/student_ops.py` collects quiz responses + rubric scores, writes to `outputs/evals/run-<ts>.jsonl`.
-5. **Provenance + summary**: `outputs/provenance/run-<ts>.jsonl` includes tool call transcripts, seeds, ablations used, and a pointer to the world-model highlight artifact saved under `outputs/artifacts/run-<ts>-highlights.json`.
-6. CLI returns exit code 0 on success, non-zero on failure, and prints (a) the evaluation summary (overall score + rubric pass/fail) whenever graders run and (b) the log path / reason when graders are skipped (dry run, `--ablations no_students`, missing rubrics). Pass `--quiet` when scripting to suppress the `[eval]`/`[highlights]` hints while still writing every artifact; the standalone grader CLI (`python -m apps.orchestrator.eval_loop`) exposes the same flag.
+5. **Provenance + summary**: `outputs/provenance/run-<ts>.jsonl` includes tool call transcripts, seeds, ablations used, and a pointer to the highlight artifact saved under `outputs/artifacts/run-<ts>-highlights.json` along with `highlight_source` ("world_model" vs "dataset").
+6. CLI returns exit code 0 on success, non-zero on failure, and prints (a) the evaluation summary (overall score + rubric pass/fail) whenever graders run and (b) the log path / reason when graders are skipped (dry run, `--ablations no_students`, missing rubrics). Highlight hints mirror the same source flag: `[highlights] saved to …` for world-model slices and `[highlights] (dataset) saved to …` when the `no_world_model` ablation forces the handcrafted fallback. Pass `--quiet` when scripting to suppress the `[eval]`/`[highlights]` hints while still writing every artifact; the standalone grader CLI (`python -m apps.orchestrator.eval_loop`) exposes the same flag.
 7. Notebook exports default to the environment variables populated during bootstrap: `OPEN_NOTEBOOK_API_BASE`, `OPEN_NOTEBOOK_API_KEY`, and `OPEN_NOTEBOOK_SLUG` (all derived from `PipelineConfig.notebook`). CodeAct tools fall back to these values whenever the orchestrator does not pass explicit overrides, keeping CLI + tools in sync.
 
 ## 6. Interface Contracts Between Workstreams
@@ -201,7 +210,7 @@ Versioning: each ingestion/export run writes a manifest `outputs/run-<ts>/manife
 
 CLI flag `--ablation <mode>` or YAML list toggles components:
 - `students`: skip student graders/mutators; still log placeholder results.
-- `world_model`: bypass SQLite + teach using only raw YAML (mock tool responses).
+- `world_model`: bypass SQLite + teach using only raw YAML (mock tool responses); `world_model_highlights` still reference dataset-derived modules/timelines and set `highlight_source="dataset"` so downstream consumers know the ablation was active.
 - `recursion`: run teacher in single-agent mode (no `spawn_ta`).
 Each toggle must be reflected in `outputs/evals/...` (documented for acceptance tests).
 

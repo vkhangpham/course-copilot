@@ -17,8 +17,8 @@ This repository hosts the proof-of-concept for Concepedia’s “CourseGen” pi
 3. Add or edit the handcrafted Database Systems assets under `data/handcrafted/database_systems/`, then lint + ingest them:
    ```bash
    validate-handcrafted data/handcrafted/database_systems
-   python scripts/ingest_handcrafted.py data/handcrafted/database_systems \
-     world_model/state.sqlite --jsonl outputs/world_model/latest.jsonl
+  python scripts/ingest_handcrafted.py data/handcrafted/database_systems \
+    outputs/world_model/state.sqlite --jsonl outputs/world_model/latest.jsonl
    ```
 4. Initialize vendor submodules when ready:
    ```bash
@@ -72,7 +72,7 @@ For advanced scenarios you can still invoke the canonical CLI exposed via the co
 ```bash
 coursegen-poc --config config/pipeline.yaml --dry-run
 ```
-Pass `--ingest-world-model` if you want the CLI to rebuild `world_model/state.sqlite` from `data/handcrafted/database_systems/`; otherwise the snapshot is auto-generated the first time it’s missing.
+Pass `--ingest-world-model` if you want the CLI to rebuild `outputs/world_model/state.sqlite` from `data/handcrafted/database_systems/`; otherwise the snapshot is auto-generated the first time it’s missing.
 
 ### Artifact outputs
 Regardless of the entry point, the pipeline emits:
@@ -80,9 +80,9 @@ Regardless of the entry point, the pipeline emits:
 - `outputs/lectures/module_01.md`
 - `outputs/evals/run-<timestamp>.jsonl`
 - `outputs/provenance/run-<timestamp>.jsonl`
-- `outputs/artifacts/run-<timestamp>-highlights.json` (world-model concept/timeline slices powering the stub plan/lecture)
+- `outputs/artifacts/run-<timestamp>-highlights.json` (concept/timeline slices powering the stub plan/lecture). When `--ablations` includes `no_world_model`, this file still exists but is derived from the handcrafted dataset instead of SQLite; the manifest’s `highlight_source` flag indicates which path produced it.
 
-After every non-dry run the CLI also prints a short evaluation summary (overall score plus rubric pass/fail). If the student graders are disabled or missing, it reports that status instead of a score so operators immediately know why no grade was recorded. Pass `--quiet` when scripting to suppress these `[eval]` / `[highlights]` hints while still writing every artifact.
+After every non-dry run the CLI also prints a short evaluation summary (overall score plus rubric pass/fail). If the student graders are disabled or missing, it reports that status instead of a score so operators immediately know why no grade was recorded. Highlight hints now spell out the source: `[highlights] saved to …` when the world model is active and `[highlights] (dataset) saved to …` when the `no_world_model` ablation forces the handcrafted fallback. Pass `--quiet` when scripting to suppress these `[eval]` / `[highlights]` hints while still writing every artifact.
 
 Notebook exports pull their defaults from environment variables that `coursegen-poc` now sets during bootstrap: `OPEN_NOTEBOOK_API_BASE`, `OPEN_NOTEBOOK_API_KEY`, and `OPEN_NOTEBOOK_SLUG`. The CodeAct `push_notebook_section` tool will fall back to these values whenever the orchestrator does not pass explicit overrides, so make sure the config’s `notebook` section is filled in before running against a real instance. If you intentionally run without a live Open Notebook API, set `OPEN_NOTEBOOK_EXPORT_DIR=/path/to/exports` to opt into offline `.jsonl` exports; set `OPEN_NOTEBOOK_EXPORT_MIRROR=1` to mirror every API push to disk for auditing. Pass `--skip-notebook-create` (or set `OPEN_NOTEBOOK_AUTO_CREATE=0`) when you don’t have permission to create notebooks; otherwise the publisher calls the API once per run to ensure the slug exists and records the outcome as a “preflight” entry in the manifest. Each course plan and lecture is automatically chunked into notebook-friendly slices (≤5 plan sections, ≤3 lecture sections) before publishing so Open Notebook receives concise, cited notes. A dedicated FastAPI mock + httpx transport now lives in `tests/mocks/notebook_api.py`—use the `NotebookAPIMock.patch_open_notebook_client()` helper in tests such as `tests/test_pipeline_runtime.py`, `tests/test_cli_run_poc.py`, and `tests/test_open_notebook_tools.py` to exercise the full pipeline without an external server while still capturing note IDs. The CLI’s `[notebook]` hint now mirrors the manifest metadata via `notebook_export_summary`: successful pushes list the exported note IDs (or queued export paths when offline) so you can jump straight into the Notebook or debug failed attempts without opening the manifest.
 
@@ -110,7 +110,7 @@ A minimal observability surface now lives under `apps/portal_backend` (FastAPI) 
    pnpm install   # npm/yarn also work
    pnpm dev
    ```
-3. Visit `http://localhost:3000` to see the latest run summary, world-model highlights, rubric scores, **teacher trace summary**, Notebook exports, and deep links to each historical run (e.g., `/runs/<run_id>`). The UI fetches `/runs/latest` on load, so re-run the CLI to refresh data.
+3. Visit `http://localhost:3000` to see the latest run summary, highlight slices (badge indicates `World model` vs `Dataset fallback`), rubric scores, **teacher trace summary**, Notebook exports, and deep links to each historical run (e.g., `/runs/<run_id>`). The UI fetches `/runs/latest` on load, so re-run the CLI to refresh data.
 
 Teacher trace JSON files (`outputs/logs/teacher-trace-*.json`) are now linked directly from the portal. The card shows the latest summary/action count and offers a download link for deeper inspection of the Teacher RLM loop.
 
@@ -132,8 +132,8 @@ Refer to `docs/PLAN.md`, `docs/PoC.md`, and `docs/ARCHITECTURE.md` for detailed 
 
 ## World-Model Tooling
 1. **Validate inputs** – `validate-handcrafted data/handcrafted/database_systems` (Typer CLI) fails fast when authors/papers/concepts/timeline/quiz rows drift out of sync. Run this before committing dataset edits.
-2. **Rebuild snapshots** – `python scripts/ingest_handcrafted.py data/handcrafted/database_systems world_model/state.sqlite --jsonl outputs/world_model/snapshot.jsonl` regenerates both the SQLite store and a JSON Lines dump. You can also pass `--ingest-world-model` to `coursegen-poc` to chain validation + ingest before the orchestrator runs.
-3. **Inspect data** – `wm-inspect concepts --store world_model/state.sqlite --topic transaction` (plus `timeline`, `claims`, `papers`, `authors`, `definitions`, `graph`, and the newer `artifacts` command) renders quick JSON tables without opening SQLite. Useful for debugging prompts and CodeAct tools. Pass `wm-inspect artifacts --type quiz_bank` (or `course_outline`) to see just that class of assets.
+2. **Rebuild snapshots** – `python scripts/ingest_handcrafted.py data/handcrafted/database_systems outputs/world_model/state.sqlite --jsonl outputs/world_model/snapshot.jsonl` regenerates both the SQLite store and a JSON Lines dump. You can also pass `--ingest-world-model` to `coursegen-poc` to chain validation + ingest before the orchestrator runs.
+3. **Inspect data** – `wm-inspect concepts --store outputs/world_model/state.sqlite --topic transaction` (plus `timeline`, `claims`, `papers`, `authors`, `definitions`, `graph`, and the newer `artifacts` command) renders quick JSON tables without opening SQLite. Useful for debugging prompts and CodeAct tools. Pass `wm-inspect artifacts --type quiz_bank` (or `course_outline`) to see just that class of assets.
 
 See `docs/WORLD_MODEL_TOOLING.md` for a full walkthrough (dataset layout, provenance expectations, troubleshooting tips).
 
