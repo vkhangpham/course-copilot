@@ -4,12 +4,13 @@ import os
 import shutil
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import ExitStack, redirect_stdout
 from pathlib import Path
 
 import yaml
 
 from ccopilot.cli.run_poc import main as cli_main
+from tests.mocks.notebook_api import NotebookAPIMock
 
 
 def yaml_dump(data) -> str:
@@ -21,12 +22,19 @@ class CLIRunPocTests(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.repo_root = Path(self._tmp.name)
+        self._stack = ExitStack()
+        self.addCleanup(self._stack.close)
+        self.notebook_api = NotebookAPIMock()
+        self._stack.callback(self.notebook_api.close)
+        self._stack.enter_context(self.notebook_api.patch_open_notebook_client())
         self._prepare_repo()
         self._openai_key = os.environ.get("OPENAI_API_KEY")
         os.environ["OPENAI_API_KEY"] = self._openai_key or "test-openai-key"
         self.addCleanup(self._restore_openai_key)
         self._notebook_slug = os.environ.get("OPEN_NOTEBOOK_SLUG")
         self.addCleanup(self._restore_notebook_env)
+        self._auto_create_env = os.environ.get("OPEN_NOTEBOOK_AUTO_CREATE")
+        self.addCleanup(self._restore_auto_create_env)
 
     def _restore_openai_key(self) -> None:
         if self._openai_key is None:
@@ -39,6 +47,12 @@ class CLIRunPocTests(unittest.TestCase):
             os.environ.pop("OPEN_NOTEBOOK_SLUG", None)
         else:
             os.environ["OPEN_NOTEBOOK_SLUG"] = self._notebook_slug
+
+    def _restore_auto_create_env(self) -> None:
+        if self._auto_create_env is None:
+            os.environ.pop("OPEN_NOTEBOOK_AUTO_CREATE", None)
+        else:
+            os.environ["OPEN_NOTEBOOK_AUTO_CREATE"] = self._auto_create_env
 
     def _prepare_repo(self) -> None:
         (self.repo_root / "config").mkdir(parents=True, exist_ok=True)
@@ -90,7 +104,9 @@ course:
 models:
   teacher_model: "gpt-4o"
 notebook:
-  api_base: "http://localhost:5055"
+  api_base: "{self.notebook_api.base_url}"
+  notebook_slug: "cli-test-notebook"
+  auth_token: "{self.notebook_api.token}"
 world_model:
   schema_path: "{schema_path}"
   dataset_dir: "{dataset_dir}"
@@ -224,6 +240,7 @@ evaluation:
         self.assertIn("overall_score", eval_payload)
         self.assertIn("[eval] overall=", output)
         self.assertIn("[highlights] saved to", output)
+        self.assertIn("[notebook]", output)
 
     def test_cli_dry_run_skips_artifacts(self) -> None:
         exit_code, output, output_dir = self._run_cli(["--dry-run"])
@@ -244,12 +261,14 @@ evaluation:
         self.assertTrue(any(eval_report_dir.glob("run-*.jsonl")))
         self.assertIn("[eval] overall=", output)
         self.assertIn("[highlights] saved to", output)
+        self.assertIn("[notebook]", output)
 
     def test_cli_reports_students_disabled_when_ablation_set(self) -> None:
         exit_code, output, output_dir = self._run_cli(["--ablations", "no_students"])
         self.assertEqual(exit_code, 0)
         self.assertIn("student graders skipped", output)
         self.assertIn("[highlights] saved to", output)
+        self.assertIn("[notebook]", output)
         eval_report = next((output_dir / "evaluations").glob("run-*.jsonl"))
         payload = json.loads(eval_report.read_text().splitlines()[0])
         self.assertFalse(payload["use_students"])
@@ -261,15 +280,27 @@ evaluation:
         self.assertTrue((output_dir / "course_plan.md").exists())
         self.assertNotIn("[eval]", output)
         self.assertNotIn("[highlights]", output)
+        self.assertNotIn("[notebook]", output)
         # Artifacts still exist even when we skip console summaries.
         manifest_path = next((output_dir / "artifacts").glob("run-*-manifest.json"))
         manifest = json.loads(manifest_path.read_text())
         self.assertIn("world_model_highlight_artifact", manifest)
 
-    def test_cli_no_world_model_skips_highlight_hint(self) -> None:
-        exit_code, output, _ = self._run_cli(["--ablations", "no_world_model"])
+    def test_cli_no_world_model_uses_dataset_highlights(self) -> None:
+        exit_code, output, output_dir = self._run_cli(["--ablations", "no_world_model"])
         self.assertEqual(exit_code, 0)
-        self.assertNotIn("[highlights]", output)
+        self.assertIn("[highlights] (dataset) saved to", output)
+        self.assertIn("[notebook]", output)
+
+        manifest_path = next((output_dir / "artifacts").glob("run-*-manifest.json"))
+        manifest = json.loads(manifest_path.read_text())
+        highlight_path = manifest.get("world_model_highlight_artifact")
+        self.assertIsInstance(highlight_path, str)
+
+        highlight_payload = json.loads(Path(highlight_path).read_text())
+        highlight_data = highlight_payload["world_model_highlights"]
+        self.assertIn("syllabus_modules", highlight_data)
+        self.assertNotIn("concepts", highlight_data)
 
     def test_cli_constraints_override_applied(self) -> None:
         exit_code, _, output_dir = self._run_cli(["--constraints", str(self.constraints_path)])
@@ -289,6 +320,72 @@ evaluation:
         exit_code, _, _ = self._run_cli(["--notebook", "custom-slug"])
         self.assertEqual(exit_code, 0)
         self.assertEqual(os.environ.get("OPEN_NOTEBOOK_SLUG"), "custom-slug")
+
+    def test_cli_skip_notebook_create_sets_env_flag(self) -> None:
+        exit_code, _, _ = self._run_cli(["--skip-notebook-create"])
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(os.environ.get("OPEN_NOTEBOOK_AUTO_CREATE"), "0")
+
+    def test_cli_resolves_relative_paths_against_repo_root(self) -> None:
+        cwd_before = Path.cwd()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            os.chdir(tmp_dir)
+            buffer = io.StringIO()
+            args = [
+                "--repo-root",
+                str(self.repo_root),
+                "--config",
+                "config/pipeline.yaml",
+                "--output-dir",
+                "outputs/from-outside",
+                "--constraints",
+                str(self.constraints_path.relative_to(self.repo_root)),
+                "--concept",
+                "data/handcrafted/database_systems",
+                "--world-model-store",
+                "world_model/state.sqlite",
+                "--dry-run",
+            ]
+            try:
+                with redirect_stdout(buffer):
+                    exit_code = cli_main(args)
+            finally:
+                os.chdir(cwd_before)
+
+        self.assertEqual(exit_code, 0)
+        expected_output_dir = self.repo_root / "outputs" / "from-outside"
+        self.assertTrue(expected_output_dir.exists())
+
+    def test_cli_handles_relative_paths_inside_config(self) -> None:
+        config_path = self.repo_root / "config" / "pipeline.yaml"
+        original = config_path.read_text(encoding="utf-8")
+        try:
+            data = yaml.safe_load(original)
+            assert isinstance(data, dict)
+            data["world_model"]["schema_path"] = "world_model/schema.sql"
+            data["world_model"]["dataset_dir"] = "data/handcrafted/database_systems"
+            data["world_model"]["sqlite_path"] = "world_model/state.sqlite"
+            data["evaluation"]["rubrics_path"] = "evals/rubrics.yaml"
+            data["evaluation"]["quiz_bank_path"] = "data/handcrafted/database_systems/quiz_bank.json"
+            config_path.write_text(yaml_dump(data), encoding="utf-8")
+
+            cwd_before = Path.cwd()
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                os.chdir(tmp_dir)
+                try:
+                    exit_code, _, _ = self._run_cli([
+                        "--repo-root",
+                        str(self.repo_root),
+                        "--config",
+                        "config/pipeline.yaml",
+                        "--dry-run",
+                    ])
+                finally:
+                    os.chdir(cwd_before)
+
+            self.assertEqual(exit_code, 0)
+        finally:
+            config_path.write_text(original, encoding="utf-8")
 
 
 if __name__ == "__main__":

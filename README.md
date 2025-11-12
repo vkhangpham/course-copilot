@@ -25,13 +25,57 @@ This repository hosts the proof-of-concept for Concepedia’s “CourseGen” pi
    git submodule update --init --recursive
    ```
 
+#### Teacher RLM path overrides
+
+- The recursive teacher loop expects the vendored RLM package under `vendor/rlm`. If you want to test against a different checkout (for example, a local branch with experimental prompts), set the `COURSEGEN_VENDOR_RLM_PATH` environment variable to the directory that contains the `rlm/` package before launching the CLI:
+  ```bash
+  export COURSEGEN_VENDOR_RLM_PATH=$HOME/src/rlm
+  python apps/orchestrator/run_poc.py --constraints ...
+  ```
+- Leaving the variable unset keeps the default behaviour (importing from `vendor/rlm`). Either way, the orchestrator automatically injects helper hooks into the REPL namespace—no manual `sys.path` surgery required.
+
+### Model configuration & OpenAI credentials
+
+- The `models` block inside `config/pipeline.yaml` (or `config/model_config.yaml`) can now use either the legacy flat form (`teacher_model`, `ta_model`, …) or the nested form:
+  ```yaml
+  models:
+    teacher:
+      provider: openai
+      model: gpt-4.1
+      api_key_env: OPENAI_API_KEY_TEACHER  # optional override
+    ta:
+      provider: openai
+      model: gpt-4o-mini
+      temperature: 0.1
+    student:
+      provider: openai
+      model: gpt-4o-mini
+  ```
+- Per-role credentials are resolved in this order: the optional `api_key_env`, `OPENAI_API_KEY_<ROLE>` (e.g., `OPENAI_API_KEY_TA`), and finally the global `OPENAI_API_KEY`. Custom API bases follow the same pattern via `api_base`, `api_base_env`, `OPENAI_API_BASE_<ROLE>`, or `OPENAI_API_BASE`.
+- The DSPy CodeAct registry now consumes those handles directly: Plan/Lecture/Citation programs automatically run with the TA handle, so you shouldn’t reconfigure `dspy.settings` inside agent code. Future student-facing CodeAct programs will draw from the `student` handle the same way.
+- Any extra fields supplied under a role (timeouts, organization IDs, etc.) are passed straight to `dspy.OpenAI`, so you can tune provider-specific knobs without touching code.
+
 ## Running the PoC CLI
-With sample configs + placeholder data:
+### Quick start (apps/orchestrator entry point)
+Use the minimal shim in `apps/orchestrator/run_poc.py` when you just want to point at constraints + concept data:
+```bash
+python apps/orchestrator/run_poc.py \
+  --constraints config/course_config.yaml \
+  --concepts data/handcrafted/database_systems \
+  --notebook database-systems-poc \
+  --ablations no_students
+```
+The shim auto-detects the repo root, forwards everything to `ccopilot.cli.run_poc`, and keeps the flag surface to the subset documented in AGENTS.md. Add `--output-dir /tmp/coursegen-run`, `--dry-run`, `--quiet`, or `--ingest-world-model` as needed; any supplied ablations map directly to `no_world_model`, `no_students`, and/or `no_recursion`. Both this shim and the canonical `ccopilot.cli.run_poc` resolve relative paths (config, constraints, concept data, output dirs, world-model stores) against the `--repo-root` you pass, so you can launch the CLI from `/tmp` or a CI workspace without juggling `PYTHONPATH` or `cd`.
+
+### Full CLI (coursegen-poc)
+For advanced scenarios you can still invoke the canonical CLI exposed via the console script:
 ```bash
 coursegen-poc --config config/pipeline.yaml --dry-run
 ```
 Pass `--ingest-world-model` if you want the CLI to rebuild `world_model/state.sqlite` from `data/handcrafted/database_systems/`; otherwise the snapshot is auto-generated the first time it’s missing.
-The stubbed pipeline emits:
+
+### Artifact outputs
+Regardless of the entry point, the pipeline emits:
 - `outputs/course_plan.md`
 - `outputs/lectures/module_01.md`
 - `outputs/evals/run-<timestamp>.jsonl`
@@ -40,7 +84,7 @@ The stubbed pipeline emits:
 
 After every non-dry run the CLI also prints a short evaluation summary (overall score plus rubric pass/fail). If the student graders are disabled or missing, it reports that status instead of a score so operators immediately know why no grade was recorded. Pass `--quiet` when scripting to suppress these `[eval]` / `[highlights]` hints while still writing every artifact.
 
-Notebook exports pull their defaults from environment variables that `coursegen-poc` now sets during bootstrap: `OPEN_NOTEBOOK_API_BASE`, `OPEN_NOTEBOOK_API_KEY`, and `OPEN_NOTEBOOK_SLUG`. The CodeAct `push_notebook_section` tool will fall back to these values whenever the orchestrator does not pass explicit overrides, so make sure the config’s `notebook` section is filled in before running against a real instance. If you intentionally run without a live Open Notebook API, set `OPEN_NOTEBOOK_EXPORT_DIR=/path/to/exports` to opt into offline `.jsonl` exports; otherwise the tool now raises an error when no API base is configured.
+Notebook exports pull their defaults from environment variables that `coursegen-poc` now sets during bootstrap: `OPEN_NOTEBOOK_API_BASE`, `OPEN_NOTEBOOK_API_KEY`, and `OPEN_NOTEBOOK_SLUG`. The CodeAct `push_notebook_section` tool will fall back to these values whenever the orchestrator does not pass explicit overrides, so make sure the config’s `notebook` section is filled in before running against a real instance. If you intentionally run without a live Open Notebook API, set `OPEN_NOTEBOOK_EXPORT_DIR=/path/to/exports` to opt into offline `.jsonl` exports; set `OPEN_NOTEBOOK_EXPORT_MIRROR=1` to mirror every API push to disk for auditing. Pass `--skip-notebook-create` (or set `OPEN_NOTEBOOK_AUTO_CREATE=0`) when you don’t have permission to create notebooks; otherwise the publisher calls the API once per run to ensure the slug exists and records the outcome as a “preflight” entry in the manifest. Each course plan and lecture is automatically chunked into notebook-friendly slices (≤5 plan sections, ≤3 lecture sections) before publishing so Open Notebook receives concise, cited notes. A dedicated FastAPI mock + httpx transport now lives in `tests/mocks/notebook_api.py`—use the `NotebookAPIMock.patch_open_notebook_client()` helper in tests such as `tests/test_pipeline_runtime.py`, `tests/test_cli_run_poc.py`, and `tests/test_open_notebook_tools.py` to exercise the full pipeline without an external server while still capturing note IDs. The CLI’s `[notebook]` hint now mirrors the manifest metadata via `notebook_export_summary`: successful pushes list the exported note IDs (or queued export paths when offline) so you can jump straight into the Notebook or debug failed attempts without opening the manifest.
 
 ### Running the grader CLI
 
@@ -56,7 +100,7 @@ Add `--quiet` when you only care about the JSONL output under `outputs/evaluatio
 
 A minimal observability surface now lives under `apps/portal_backend` (FastAPI) and `frontend/` (Next.js + shadcn/ui). It reads the manifests that `coursegen-poc` emits under `outputs/artifacts` and exposes them as a small dashboard.
 
-1. Start the API (defaults to `http://localhost:8001` but honors `PORTAL_OUTPUTS_DIR` and `PORTAL_NOTEBOOK_SLUG`):
+1. Start the API (defaults to `http://localhost:8001` but honors `PORTAL_OUTPUTS_DIR` and `PORTAL_NOTEBOOK_SLUG`). It now exposes `GET /runs/latest` and `GET /runs/{run_id}/notebook-exports` so the UI (or scripts) can fetch the most recent run + sanitized Notebook export metadata directly. All file-serving helpers are restricted to the configured `outputs/` directory to avoid path traversal through manifests:
    ```bash
    uvicorn apps.portal_backend.main:app --reload --port 8001
    ```
@@ -66,7 +110,9 @@ A minimal observability surface now lives under `apps/portal_backend` (FastAPI) 
    pnpm install   # npm/yarn also work
    pnpm dev
    ```
-3. Visit `http://localhost:3000` to see the latest run summary, world-model highlights, rubric scores, and a Notebook shortcut. The UI polls the backend on every page load, so re-run the CLI to refresh data.
+3. Visit `http://localhost:3000` to see the latest run summary, world-model highlights, rubric scores, **teacher trace summary**, Notebook exports, and deep links to each historical run (e.g., `/runs/<run_id>`). The UI fetches `/runs/latest` on load, so re-run the CLI to refresh data.
+
+Teacher trace JSON files (`outputs/logs/teacher-trace-*.json`) are now linked directly from the portal. The card shows the latest summary/action count and offers a download link for deeper inspection of the Teacher RLM loop.
 
 Optional env vars:
 - `NEXT_PUBLIC_NOTEBOOK_BASE` — base URL of your Open Notebook instance; combined with `OPEN_NOTEBOOK_SLUG` (or `PORTAL_NOTEBOOK_SLUG`) for the “Open Notebook” button.

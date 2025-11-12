@@ -79,19 +79,27 @@ assessment_emphasis:
 
 ### 2.2 `config/model_config.yaml`
 ```yaml
-models:
-  teacher: {provider: openai, model: "gpt-4.1"}
-  ta: {provider: openai, model: "gpt-4o-mini"}
-  students: {provider: openai, model: "gpt-4o-mini"}
-codeact:
-  max_iters: 5
+teacher:
+  provider: openai
+  model: gpt-4.1
   temperature: 0.2
-  toolset: ["wm_get", "wm_search", "run_sql", "push_notebook"]
-ablation_defaults:
-  disable_recursion: false
-  disable_students: false
-  disable_world_model: false
+  api_key_env: OPENAI_API_KEY_TEACHER
+ta:
+  provider: openai
+  model: gpt-4o-mini
+  temperature: 0.15
+student:
+  provider: openai
+  model: gpt-4o-mini
+  temperature: 0.05
+default_temperature: 0.2
+default_max_tokens: 2048
 ```
+
+Each role resolves credentials in this order: the optional `api_key_env`, then
+`OPENAI_API_KEY_<ROLE>` (e.g., `OPENAI_API_KEY_TA`), and finally the global
+`OPENAI_API_KEY`. API base overrides follow the same pattern
+(`api_base` / `api_base_env` / `OPENAI_API_BASE_<ROLE>` / `OPENAI_API_BASE`).
 
 ### 2.3 `config/constraints.yaml`
 Used for quick overrides per run (e.g., level, scope, ablations) and merged inside `run_poc.py` before dispatching to teacher.
@@ -166,6 +174,7 @@ All tools must be synchronous, side-effect free except for `record_claim` + `pus
 1. **Load configs** and ablations.
 2. **Load/mount world model** snapshot (or stub if disabled).
 3. **Teacher RLM** (apps/orchestrator/teacher.py):
+   - Imports `rlm.rlm_repl` from the vendored `vendor/rlm` directory by default; set `COURSEGEN_VENDOR_RLM_PATH=/abs/path/to/rlm` to point at a different checkout (useful for contributors iterating on the REPL without touching the submodule).
    - Initialize REPL environment with handles: `use_codeact(program_name)`, `spawn_ta(role)`, `wm.*` helpers.
    - Stage 1: call `PlanCourse` CodeAct program (TA-Syllabus) to produce `course_plan.md` (persist + send to Notebook if enabled).
    - Stage 2: for first module, spawn TA combination (Reader, Author, Librarian) to draft `lectures/module_01.md`.
