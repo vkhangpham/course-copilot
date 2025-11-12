@@ -11,7 +11,7 @@
 
 - **RLM** gives recursive, spawnable agents and structured self‑delegation.
 - **CodeAct (DSPy)** supplies a safe, programmable **sandbox with tools** for code execution, retrieval, and data wrangling—so agents _think with code_ rather than only chatting.
-- **NotebookLM‑style “Open Notebook”** is used at the **final content assembly** step (grounded writing, citations, transformations).
+- **NotebookLM‑style “Open Notebook”** is used at the **final content assembly** step (grounded writing, citations, transformations). When developing locally, you can point `push_notebook_section` at a tiny FastAPI mock + httpx transport (see `tests/test_open_notebook_tools.py`) or run purely offline by setting `OPEN_NOTEBOOK_EXPORT_DIR` to capture JSONL exports (add `OPEN_NOTEBOOK_EXPORT_MIRROR=1` to mirror API pushes to disk).
 - **Self‑Evolving Agents** pattern gives a **grader/mutator loop** (“students” as judges) to continually tighten prompts/policies and track versions/rollbacks.
 
 ## 3) Inputs → Outputs
@@ -64,8 +64,8 @@ concepedia-course-poc/
 
 **Note:** Per your instruction, submodules are already cloned:
 
-- **RLM implementation** is available under your fork mapping: `https://github.com/vkhangpham/open-notebook` (RLM)
-- **Open Notebook** under `https://github.com/vkhangpham/rlm` (Open Notebook)
+- **RLM implementation** is available under your fork mapping: `https://github.com/vkhangpham/rlm` (RLM)
+- **Open Notebook** under `https://github.com/vkhangpham/open-notebook` (Open Notebook)
   Use the local `vendor/rlm` and `vendor/open-notebook` paths as truth when coding.
 
 Run once:
@@ -87,6 +87,7 @@ OPEN_NOTEBOOK_API_BASE=http://localhost:5055  # default in their stack
 ```
 
 - _(Optional)_ Local LLMs via Ollama if desired by CodeAct.
+- The teacher REPL is loaded from `vendor/rlm` by default. If you are iterating on a separate checkout, export `COURSEGEN_VENDOR_RLM_PATH=/abs/path/to/rlm` before running the CLI so the orchestrator imports the correct module.
 
 ## 2) Stand up **Open Notebook** (NotebookLM‑style)
 
@@ -158,7 +159,8 @@ class PushToOpenNotebook(dspy.Signature):
   3. **spawns** TA roles (RLM style) with bounded mandates & tool access,
   4. coordinates a few **turns** of collaboration via the shared state,
   5. posts drafts to Open Notebook for grounding and transformation,
-  6. triggers **student graders** and absorbs feedback into prompt/policy updates.
+  6. chunks plan/lecture markdown into notebook-friendly sections (≤5 plan slices, ≤3 lecture slices) and logs export summaries for observability,
+  7. triggers **student graders** and absorbs feedback into prompt/policy updates.
 
 - In `apps/orchestrator/ta_roles/…`, define:
   - `syllabus_designer.py` — weekly modules/outcomes
@@ -217,6 +219,7 @@ Place into `data/concept/…`:
 
 - The Teacher orchestrates TA turns → commits **`outputs/course_plan.md`** and a folder of **study‑guides** (`outputs/lectures/W01.md`, …).
 - Push final materials into **Open Notebook** so the operator can use its guided tools (learning guide, summarizations, podcast generator, etc.) for review/iteration.
+  - Examine the generated `notebook_export_summary` in `outputs/artifacts/run-*-manifest.json` (and CLI `[notebook]` hint) to confirm how many sections landed, which note IDs were created, and whether any exports were skipped/queued.
 
 ## 9) Evaluate → Evolve → Iterate
 
