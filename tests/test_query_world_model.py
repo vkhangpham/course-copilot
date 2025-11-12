@@ -4,6 +4,7 @@ import pytest
 
 from scripts.ingest_handcrafted import ingest
 from scripts.query_world_model import (
+    DEFAULT_STORE,
     query_artifacts,
     query_authors,
     query_claims,
@@ -21,6 +22,10 @@ def _build_store(tmp_path: Path) -> Path:
     store = tmp_path / "state.sqlite"
     ingest(DATASET, store)
     return store
+
+
+def test_query_world_model_default_matches_ingest_path() -> None:
+    assert DEFAULT_STORE == Path("outputs/world_model/state.sqlite")
 
 
 def test_query_concepts_filters_by_topic(tmp_path: Path) -> None:

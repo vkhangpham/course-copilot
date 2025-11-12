@@ -14,6 +14,7 @@ from world_model.storage import WorldModelStore
 
 app = typer.Typer(help="Inspect concepts, timeline events, and claims in the world model.")
 console = Console()
+DEFAULT_STORE = Path("outputs/world_model/state.sqlite")
 
 
 def _resolve_store(path: Path) -> WorldModelStore:
@@ -239,7 +240,7 @@ def _safe_json(raw: object) -> dict | list | str | None:
 
 @app.command()
 def concepts(
-    store: Path = typer.Option(Path("world_model/state.sqlite"), "--store", help="SQLite world model path"),
+    store: Path = typer.Option(DEFAULT_STORE, "--store", help="SQLite world model path"),
     topic: Optional[str] = typer.Option(None, help="Case-insensitive substring to filter names/summaries."),
     as_json: bool = typer.Option(False, "--json", help="Emit JSON instead of a table."),
 ) -> None:
@@ -254,7 +255,7 @@ def concepts(
 
 @app.command()
 def timeline(
-    store: Path = typer.Option(Path("world_model/state.sqlite"), "--store"),
+    store: Path = typer.Option(DEFAULT_STORE, "--store"),
     concept: Optional[str] = typer.Option(None, help="Filter by related concept id."),
     year: Optional[int] = typer.Option(None, help="Filter by event year."),
     as_json: bool = typer.Option(False, "--json"),
@@ -274,7 +275,7 @@ def claims(
         None,
         help="Concept identifier to filter by (omit to show all claims).",
     ),
-    store: Path = typer.Option(Path("world_model/state.sqlite"), "--store"),
+    store: Path = typer.Option(DEFAULT_STORE, "--store"),
     limit: int = typer.Option(25, min=1, help="Maximum number of rows to display."),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
@@ -295,7 +296,7 @@ def claims(
 
 @app.command()
 def papers(
-    store: Path = typer.Option(Path("world_model/state.sqlite"), "--store"),
+    store: Path = typer.Option(DEFAULT_STORE, "--store"),
     keyword: Optional[str] = typer.Option(None, help="Case-insensitive match on title or venue."),
     year: Optional[int] = typer.Option(None, help="Filter by publication year."),
     as_json: bool = typer.Option(False, "--json"),
@@ -314,7 +315,7 @@ def papers(
 
 @app.command()
 def authors(
-    store: Path = typer.Option(Path("world_model/state.sqlite"), "--store"),
+    store: Path = typer.Option(DEFAULT_STORE, "--store"),
     keyword: Optional[str] = typer.Option(None, help="Case-insensitive substring match."),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
@@ -332,7 +333,7 @@ def authors(
 
 @app.command(name="definitions")
 def definitions_command(
-    store: Path = typer.Option(Path("world_model/state.sqlite"), "--store"),
+    store: Path = typer.Option(DEFAULT_STORE, "--store"),
     concept: Optional[str] = typer.Option(None, help="Filter by concept id."),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
@@ -350,7 +351,7 @@ def definitions_command(
 
 @app.command(name="graph")
 def graph_command(
-    store: Path = typer.Option(Path("world_model/state.sqlite"), "--store"),
+    store: Path = typer.Option(DEFAULT_STORE, "--store"),
     concept: Optional[str] = typer.Option(None, help="Filter edges touching this concept."),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
@@ -368,7 +369,7 @@ def graph_command(
 
 @app.command(name="artifacts")
 def artifacts_command(
-    store: Path = typer.Option(Path("world_model/state.sqlite"), "--store"),
+    store: Path = typer.Option(DEFAULT_STORE, "--store"),
     artifact_type: Optional[str] = typer.Option(None, "--type", help="Filter by artifact type."),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
