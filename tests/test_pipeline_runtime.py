@@ -4,9 +4,11 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import yaml
 
+from ccopilot.core.dspy_runtime import DSPyModelHandles
 from ccopilot.pipeline import bootstrap_pipeline, run_pipeline
 
 
@@ -21,6 +23,23 @@ class PipelineRuntimeTests(unittest.TestCase):
         self.repo_root = Path(self._tmp.name)
         self.config_path = self._write_pipeline_config()
         self.output_dir = self.repo_root / "outputs"
+        self._dspy_handles = DSPyModelHandles(teacher=object(), ta=object(), student=object())
+        patcher = mock.patch(
+            "ccopilot.pipeline.bootstrap.configure_dspy_models",
+            autospec=True,
+            return_value=self._dspy_handles,
+        )
+        self.addCleanup(patcher.stop)
+        self.mock_configure_dspy = patcher.start()
+        self._codeact_registry = mock.Mock()
+        self._codeact_registry.describe.return_value = {"programs": {}}
+        registry_patcher = mock.patch(
+            "ccopilot.pipeline.runtime.build_default_registry",
+            autospec=True,
+            return_value=self._codeact_registry,
+        )
+        self.addCleanup(registry_patcher.stop)
+        self.mock_build_registry = registry_patcher.start()
 
     def tearDown(self) -> None:
         for key, value in self._env_backup.items():
@@ -167,10 +186,12 @@ evaluation:
             repo_root=self.repo_root,
             output_dir=self.output_dir,
         )
+        self.assertIs(ctx.dspy_handles, self._dspy_handles)
         artifacts = run_pipeline(ctx, dry_run=True)
 
         self.assertIsNone(artifacts)
         self.assertFalse((self.output_dir / "course_plan.md").exists())
+        self.mock_build_registry.assert_not_called()
 
     def test_full_run_emits_stub_artifacts(self) -> None:
         ctx = bootstrap_pipeline(
@@ -178,6 +199,7 @@ evaluation:
             repo_root=self.repo_root,
             output_dir=self.output_dir,
         )
+        self.assertIs(ctx.dspy_handles, self._dspy_handles)
         artifacts = run_pipeline(ctx, dry_run=False)
 
         self.assertIsNotNone(artifacts)
@@ -204,6 +226,11 @@ evaluation:
         assert highlights is not None
         self.assertIn("concepts", highlights)
         self.assertTrue(any(entry["id"] == "concept_a" for entry in highlights["concepts"]))
+        self.assertIn("syllabus_modules", highlights)
+        self.assertIn("reading_list", highlights)
+        self.mock_build_registry.assert_called_once_with(dspy_handles=self._dspy_handles)
+        self.assertIn("exercise_ideas", highlights)
+        self.assertIn("explanations", highlights)
         self.assertEqual(
             manifest.get("world_model_highlight_artifact"),
             str(artifacts.highlights),
@@ -219,6 +246,10 @@ evaluation:
         highlight_payload = json.loads(artifacts.highlights.read_text(encoding="utf-8"))
         self.assertIn("world_model_highlights", highlight_payload)
         self.assertTrue(highlight_payload["world_model_highlights"].get("concepts"))
+        self.assertTrue(highlight_payload["world_model_highlights"].get("syllabus_modules"))
+        self.assertTrue(highlight_payload["world_model_highlights"].get("reading_list"))
+        self.assertTrue(highlight_payload["world_model_highlights"].get("exercise_ideas"))
+        self.assertTrue(highlight_payload["world_model_highlights"].get("explanations"))
 
     def test_missing_store_triggers_auto_ingest(self) -> None:
         ctx = bootstrap_pipeline(
@@ -278,7 +309,7 @@ evaluation:
         self.assertEqual(os.environ["OPEN_NOTEBOOK_API_KEY"], "test-token")
         self.assertEqual(os.environ["OPEN_NOTEBOOK_SLUG"], "test-notebook")
 
-    def test_highlight_artifact_skipped_when_world_model_disabled(self) -> None:
+    def test_dataset_highlights_present_when_world_model_disabled(self) -> None:
         ctx = bootstrap_pipeline(
             config_path=self.config_path,
             repo_root=self.repo_root,
@@ -289,11 +320,19 @@ evaluation:
 
         self.assertIsNotNone(artifacts)
         assert artifacts is not None
-        self.assertIsNone(artifacts.highlights)
+        self.assertIsNotNone(artifacts.highlights)
 
         manifest = json.loads(artifacts.manifest.read_text(encoding="utf-8"))
-        self.assertEqual(manifest.get("world_model_highlights"), {})
-        self.assertIsNone(manifest.get("world_model_highlight_artifact"))
+        highlights = manifest.get("world_model_highlights")
+        self.assertIsNotNone(highlights)
+        assert highlights is not None
+        self.assertIn("syllabus_modules", highlights)
+        self.assertNotIn("concepts", highlights)
+        self.assertIn("explanations", highlights)
+        self.assertEqual(
+            manifest.get("world_model_highlight_artifact"),
+            str(artifacts.highlights),
+        )
 
 
 if __name__ == "__main__":
