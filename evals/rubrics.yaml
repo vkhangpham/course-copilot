@@ -1,22 +1,32 @@
 coverage:
-  description: "Measures how well the lecture covers mandatory topics in docs/PLAN §9"
-  scale: 0-1
-  pass_threshold: 0.8
-  checklist:
-    - "Mentions relational model and SQL fundamentals"
-    - "Addresses transactions, recovery, and concurrency"
-    - "Includes distributed/modern databases"
-grounding:
-  description: "Checks for citations back to uploaded sources"
-  scale: 0-1
-  pass_threshold: 0.85
-  checklist:
-    - "Every learning objective references at least one primary source"
-    - "Claims cite papers from papers.csv"
-pedagogy:
-  description: "Evaluates clarity and scaffolding"
-  scale: 0-1
+  description: |
+    Measures whether the lecture spans the core Database Systems pillars (relational
+    foundations, transactional integrity, and modern/distributed extensions) highlighted
+    in PLAN Phase B. Lectures should connect multiple focus areas rather than fixating
+    on a single topic.
   pass_threshold: 0.75
   checklist:
-    - "States learning objectives and assessments"
-    - "Includes worked examples and review questions"
+    - "Relational model fundamentals and SQL-query fluency are mentioned explicitly."
+    - "Transactions, recovery, or concurrency control trade-offs are discussed."
+    - "Modern or distributed database case studies (e.g., Spanner, Aurora, NewSQL) appear."
+
+grounding:
+  description: |
+    Ensures every lecture anchors claims in canonical sources, citations, and the
+    handcrafted world-model lineage (authors, papers, or timeline entries). Reviewers
+    should be able to trace each major assertion to a cited artefact.
+  pass_threshold: 0.8
+  checklist:
+    - "Required primary sources (e.g., Codd 1970, System R 1976) are referenced."
+    - "At least one primary paper, timeline, or dataset citation is included inline."
+    - "Learning objectives or timeline events are tied back to cited provenance."
+
+pedagogy:
+  description: |
+    Evaluates whether the lecture scaffolds learning with objectives, assessments,
+    worked examples, and practice prompts per Phase E's rubric guidance.
+  pass_threshold: 0.7
+  checklist:
+    - "Explicit learning objectives and assessment signals are stated."
+    - "Includes a worked example, walkthrough, or review question."
+    - "Highlights schema practice, locking drills, or reflection prompts students can attempt."
