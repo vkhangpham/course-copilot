@@ -162,6 +162,7 @@ def test_list_runs_and_detail(portal_settings: PortalSettings) -> None:
     assert "Course Plan" in detail["course_plan_excerpt"]
     assert detail["notebook_slug"] == "database-systems-poc"
     assert detail["notebook_exports"][0]["status"] == "ok"
+    assert all(entry["title"] != "notebook_preflight" for entry in detail["notebook_exports"])
     assert detail["evaluation_attempts"][0]["iteration"] == 1
     assert detail["evaluation_attempts"][0]["overall_score"] == 0.5
     assert any(trace["name"] == "provenance" for trace in detail["trace_files"])
@@ -184,6 +185,12 @@ def test_list_runs_and_detail(portal_settings: PortalSettings) -> None:
     trace_resp = client.get(f"/runs/{run_id}/traces/teacher_trace")
     assert trace_resp.status_code == 200
     assert "Simulated teacher loop" in trace_resp.text
+
+    notebook_resp = client.get(f"/runs/{run_id}/notebook-exports")
+    assert notebook_resp.status_code == 200
+    notebook_entries = notebook_resp.json()
+    assert notebook_entries
+    assert all(entry["title"] != "notebook_preflight" for entry in notebook_entries)
 
     cp_resp = client.get(f"/runs/{run_id}/course-plan")
     assert cp_resp.status_code == 200

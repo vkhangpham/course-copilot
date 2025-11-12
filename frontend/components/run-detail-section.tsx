@@ -26,9 +26,13 @@ export function RunDetailSection({ detail }: { detail: RunDetail | null }) {
   ];
   const traceFiles = detail?.trace_files ?? [];
   const manifest = detail?.manifest as Record<string, unknown> | undefined;
-  const manifestExports = Array.isArray(manifest?.["notebook_exports"])
-    ? (manifest?.["notebook_exports"] as NotebookExportEntry[])
+  const manifestExportsRaw = Array.isArray(manifest?.["notebook_exports"])
+    ? (manifest?.["notebook_exports"] as unknown[])
     : [];
+  const manifestExports = manifestExportsRaw.filter((entry) => {
+    const kind = typeof entry === "object" && entry !== null ? (entry as { kind?: string }).kind : undefined;
+    return (kind ?? "").toLowerCase() !== "preflight";
+  }) as NotebookExportEntry[];
   const notebookExports = (detail?.notebook_exports && detail.notebook_exports.length > 0
     ? detail.notebook_exports
     : manifestExports) as NotebookExportEntry[];
