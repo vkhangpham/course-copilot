@@ -3,13 +3,18 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from apps.codeact.registry import CodeActRegistry
 from apps.codeact.tools.world_model import fetch_concepts, lookup_paper, search_events
+from apps.orchestrator.ta_roles.exercise_author import ExerciseAuthor
+from apps.orchestrator.ta_roles.explainer import Explainer
+from apps.orchestrator.ta_roles.reading_curator import ReadingCurator
+from apps.orchestrator.ta_roles.syllabus_designer import SyllabusDesigner
+from apps.orchestrator.ta_roles.timeline_synthesizer import TimelineSynthesizer
 from ccopilot.core.provenance import ProvenanceEvent
 from ccopilot.pipeline.context import PipelineContext
 from .students import StudentGraderPool
@@ -192,6 +197,7 @@ class Orchestrator:
     ) -> Path:
         course = self.ctx.config.course
         plan_path = output_dir / "course_plan.md"
+        codeact_outline = self._generate_codeact_plan_outline()
         with plan_path.open("w", encoding="utf-8") as handle:
             handle.write(f"# {course.title}\n\n")
             handle.write(f"**Duration:** {course.duration_weeks} weeks\n\n")
@@ -208,6 +214,9 @@ class Orchestrator:
                     f"- Domains: {', '.join(dataset_summary['top_domains'])}\n"
                 )
             handle.write("\n")
+            if codeact_outline:
+                handle.write("## AI-generated Outline (CodeAct)\n")
+                handle.write(codeact_outline.strip() + "\n\n")
             highlights = world_model_highlights or {}
             concepts = highlights.get("concepts") or []
             if concepts:
@@ -237,6 +246,42 @@ class Orchestrator:
                     f"- {spotlight.get('title')} ({spotlight.get('year')}) — "
                     f"{spotlight.get('venue') or 'venue tbd'}\n\n"
                 )
+            syllabus = highlights.get("syllabus_modules") or []
+            if syllabus:
+                handle.write("## Syllabus Snapshot\n")
+                for module in syllabus[:3]:
+                    week = module.get("week")
+                    title = module.get("title") or f"Week {week}"
+                    outcomes = module.get("outcomes") or []
+                    handle.write(f"- Week {week}: {title}\n")
+                    for outcome in outcomes[:2]:
+                        handle.write(f"  - {outcome}\n")
+                handle.write("\n")
+            readings = highlights.get("reading_list") or []
+            if readings:
+                handle.write("## Suggested Readings\n")
+                for rec in readings[:3]:
+                    handle.write(
+                        f"- {rec.get('title')}: {rec.get('why_it_matters')} ({rec.get('citation')})\n"
+                    )
+                handle.write("\n")
+            exercises = highlights.get("exercise_ideas") or []
+            if exercises:
+                handle.write("## Practice Ideas\n")
+                for exercise in exercises[:3]:
+                    handle.write(
+                        f"- {exercise.get('title')} ({exercise.get('difficulty')}): "
+                        f"{exercise.get('description')}\n"
+                    )
+                handle.write("\n")
+            explainer_chunks = highlights.get("explanations") or []
+            if explainer_chunks:
+                handle.write("## Explanation Highlights\n")
+                for chunk in explainer_chunks[:3]:
+                    first_line = (chunk.get("body_md") or "").splitlines()[0:1]
+                    summary_line = first_line[0] if first_line else "See explainer section for details."
+                    handle.write(f"- **{chunk.get('heading')}** — {summary_line}\n")
+                handle.write("\n")
             handle.write("\n> Placeholder plan – replace once Teacher RLM is wired.\n")
         return plan_path
 
@@ -247,12 +292,16 @@ class Orchestrator:
         world_model_highlights: Dict[str, Any] | None = None,
     ) -> Path:
         lecture_path = lecture_dir / "module_01.md"
+        codeact_section = self._generate_codeact_lecture_section(world_model_highlights)
         with lecture_path.open("w", encoding="utf-8") as handle:
             handle.write("# Module 1 · Foundations of Database Systems\n\n")
-            handle.write(
-                "This stub is generated while the TA CodeAct loop is under construction.\n"
-            )
-            handle.write("Each real run will include citations, examples, and student prompts.\n")
+            if codeact_section:
+                handle.write(codeact_section.strip() + "\n\n")
+            else:
+                handle.write(
+                    "This stub is generated while the TA CodeAct loop is under construction.\n"
+                )
+                handle.write("Each real run will include citations, examples, and student prompts.\n")
             focus = (dataset_summary.get("top_domains") or ["Database Systems"])[0]
             handle.write(f"\n_Current dataset focus: {focus}_\n")
             handle.write("\n## Learning Objectives & Assessments\n")
@@ -279,6 +328,30 @@ class Orchestrator:
                 "1. Why does strict two-phase locking guarantee serializability?\n"
                 "2. Which SQL query would expose a partial failure in the example above?\n"
             )
+            exercises = (world_model_highlights or {}).get("exercise_ideas") or []
+            if exercises:
+                handle.write("\n## Suggested Practice\n")
+                for exercise in exercises[:2]:
+                    handle.write(
+                        f"- {exercise.get('title')} ({exercise.get('difficulty')}): "
+                        f"{exercise.get('description')}\n"
+                    )
+            readings = (world_model_highlights or {}).get("reading_list") or []
+            if readings:
+                handle.write("\n## Reading Starter Pack\n")
+                for rec in readings[:2]:
+                    handle.write(
+                        f"- {rec.get('title')} – {rec.get('why_it_matters')}\n"
+                    )
+            explainer_chunks = (world_model_highlights or {}).get("explanations") or []
+            if explainer_chunks:
+                handle.write("\n## Background Explainers\n")
+                chunk = explainer_chunks[0]
+                handle.write(f"### {chunk.get('heading')}\n")
+                handle.write(f"{chunk.get('body_md')}\n")
+                citations = chunk.get("citations") or []
+                if citations:
+                    handle.write(f"Citations: {', '.join(citations)}\n")
             handle.write("\n## Sources & Citations\n")
             handle.write(
                 "- Codd (1970) formalized the relational model and relational algebra [`codd-1970`].\n"
@@ -408,6 +481,85 @@ class Orchestrator:
             json.dump(payload, handle, indent=2)
         return artifact_path
 
+    def _generate_codeact_plan_outline(self) -> str | None:
+        if not self.registry:
+            return None
+        payload = self.ctx.config.course.model_dump()
+        result = self._run_codeact_program(
+            "PlanCourse",
+            constraints=json.dumps(payload, indent=2),
+        )
+        outline = getattr(result, "outline", None) if result else None
+        if outline:
+            self.logger.info("CodeAct PlanCourse program succeeded.")
+            return str(outline)
+        return None
+
+    def _generate_codeact_lecture_section(
+        self, world_model_highlights: Dict[str, Any] | None
+    ) -> str | None:
+        if not self.registry:
+            return None
+        module_payload = self._select_module_payload(world_model_highlights)
+        claims_payload = self._build_claim_payload(world_model_highlights)
+        lecture_result = self._run_codeact_program(
+            "DraftLectureSection",
+            module=json.dumps(module_payload, indent=2),
+            claims=json.dumps(claims_payload, indent=2),
+        )
+        section = getattr(lecture_result, "section", None) if lecture_result else None
+        if not section:
+            return None
+        enforcement = self._run_codeact_program(
+            "EnforceCitations",
+            md_section=str(section),
+        )
+        corrected = getattr(enforcement, "corrected_section", None) if enforcement else None
+        final_section = str(corrected or section)
+        self.logger.info("DraftLectureSection produced CodeAct content (citations=%s).", bool(corrected))
+        return final_section
+
+    def _run_codeact_program(self, name: str, **kwargs: Any) -> Any | None:
+        if not self.registry:
+            return None
+        try:
+            program = self.registry.build_program(name)
+        except KeyError:
+            self.logger.debug("CodeAct program %s not registered.", name)
+            return None
+        try:
+            return program(**kwargs)
+        except Exception as exc:  # pragma: no cover - defensive
+            self.logger.warning("CodeAct program %s failed: %s", name, exc)
+            return None
+
+    def _select_module_payload(self, world_model_highlights: Dict[str, Any] | None) -> Dict[str, Any]:
+        modules = (world_model_highlights or {}).get("syllabus_modules") or []
+        if modules:
+            return modules[0]
+        course = self.ctx.config.course
+        return {
+            "week": 1,
+            "title": f"Foundations of {course.title}",
+            "outcomes": course.learning_objectives[:3],
+            "focus_areas": course.focus_areas[:3] if hasattr(course, "focus_areas") else [],
+        }
+
+    def _build_claim_payload(self, world_model_highlights: Dict[str, Any] | None) -> List[Dict[str, Any]]:
+        concepts = (world_model_highlights or {}).get("concepts") or []
+        claims: List[Dict[str, Any]] = []
+        for concept in concepts[:5]:
+            claims.append(
+                {
+                    "concept_id": concept.get("id"),
+                    "name": concept.get("name"),
+                    "summary": concept.get("summary"),
+                }
+            )
+        if not claims:
+            claims.append({"concept_id": "relational_model", "summary": "Relational algebra foundations."})
+        return claims
+
     def _collect_world_model_highlights(
         self,
         store_path: Path,
@@ -417,8 +569,10 @@ class Orchestrator:
     ) -> Dict[str, Any]:
         """Return a trimmed slice of the world model for placeholder artifacts."""
 
+        highlights = self._collect_dataset_highlights()
+
         if not self.ctx.ablations.use_world_model or not store_path.exists():
-            return {}
+            return highlights
 
         try:
             concept_rows = fetch_concepts(depth=1, limit=concept_limit, store_path=store_path)
@@ -448,7 +602,6 @@ class Orchestrator:
                 else:
                     break
 
-            highlights: Dict[str, Any] = {}
             if concept_highlights:
                 highlights["concepts"] = concept_highlights
             if timeline_highlights:
@@ -462,7 +615,61 @@ class Orchestrator:
                 exc,
                 extra={"store_path": str(store_path)},
             )
-            return {}
+            return highlights
+
+    def _collect_dataset_highlights(
+        self,
+        *,
+        module_limit: int = 4,
+        reading_limit: int = 5,
+        exercise_limit: int = 3,
+        timeline_limit: int = 3,
+    ) -> Dict[str, Any]:
+        dataset_root = self.ctx.config.world_model.dataset_dir
+        highlights: Dict[str, Any] = {}
+        if not dataset_root.exists():
+            return highlights
+
+        try:
+            modules = SyllabusDesigner().propose_modules(dataset_root)[:module_limit]
+            if modules:
+                highlights["syllabus_modules"] = [asdict(module) for module in modules]
+        except Exception as exc:  # pragma: no cover - defensive
+            self.logger.debug("Syllabus designer unavailable: %s", exc)
+
+        try:
+            readings = ReadingCurator().curate(dataset_root, limit=reading_limit)
+            if readings:
+                highlights["reading_list"] = [asdict(rec) for rec in readings]
+        except Exception as exc:  # pragma: no cover - defensive
+            self.logger.debug("Reading curator unavailable: %s", exc)
+
+        try:
+            timeline_path = dataset_root / "timeline.csv"
+            timeline_events = TimelineSynthesizer().build(timeline_path, limit=timeline_limit)
+            serialized = [asdict(event) for event in timeline_events]
+            if serialized and "timeline" not in highlights:
+                highlights["timeline"] = serialized
+        except FileNotFoundError:
+            pass
+        except Exception as exc:  # pragma: no cover - defensive
+            self.logger.debug("Timeline synthesizer unavailable: %s", exc)
+
+        try:
+            exercises = ExerciseAuthor(dataset_root).draft(limit=exercise_limit)
+            if exercises:
+                highlights["exercise_ideas"] = [asdict(exercise) for exercise in exercises]
+        except Exception as exc:  # pragma: no cover - defensive
+            self.logger.debug("Exercise author unavailable: %s", exc)
+
+        try:
+            explanations = Explainer(dataset_root).write("Database Systems", limit=4)
+            if explanations:
+                highlights["explanations"] = [asdict(chunk) for chunk in explanations]
+        except Exception as exc:  # pragma: no cover - defensive
+            self.logger.debug("Explainer unavailable: %s", exc)
+
+        return highlights
 
     def _evaluate_artifacts(self, lecture_path: Path) -> Dict[str, Any]:
         if not self.ctx.ablations.use_students:
