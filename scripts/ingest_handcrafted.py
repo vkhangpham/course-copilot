@@ -113,9 +113,16 @@ def _load_datasets(source_dir: Path) -> Dict[str, Any]:
     for row in timeline_rows:
         related = _split_list(row.get("related_concepts", ""))
         row["concept_ids"] = related
-        citation_id = row.get("citation_id")
+        raw_citation = row.get("citation_id") or row.get("citation")
+        citation_id = raw_citation.strip() if isinstance(raw_citation, str) else raw_citation
+        if citation_id:
+            row["citation_id"] = citation_id
+        else:
+            row.pop("citation_id", None)
         if citation_id and citation_id not in paper_ids:
-            raise ValueError(f"Timeline entry {row.get('event')} missing citation {citation_id}")
+            raise ValueError(
+                f"Timeline entry {row.get('event')} references unknown citation {citation_id}"
+            )
         for cid in related:
             if cid not in concepts:
                 raise ValueError(
@@ -213,7 +220,15 @@ def _load_csv(path: Path) -> List[Dict[str, str]]:
                 key: (value.strip() if isinstance(value, str) else value)
                 for key, value in row.items()
             }
-            if cleaned.get("id") or cleaned.get("event"):
+            has_value = False
+            for value in cleaned.values():
+                if isinstance(value, str) and value.strip():
+                    has_value = True
+                    break
+                if value not in (None, ""):
+                    has_value = True
+                    break
+            if has_value:
                 rows.append(cleaned)
         return rows
 
@@ -406,7 +421,7 @@ def _insert_timeline(
         year = int(row["year"]) if row.get("year") else None
         description = row.get("why_it_matters")
         event_label = row.get("event")
-        citation = row.get("citation_id")
+        citation = row.get("citation_id") or row.get("citation")
         for concept_id in row.get("concept_ids", []):
             if concept_id not in concepts:
                 raise ValueError(f"Timeline references unknown concept {concept_id}")
@@ -492,7 +507,7 @@ def _write_snapshot(jsonl_path: Path, datasets: Dict[str, Any]) -> None:
                 "year": event.get("year"),
                 "event": event.get("event"),
                 "related_concepts": event.get("concept_ids", []),
-                "citation_id": event.get("citation_id"),
+                "citation_id": event.get("citation_id") or event.get("citation"),
             }
         )
 
@@ -523,7 +538,7 @@ def parse_args(argv: Iterable[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "dest",
         type=Path,
-        help="Destination SQLite file (e.g., world_model/state.sqlite)",
+        help="Destination SQLite file (e.g., outputs/world_model/state.sqlite)",
     )
     parser.add_argument("--jsonl", type=Path, help="Optional path to write a JSONL snapshot")
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging")
