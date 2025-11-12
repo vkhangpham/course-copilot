@@ -36,6 +36,12 @@ def test_derive_title_prefers_first_heading() -> None:
     assert derived == "Week 1 — Relational Thinking"
 
 
+def test_derive_title_handles_bom_heading() -> None:
+    markdown = "\ufeff# Week 1 – Overview\nContent goes here"
+    derived = NotebookPublisher._derive_title(markdown, fallback="Fallback Title")
+    assert derived == "Week 1 – Overview"
+
+
 def test_publish_invokes_push_notebook_section(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     calls: List[dict] = []
 
@@ -164,6 +170,15 @@ def test_chunk_markdown_sections_extracts_headings() -> None:
     assert chunks[0][1] == "line"
     assert chunks[1][1] == "content"
     assert chunks[2][1] == "more"
+
+
+def test_chunk_markdown_sections_handles_bom_prefixed_headings() -> None:
+    markdown = "\ufeff# Intro\nline\n## Week 1\ncontent"
+    chunks = chunk_markdown_sections(markdown, "Fallback")
+    assert chunks[0][0] == "Intro"
+    assert chunks[0][1] == "line"
+    assert chunks[1][0] == "Week 1"
+    assert chunks[1][1] == "content"
 
 
 def test_build_sections_from_markdown_limits_sections(tmp_path: Path) -> None:

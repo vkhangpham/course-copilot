@@ -11,6 +11,13 @@ from apps.codeact.tools.open_notebook import ensure_notebook_exists, push_notebo
 
 
 _CITATION_PATTERN = re.compile(r"\[([^\]]+)\]")
+_ZERO_WIDTH_PREFIXES = "\ufeff\u200b\u200c\u200d\u2060\u202a\u202b\u202c\u202d\u202e"
+
+
+def _strip_zero_width_prefix(text: str) -> str:
+    """Remove zero-width and BOM markers that break heading detection."""
+
+    return text.lstrip(_ZERO_WIDTH_PREFIXES)
 
 
 @dataclass(slots=True)
@@ -155,9 +162,9 @@ class NotebookPublisher:
     @staticmethod
     def _derive_title(markdown: str, *, fallback: str) -> str:
         for line in markdown.splitlines():
-            stripped = line.strip()
+            stripped = _strip_zero_width_prefix(line.strip())
             if stripped.startswith("#"):
-                heading = stripped.lstrip("# ").strip()
+                heading = _strip_zero_width_prefix(stripped.lstrip("# ").strip())
                 if heading:
                     return heading
         return fallback
@@ -243,10 +250,10 @@ def build_sections_from_markdown(
 
 
 def _extract_heading(line: str) -> str | None:
-    stripped = line.strip()
+    stripped = _strip_zero_width_prefix(line.strip())
     if not stripped.startswith("#"):
         return None
-    heading = stripped.lstrip("# ").strip()
+    heading = _strip_zero_width_prefix(stripped.lstrip("# ").strip())
     return heading or None
 
 
