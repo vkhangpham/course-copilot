@@ -12,9 +12,11 @@ from rich.table import Table
 
 from world_model.storage import WorldModelStore
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_STORE = (REPO_ROOT / "outputs" / "world_model" / "state.sqlite").resolve()
+
 app = typer.Typer(help="Inspect concepts, timeline events, and claims in the world model.")
 console = Console()
-DEFAULT_STORE = Path("outputs/world_model/state.sqlite")
 
 
 def _resolve_store(path: Path) -> WorldModelStore:

@@ -25,7 +25,8 @@ def _build_store(tmp_path: Path) -> Path:
 
 
 def test_query_world_model_default_matches_ingest_path() -> None:
-    assert DEFAULT_STORE == Path("outputs/world_model/state.sqlite")
+    expected = (Path(__file__).resolve().parents[1] / "outputs" / "world_model" / "state.sqlite").resolve()
+    assert DEFAULT_STORE == expected
 
 
 def test_query_concepts_filters_by_topic(tmp_path: Path) -> None:
