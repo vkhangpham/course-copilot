@@ -1,0 +1,3 @@
+
+# Use bd merge driver for the canonical issue state file
+.beads/issues.jsonl merge=beads

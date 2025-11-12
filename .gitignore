@@ -1,0 +1,39 @@
+# Python / build artifacts
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info/
+*.egg
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage*
+coverage.xml
+
+# Virtual environments & uv
+.venv
+.venv/
+.uv/
+
+# Node/JS (Open Notebook frontend, etc.)
+node_modules/
+
+# Config & local env (user-managed)
+.env
+.env.*
+.python_history
+
+# OS/editor cruft
+.DS_Store
+.idea/
+.vscode/
+
+# Project control files
+.progress
+.output
+
+# CodeAct sandbox
+.sandbox/

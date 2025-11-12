@@ -1,0 +1,9 @@
+notebook_slug: database-systems-poc
+notebook_base_url: http://localhost:5055
+concept_data_dir: data/handcrafted/database_systems
+world_model_store: world_model/state.sqlite
+outputs_dir: outputs
+ablations:
+  disable_recursion: false
+  disable_students: false
+  disable_world_model: false

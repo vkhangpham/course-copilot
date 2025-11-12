@@ -1,0 +1,12 @@
+- id: readiness-check
+  steps:
+    - "Dataset seeded (taxonomy, timeline, papers)"
+    - "World model schema applied"
+    - "Open Notebook API reachable"
+    - "Constraints validated"
+- id: lecture-quality
+  steps:
+    - "Includes learning objectives"
+    - "Has ≥3 inline citations"
+    - "Provides 2+ formative questions"
+    - "Student graders pass thresholds"

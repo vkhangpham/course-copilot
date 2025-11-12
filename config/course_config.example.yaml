@@ -1,0 +1,26 @@
+course_name: "Database Systems"
+level: "upper-division undergraduate"
+duration_weeks: 12
+audience: "CS majors who completed data structures"
+delivery_mode: "studio + lecture hybrid"
+learning_objectives:
+  - "Explain the relational model, relational algebra, and SQL DDL/DML"
+  - "Analyze cost-based query planning and choose index strategies"
+  - "Implement transaction logic that satisfies ACID guarantees"
+  - "Contrast distributed database architectures (replication, sharding, CAP, NewSQL)"
+assessment_mix:
+  projects: 0.4
+  quizzes: 0.3
+  participation: 0.3
+required_sources:
+  - id: codd-1970
+    citation: "E. F. Codd. A Relational Model of Data for Large Shared Data Banks (CACM, 1970)."
+  - id: system-r-1976
+    citation: "Chamberlin et al. SEQUEL: A structured English query language (IBM Research, 1976)."
+constraints:
+  tone: "research-grounded but approachable"
+  prerequisites:
+    - "Discrete math"
+    - "Data structures"
+  unacceptable_sources:
+    - "Wikipedia"

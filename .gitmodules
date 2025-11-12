@@ -1,0 +1,6 @@
+[submodule "vendor/rlm"]
+	path = vendor/rlm
+	url = https://github.com/vkhangpham/open-notebook
+[submodule "vendor/open-notebook"]
+	path = vendor/open-notebook
+	url = https://github.com/vkhangpham/rlm

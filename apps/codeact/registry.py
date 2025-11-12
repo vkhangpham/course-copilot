@@ -1,0 +1,44 @@
+"""Registry that wires DSPy CodeAct signatures to pure tool implementations."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Callable, Dict, Iterable, Mapping
+
+
+@dataclass(frozen=True)
+class ToolBinding:
+    """Pair a callable with metadata so CodeAct can invoke it safely."""
+
+    name: str
+    signature: str
+    handler: Callable[..., object]
+    description: str
+
+
+class CodeActRegistry:
+    """Simple, explicit registry for all CodeAct programs and tools."""
+
+    def __init__(self) -> None:
+        self._tools: Dict[str, ToolBinding] = {}
+        self._programs: Dict[str, list[str]] = {}
+
+    def register_tool(self, binding: ToolBinding) -> None:
+        if binding.name in self._tools:
+            raise ValueError(f"Tool {binding.name} already registered")
+        self._tools[binding.name] = binding
+
+    def register_program(self, name: str, tool_names: Iterable[str]) -> None:
+        missing = [tool for tool in tool_names if tool not in self._tools]
+        if missing:
+            raise ValueError(f"Cannot register program {name}; missing tools {missing}")
+        self._programs[name] = list(tool_names)
+
+    def describe(self) -> Mapping[str, Mapping[str, object]]:
+        return {
+            "tools": {name: binding.description for name, binding in self._tools.items()},
+            "programs": self._programs,
+        }
+
+    def get_tool(self, name: str) -> ToolBinding:
+        return self._tools[name]

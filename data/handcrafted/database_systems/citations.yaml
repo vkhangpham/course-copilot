@@ -1,0 +1,61 @@
+citations:
+  codd-1970:
+    title: "A Relational Model of Data for Large Shared Data Banks"
+    type: journal-article
+    venue: "Communications of the ACM"
+    year: 1970
+    url: https://dl.acm.org/doi/10.1145/362384.362685
+  chen-1976:
+    title: "The Entity-Relationship Model—Toward a Unified View of Data"
+    type: journal-article
+    venue: "ACM TODS"
+    year: 1976
+    url: https://dl.acm.org/doi/10.1145/320434.320440
+  selinger-1979:
+    title: "Access Path Selection in a Relational DBMS"
+    type: conference-paper
+    venue: "SIGMOD"
+    year: 1979
+    url: https://dl.acm.org/doi/10.1145/582095.582099
+  stonebraker-1986:
+    title: "The Design of Postgres"
+    type: conference-paper
+    venue: "SIGMOD"
+    year: 1986
+    url: https://dl.acm.org/doi/10.1145/16894.16888
+  aries-1992:
+    title: "ARIES: A Transaction Recovery Method Supporting Fine-Granularity Locking and Partial Rollbacks"
+    type: journal-article
+    venue: "ACM TODS"
+    year: 1992
+    url: https://dl.acm.org/doi/10.1145/146931.146938
+  spanner-2012:
+    title: "Spanner: Google's Globally Distributed Database"
+    type: conference-paper
+    venue: "OSDI"
+    year: 2012
+    url: https://research.google/pubs/pub39966/
+  snowflake-2016:
+    title: "The Snowflake Elastic Data Warehouse"
+    type: conference-paper
+    venue: "SIGMOD"
+    year: 2016
+    url: https://dl.acm.org/doi/10.1145/2882903.2903741
+  mapreduce-2004:
+    title: "MapReduce: Simplified Data Processing on Large Clusters"
+    type: conference-paper
+    venue: "OSDI"
+    year: 2004
+    url: https://research.google/pubs/pub62/
+  brewer-2000:
+    title: "Towards Robust Distributed Systems"
+    type: keynote
+    venue: "PODC"
+    year: 2000
+    url: https://people.eecs.berkeley.edu/~brewer/cs262b-2004/PODC-keynote.pdf
+  beam-2017:
+    title: "The World Beyond Batch: Streaming 101"
+    type: magazine
+    venue: "Communications of the ACM"
+    year: 2017
+    url: https://dl.acm.org/doi/10.1145/3158662

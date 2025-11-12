@@ -1,0 +1,161 @@
+concepts:
+  foundations:
+    name: Foundations & Modeling
+    summary: Canonical abstractions (ER diagrams, relations, relational algebra) that separate logical from physical design.
+    canonical_sources: [codd-1970, chen-1976]
+  relational_model:
+    parent: foundations
+    name: Relational Model
+    summary: Relations, tuples, keys, and integrity constraints describing data as mathematics.
+    prerequisites: []
+    canonical_sources: [codd-1970]
+  relational_algebra:
+    parent: foundations
+    name: Relational Algebra
+    summary: Sigma/pi/join/set operators that provide a procedural semantics for SQL.
+    prerequisites: [relational_model]
+    canonical_sources: [codd-1970, system-r-1976]
+  sql_language:
+    parent: foundations
+    name: SQL Language
+    summary: Declarative data definition/manipulation statements derived from relational algebra.
+    prerequisites: [relational_model, relational_algebra]
+    canonical_sources: [system-r-1976]
+  schema_design:
+    parent: foundations
+    name: Schema Design & Normalization
+    summary: Functional dependencies, normal forms, and selective denormalization to balance integrity vs. performance.
+    prerequisites: [relational_model]
+    canonical_sources: [fagin-1977]
+  functional_dependencies:
+    parent: schema_design
+    name: Functional Dependencies
+    summary: Attribute determinism rules that shape candidate keys and decomposition choices.
+    prerequisites: [schema_design]
+    canonical_sources: [fagin-1977]
+  normal_forms:
+    parent: schema_design
+    name: Normal Forms
+    summary: 1NF through BCNF plus practical heuristics for when to denormalize.
+    prerequisites: [functional_dependencies]
+    canonical_sources: [fagin-1977]
+  execution:
+    name: Execution & Storage
+    summary: Physical layout, indexing, and query processing internals.
+    canonical_sources: [stonebraker-1986]
+  storage_engines:
+    parent: execution
+    name: Storage Engines
+    summary: Heap files, log-structured tables, slotted pages, and buffer management.
+    canonical_sources: [stonebraker-1986]
+  indexing_strategies:
+    parent: execution
+    name: Indexing Strategies
+    summary: B+-trees, hash, bitmap, and GiST indexes plus maintenance costs.
+    prerequisites: [storage_engines]
+    canonical_sources: [graefe-1994]
+  query_planning:
+    parent: execution
+    name: Query Planning & Optimization
+    summary: Cost models, statistics, and plan enumeration via Selinger- and Volcano-style search.
+    prerequisites: [relational_algebra, sql_language]
+    canonical_sources: [system-r-1976, volcano-1994]
+  cost_models:
+    parent: execution
+    name: Cost Models & Cardinality Estimation
+    summary: Statistics, histograms, and heuristics used to estimate join order cost.
+    prerequisites: [query_planning]
+    canonical_sources: [volcano-1994]
+  recovery:
+    parent: execution
+    name: Logging & Recovery
+    summary: Write-ahead logs, checkpoints, and ARIES-style redo/undo to guarantee durability.
+    prerequisites: [storage_engines]
+    canonical_sources: [aries-1992]
+  concurrency:
+    name: Transactions & Concurrency
+    summary: Guarantees that keep shared data correct when multiple writers/readers interact.
+    canonical_sources: [gray-reuter-1993]
+  transaction_management:
+    parent: concurrency
+    name: Transaction Management
+    summary: ACID semantics, atomic commit boundaries, and application-facing APIs.
+    canonical_sources: [gray-reuter-1993]
+  concurrency_control:
+    parent: concurrency
+    name: Concurrency Control
+    summary: Two-phase locking, timestamp ordering, optimistic control, and conflict handling.
+    prerequisites: [transaction_management]
+    canonical_sources: [bernstein-1987]
+  mvcc:
+    parent: concurrency
+    name: Multi-Version Concurrency Control
+    summary: Snapshot isolation using version chains and garbage collection windows.
+    prerequisites: [concurrency_control]
+    canonical_sources: [bernstein-1987, gray-reuter-1993]
+  locking_and_recovery:
+    parent: concurrency
+    name: Locking & Recovery Coordination
+    summary: Lock management, deadlock detection, WAL interactions, and logical vs. physical logging.
+    prerequisites: [transaction_management]
+    canonical_sources: [gray-reuter-1993, aries-1992]
+  distributed:
+    name: Distributed & Replicated Systems
+    summary: Scale-out topologies, consensus, and geo-distributed SQL.
+    canonical_sources: [bigtable-2006, spanner-2012]
+  replication_and_sharding:
+    parent: distributed
+    name: Replication & Sharding
+    summary: Leader/follower, multi-leader, and partitioning schemes for scale and resilience.
+    canonical_sources: [bigtable-2006, dynamo-2007]
+  distributed_transactions:
+    parent: distributed
+    name: Distributed Transactions
+    summary: Two-phase commit, Paxos/Raft, and deterministic ordering (TrueTime).
+    prerequisites: [transaction_management]
+    canonical_sources: [spanner-2012]
+  truetime:
+    parent: distributed_transactions
+    name: TrueTime & External Consistency
+    summary: Using bounded clock uncertainty to guarantee global ordering.
+    prerequisites: [distributed_transactions]
+    canonical_sources: [spanner-2012]
+  consistency_models:
+    parent: distributed
+    name: Consistency Models
+    summary: Linearizability, sequential and eventual consistency, CAP/PACELC trade-offs.
+    canonical_sources: [brewer-cap-2000, bailis-2013]
+  cap_theorem:
+    parent: consistency_models
+    name: CAP Theorem
+    summary: Under partitions, systems trade availability against consistency.
+    canonical_sources: [brewer-cap-2000]
+  nosql_models:
+    parent: distributed
+    name: NoSQL Models
+    summary: Column-family, document, and key-value stores optimized for targeted workloads.
+    canonical_sources: [bigtable-2006, dynamo-2007]
+  modern:
+    name: Modern Data Infrastructure
+    summary: Cloud-native analytics, HTAP, streaming, and governance.
+    canonical_sources: [snowflake-2016, aurora-2017]
+  cloud_data_warehouses:
+    parent: modern
+    name: Cloud Data Warehouses
+    summary: Shared-nothing MPP warehouses with elastic compute/storage separation.
+    canonical_sources: [snowflake-2016]
+  htap:
+    parent: modern
+    name: Hybrid Transactional/Analytical Processing (HTAP)
+    summary: Systems blending OLTP + analytics via log-based replication and materialized views.
+    canonical_sources: [aurora-2017]
+  streaming_analytics:
+    parent: modern
+    name: Streaming Analytics
+    summary: Event-driven pipelines (Kafka, Beam) and incremental view maintenance.
+    canonical_sources: [beam-2017]
+  governance_lineage:
+    parent: modern
+    name: Governance & Lineage
+    summary: Catalogs, lineage tracking, and reproducibility controls ensuring provenance.
+    canonical_sources: [google-f1-2013]

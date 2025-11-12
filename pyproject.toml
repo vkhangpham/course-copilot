@@ -1,0 +1,52 @@
+[project]
+name = "ccopilot"
+version = "0.1.0"
+description = "Concepedia CourseGen PoC (RLM teacher + DSPy CodeAct)."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "Concepedia Agents" }
+]
+dependencies = [
+    "dspy-ai>=3.0.4",
+    "python-dotenv>=1.2.1",
+    "typer>=0.12.5",
+    "rich>=13.7.1",
+    "httpx>=0.27.0",
+    "pydantic>=2.8.0",
+    "pyyaml>=6.0.1",
+    "duckdb>=1.0.0",
+    "networkx>=3.3",
+    "tenacity>=8.3.0",
+    "tqdm>=4.66.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.2",
+    "ruff>=0.5.7",
+]
+
+[project.scripts]
+coursegen-poc = "ccopilot.cli.run_poc:main"
+wm-inspect = "scripts.query_world_model:app"
+validate-handcrafted = "scripts.validate_handcrafted:app"
+worldmodel-ingest = "scripts.ingest_handcrafted:main"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.pytest.ini_options]
+testpaths = [
+    "tests",
+]
+addopts = "-ra"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"

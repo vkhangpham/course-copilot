@@ -1,0 +1,117 @@
+version: 1
+summary: |
+  Hierarchical taxonomy and weekly course outline for the Database Systems CourseGen PoC.
+  Concept identifiers align with `concepts.yaml` and citations in `papers.csv`.
+domains:
+  - id: foundations
+    title: Foundations & Modeling
+    summary: Conceptual building blocks (relational algebra, SQL, schema design).
+    concepts:
+      - relational_model
+      - relational_algebra
+      - sql_language
+      - schema_design
+  - id: execution
+    title: Execution & Storage
+    summary: Physical storage engines, indexing, query planning, and recovery.
+    concepts:
+      - storage_engines
+      - indexing_strategies
+      - query_planning
+      - cost_models
+      - recovery
+  - id: concurrency
+    title: Transactions, Concurrency, and Resilience
+    summary: ACID guarantees, MVCC, locking, and write-ahead logging.
+    concepts:
+      - transaction_management
+      - concurrency_control
+      - mvcc
+      - locking_and_recovery
+  - id: distributed
+    title: Distributed & Replicated Systems
+    summary: Replication, sharding, two-phase commit, TrueTime, and CAP trade-offs.
+    concepts:
+      - distributed_transactions
+      - replication_and_sharding
+      - consistency_models
+      - cap_theorem
+      - truetime
+  - id: modern
+    title: Modern Data Infrastructure
+    summary: NoSQL, HTAP, streaming, and cloud-native analytics.
+    concepts:
+      - nosql_models
+      - htap
+      - cloud_data_warehouses
+      - streaming_analytics
+      - governance_lineage
+modules:
+  - id: module-01
+    week: 1
+    title: Relational Thinking & Data Modeling
+    focus: Introduce relational abstractions, relational algebra, and SQL basics.
+    concept_ids: [relational_model, relational_algebra, sql_language]
+    required_readings: [codd-1970, system-r-1976]
+    deliverables:
+      - "Translate an ER diagram into 3NF tables with keys and constraints."
+      - "Relational algebra worksheet covering projection, selection, and joins."
+  - id: module-02
+    week: 2
+    title: Schema Quality & Functional Dependencies
+    focus: Use FDs, normal forms, and trade-offs between normalization and denormalization.
+    concept_ids: [schema_design, functional_dependencies, normal_forms]
+    required_readings: [fagin-1977]
+    deliverables:
+      - "BCNF decomposition exercise on a retail dataset."
+  - id: module-03
+    week: 3
+    title: Storage Engines, Indexes, and Cost Models
+    focus: Connect physical layout choices to indexing and cost-based optimization.
+    concept_ids: [storage_engines, indexing_strategies, query_planning, cost_models]
+    required_readings: [stonebraker-1986, volcano-1994]
+    deliverables:
+      - "Buffet buffer manager lab measuring hit ratios under different workloads."
+  - id: module-04
+    week: 4
+    title: Transactions, ACID, and Concurrency Control
+    focus: ACID guarantees, two-phase locking, deadlock handling, and isolation levels.
+    concept_ids: [transaction_management, concurrency_control, locking_and_recovery]
+    required_readings: [gray-reuter-1993, bernstein-1987]
+    deliverables:
+      - "Simulate 2PL vs. optimistic control on conflicting workloads and document anomalies."
+  - id: module-05
+    week: 5
+    title: Logging, Recovery, and MVCC Internals
+    focus: WAL, ARIES redo/undo, checkpoints, multi-version storage.
+    concept_ids: [mvcc, recovery, locking_and_recovery]
+    required_readings: [aries-1992]
+    deliverables:
+      - "Paper walkthrough: build a redo/undo timeline for a sample crash log."
+  - id: module-06
+    week: 6
+    title: Replication, Sharding, and Distributed Transactions
+    focus: Data placement, two-phase commit, TrueTime, consensus.
+    concept_ids: [replication_and_sharding, distributed_transactions, truetime]
+    required_readings: [bigtable-2006, spanner-2012]
+    deliverables:
+      - "Design doc comparing leader/follower vs. multi-leader replication for a SaaS workload."
+  - id: module-07
+    week: 7
+    title: Consistency Trade-offs, CAP, and Highly Available Transactions
+    focus: CAP theorem, PACELC, HA transactions, conflict resolution.
+    concept_ids: [cap_theorem, consistency_models, nosql_models]
+    required_readings: [brewer-cap-2000, bailis-2013, dynamo-2007]
+    deliverables:
+      - "CAP discussion: justify the chosen point on the triangle for an e-commerce cart."
+  - id: module-08
+    week: 8
+    title: Modern Cloud Warehouses & Streaming/HTAP
+    focus: Cloud-native architectures, streaming engines, governance, and lineage.
+    concept_ids: [cloud_data_warehouses, htap, streaming_analytics, governance_lineage]
+    required_readings: [snowflake-2016, aurora-2017, beam-2017]
+    deliverables:
+      - "Mini-capstone: extend the plan with a streaming ingestion path feeding a warehouse."
+capstone:
+  description: Build a teaching case that traces a dataset from OLTP ingestion through replication, warehousing, and streaming dashboards while enforcing governance controls.
+  rubric_tags: [coverage, grounding, pedagogy, coherence]

@@ -1,0 +1,43 @@
+course:
+  title: "Database Systems"
+  description: "CourseGen PoC constraints for an upper-level database systems course."
+  duration_weeks: 10
+  tone: mentor
+  focus_areas:
+    - relational model
+    - transactions
+    - distributed data systems
+  audience:
+    persona: "upper-undergrad"
+    prior_knowledge:
+      - "Data structures"
+      - "Intro to SQL"
+    goals:
+      - "Project-based learning"
+      - "Industry relevance"
+  required_sources:
+    - "codd-1970"
+    - "system-r-1976"
+  banned_sources:
+    - "Wikipedia"
+  learning_objectives:
+    - "Explain the relational model and relational algebra"
+    - "Design normalized schemas and discuss trade-offs"
+    - "Contrast concurrency control techniques"
+models:
+  teacher_model: gpt-4.1
+  ta_model: gpt-4o-mini
+  student_model: gpt-4o
+  temperature: 0.25
+  max_tokens: 2048
+notebook:
+  api_base: http://localhost:5055
+  notebook_slug: database-systems-poc
+world_model:
+  schema_path: world_model/schema.sql
+  dataset_dir: data/handcrafted/database_systems
+  sqlite_path: outputs/world_model/state.sqlite
+evaluation:
+  rubrics_path: evals/rubrics.yaml
+  quiz_bank_path: data/handcrafted/database_systems/quiz_bank.json
+  max_mutations: 2

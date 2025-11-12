@@ -1,0 +1,44 @@
+[
+  {
+    "id": "quiz-sql-group",
+    "prompt": "Given Relations Orders(order_id, customer_id, total) and Customers(customer_id, region), write SQL to return each region with average order total for customers placing >=5 orders.",
+    "answer_sketch": "SELECT c.region, AVG(o.total) ... GROUP BY c.region HAVING COUNT(*) >= 5",
+    "learning_objectives": ["sql_language", "query_planning"],
+    "difficulty": "medium"
+  },
+  {
+    "id": "quiz-normalization",
+    "prompt": "A table Campaign(channel, campaign_id, region, manager, region_manager_email) exhibits repeated manager info. Show how to reach BCNF and justify the functional dependencies you used.",
+    "answer_sketch": "Identify region -> (manager, email); decompose into Campaign + RegionManager tables.",
+    "learning_objectives": ["functional_dependencies", "normal_forms"],
+    "difficulty": "medium"
+  },
+  {
+    "id": "quiz-locking",
+    "prompt": "Explain how strict two-phase locking prevents dirty reads yet can deadlock. Provide a concrete deadlock example and mitigation.",
+    "answer_sketch": "Transactions acquire X locks and hold until commit; cycle via T1 lock A then waiting on B while T2 holds B, waiting on A.",
+    "learning_objectives": ["concurrency_control", "transaction_management"],
+    "difficulty": "hard"
+  },
+  {
+    "id": "quiz-aries",
+    "prompt": "During crash recovery, outline ARIES's Analysis, Redo, and Undo phases and describe the role of LSNs and compensation log records.",
+    "answer_sketch": "Analysis rebuilds dirty page table + txn table; Redo repeats history; Undo uses CLRs for winner txns.",
+    "learning_objectives": ["recovery"],
+    "difficulty": "hard"
+  },
+  {
+    "id": "quiz-cap",
+    "prompt": "A cross-region key-value store must remain available during network partitions. According to CAP, which trade-offs are forced and what compensating techniques can preserve developer sanity?",
+    "answer_sketch": "Availability + partition tolerance imply relaxing consistency (eventual). Use version vectors, CRDTs, or client reconciliation.",
+    "learning_objectives": ["cap_theorem", "consistency_models"],
+    "difficulty": "medium"
+  },
+  {
+    "id": "quiz-streaming",
+    "prompt": "Contrast event-time vs. processing-time windows in unified streaming/batch APIs like Beam. Provide a use case where watermarks lag but correctness must be maintained.",
+    "answer_sketch": "Event-time windows keyed by data timestamps; late data handled via allowed lateness/trigger updates.",
+    "learning_objectives": ["streaming_analytics"],
+    "difficulty": "medium"
+  }
+]

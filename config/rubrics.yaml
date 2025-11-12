@@ -1,0 +1,14 @@
+# Placeholder rubric definitions consumed by StudentGraderPool.
+rubrics:
+  coverage:
+    description: Ensure all core database systems topics are present.
+    weight: 0.35
+  grounding:
+    description: Claims must cite curated sources.
+    weight: 0.25
+  pedagogy:
+    description: Includes worked examples and formative checks.
+    weight: 0.25
+  coherence:
+    description: Modules flow logically with scoped workload.
+    weight: 0.15

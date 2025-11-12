@@ -1,0 +1,22 @@
+coverage:
+  description: "Measures how well the lecture covers mandatory topics in docs/PLAN §9"
+  scale: 0-1
+  pass_threshold: 0.8
+  checklist:
+    - "Mentions relational model and SQL fundamentals"
+    - "Addresses transactions, recovery, and concurrency"
+    - "Includes distributed/modern databases"
+grounding:
+  description: "Checks for citations back to uploaded sources"
+  scale: 0-1
+  pass_threshold: 0.85
+  checklist:
+    - "Every learning objective references at least one primary source"
+    - "Claims cite papers from papers.csv"
+pedagogy:
+  description: "Evaluates clarity and scaffolding"
+  scale: 0-1
+  pass_threshold: 0.75
+  checklist:
+    - "States learning objectives and assessments"
+    - "Includes worked examples and review questions"
