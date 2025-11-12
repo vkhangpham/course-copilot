@@ -336,10 +336,13 @@ def _parse_notebook_exports(manifest: Dict[str, Any]) -> List[NotebookExport]:
         response = entry.get("response") if isinstance(entry.get("response"), dict) else None
         citations = entry.get("citations") if isinstance(entry.get("citations"), list) else []
         safe_citations = [str(cite) for cite in citations if isinstance(cite, (str, int, float))]
+        response_id = response.get("id") if response else None
         note_id = response.get("note_id") if response else None
         section_id = response.get("section_id") if response else None
         if note_id is None:
-            note_id = section_id
+            note_id = section_id or response_id
+        if section_id is None:
+            section_id = response_id
         results.append(
             NotebookExport(
                 title=str(entry.get("title")) if entry.get("title") else None,

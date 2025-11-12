@@ -87,7 +87,7 @@ def _write_run(
                 "title": "Course Plan",
                 "path": str(course_plan),
                 "citations": ["codd-1970"],
-                "response": {"status": "ok", "notebook": notebook_slug, "section_id": "sec-1"},
+                "response": {"status": "ok", "notebook": notebook_slug, "id": "note-1"},
             },
         ]
         notebook_summary = {
@@ -95,7 +95,7 @@ def _write_run(
             "success": 1,
             "skipped": 0,
             "errors": 0,
-            "note_ids": ["sec-1"],
+            "note_ids": ["note-1"],
             "queued_exports": [],
         }
     else:
@@ -162,6 +162,7 @@ def test_list_runs_and_detail(portal_settings: PortalSettings) -> None:
     assert "Course Plan" in detail["course_plan_excerpt"]
     assert detail["notebook_slug"] == "database-systems-poc"
     assert detail["notebook_exports"][0]["status"] == "ok"
+    assert detail["notebook_exports"][0]["note_id"] == "note-1"
     assert all(entry["title"] != "notebook_preflight" for entry in detail["notebook_exports"])
     assert detail["evaluation_attempts"][0]["iteration"] == 1
     assert detail["evaluation_attempts"][0]["overall_score"] == 0.5
@@ -190,6 +191,7 @@ def test_list_runs_and_detail(portal_settings: PortalSettings) -> None:
     assert notebook_resp.status_code == 200
     notebook_entries = notebook_resp.json()
     assert notebook_entries
+    assert notebook_entries[0]["note_id"] == "note-1"
     assert all(entry["title"] != "notebook_preflight" for entry in notebook_entries)
 
     cp_resp = client.get(f"/runs/{run_id}/course-plan")
@@ -235,6 +237,26 @@ def test_run_detail_prefers_export_notebook_slug(portal_settings: PortalSettings
     assert response.status_code == 200
     data = response.json()
     assert data["notebook_slug"] == "custom-notebook"
+
+
+def test_run_detail_falls_back_to_response_id(portal_settings: PortalSettings) -> None:
+    _write_run(portal_settings.outputs_dir, include_notebook=True)
+    manifest_path = portal_settings.outputs_dir / "artifacts" / "run-20250101-000000-manifest.json"
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    payload["notebook_exports"][0]["response"] = {
+        "status": "ok",
+        "notebook": "database-systems-poc",
+        "id": "note-xyz",
+    }
+    manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    client = TestClient(app)
+    response = client.get("/runs/20250101-000000")
+    assert response.status_code == 200
+    data = response.json()
+    export = data["notebook_exports"][0]
+    assert export["note_id"] == "note-xyz"
+    assert export["section_id"] == "note-xyz"
 
 
 def test_resolve_path_blocks_outside_outputs(tmp_path: Path) -> None:
