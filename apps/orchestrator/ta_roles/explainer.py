@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,6 +28,7 @@ class Explainer:
         self.dataset_root = (dataset_root or DEFAULT_DATASET_ROOT).expanduser().resolve()
         self._concepts = self._load_concepts()
         self._definitions = self._load_definitions()
+        self._timeline_by_concept = self._load_timeline()
 
     def write(self, module: str, *, limit: int = 3) -> List[ExplanationChunk]:
         concepts = self._concepts
@@ -76,10 +78,16 @@ class Explainer:
             joined = ", ".join(prereqs[:3]) + ("…" if len(prereqs) > 3 else "")
             body_lines.append(f"*Prerequisites.* {joined}")
 
+        history_line, history_citation = self._history_line(concept_id)
+        if history_line:
+            body_lines.append(history_line)
+
         if not body_lines:
             body_lines.append("Explanation forthcoming as the world model expands.")
 
         citations = self._citations_for(concept, definition)
+        if history_citation and history_citation not in citations:
+            citations.append(history_citation)
 
         return ExplanationChunk(
             heading=heading,
@@ -137,6 +145,32 @@ class Explainer:
                 mapping[concept_id] = entry
         return mapping
 
+    def _load_timeline(self) -> Dict[str, List[Dict[str, object]]]:
+        timeline_path = self.dataset_root / "timeline.csv"
+        if not timeline_path.exists():
+            return {}
+        events: Dict[str, List[Dict[str, object]]] = {}
+        with timeline_path.open("r", encoding="utf-8") as handle:
+            reader = csv.DictReader(handle)
+            for row in reader:
+                if not isinstance(row, dict):
+                    continue
+                related_raw = row.get("related_concepts") or row.get("concept_id") or ""
+                related = [token.strip() for token in related_raw.split(",") if token.strip()]
+                if not related:
+                    continue
+                event = {
+                    "event": row.get("event") or row.get("event_label") or "Timeline event",
+                    "year": _safe_int(row.get("year") or row.get("event_year")),
+                    "summary": row.get("why_it_matters") or row.get("summary") or "",
+                    "citation": row.get("citation_id") or row.get("citation"),
+                }
+                for concept_id in related:
+                    events.setdefault(concept_id, []).append(event)
+        for event_list in events.values():
+            event_list.sort(key=lambda item: (item.get("year") is None, item.get("year")))
+        return events
+
     @staticmethod
     def _tokenize(text: str) -> List[str]:
         tokens = [token for token in re.split(r"[^a-z0-9]+", text.lower()) if len(token) >= 3]
@@ -183,3 +217,26 @@ class Explainer:
         if isinstance(values, Sequence):
             return [str(item) for item in values if isinstance(item, str) and item.strip()]
         return []
+
+    def _history_line(self, concept_id: str) -> tuple[str | None, str | None]:
+        entries = self._timeline_by_concept.get(concept_id)
+        if not entries:
+            return None, None
+        event = entries[0]
+        year = event.get("year")
+        summary = (event.get("summary") or "").strip()
+        label = event.get("event") or "Milestone"
+        if year:
+            line = f"*History.* {year}: {label}."
+        else:
+            line = f"*History.* {label}."
+        if summary:
+            line = f"{line} {summary}"
+        return line, event.get("citation")
+
+
+def _safe_int(value: object) -> int | None:
+    try:
+        return int(value) if value not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
