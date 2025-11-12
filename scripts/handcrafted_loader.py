@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Sequence
 
+import re
+
 import yaml
 
 
@@ -121,7 +123,11 @@ def validate_dataset(dataset: HandcraftedDataset) -> tuple[list[str], list[str]]
     # Timeline entries
     for row in dataset.timeline:
         event = row.get("event")
-        related = _split(row.get("related_concepts", ""))
+        related_field = row.get("concept_ids")
+        if isinstance(related_field, list):
+            related = related_field
+        else:
+            related = _split(row.get("related_concepts", ""))
         for concept in related:
             if concept not in concept_ids:
                 errors.append(f"Timeline event '{event}' references unknown concept {concept}")
@@ -187,7 +193,10 @@ def _load_csv(path: Path, *, required: bool = True) -> list[dict[str, str]]:
 
 
 def _split(raw: str | None) -> list[str]:
-    return [token.strip() for token in (raw or "").split(";") if token.strip()]
+    if not raw:
+        return []
+    tokens = re.split(r"[;,]", raw)
+    return [token.strip() for token in tokens if token.strip()]
 
 
 def _unique_ids(rows: Sequence[dict[str, Any]], *, entity: str, errors: list[str]) -> set[str]:

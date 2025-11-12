@@ -51,3 +51,17 @@ def test_validate_dataset_reports_graph_citation_once(tmp_path: Path) -> None:
     citation_errors = [err for err in errors if "missing-paper" in err.lower()]
     assert citation_errors, "Expected at least one citation error"
     assert len(citation_errors) == 1, f"Duplicate citation errors detected: {citation_errors}"
+
+
+def test_validate_dataset_flags_unknown_timeline_concept(tmp_path: Path) -> None:
+    dataset = load_dataset(DATASET_DIR)
+    dataset.timeline.append(
+        {
+            "event": "Bogus milestone",
+            "year": "2024",
+            "concept_ids": ["nonexistent_concept"],
+            "citation_id": dataset.papers[0]["id"],
+        }
+    )
+    errors, _ = validate_dataset(dataset)
+    assert any("timeline event" in err.lower() and "nonexistent_concept" in err for err in errors)
