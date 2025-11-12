@@ -113,6 +113,13 @@ def _load_datasets(source_dir: Path) -> Dict[str, Any]:
     for row in timeline_rows:
         related = _split_list(row.get("related_concepts", ""))
         row["concept_ids"] = related
+        raw_event = row.get("event") or row.get("event_label")
+        event_label = raw_event.strip() if isinstance(raw_event, str) else raw_event
+        if not event_label:
+            raise ValueError("Timeline entry missing event/event_label")
+        row["event"] = event_label
+        row["event_label"] = event_label
+
         raw_citation = row.get("citation_id") or row.get("citation")
         citation_id = raw_citation.strip() if isinstance(raw_citation, str) else raw_citation
         if citation_id:
@@ -121,12 +128,12 @@ def _load_datasets(source_dir: Path) -> Dict[str, Any]:
             row.pop("citation_id", None)
         if citation_id and citation_id not in paper_ids:
             raise ValueError(
-                f"Timeline entry {row.get('event')} references unknown citation {citation_id}"
+                f"Timeline entry {event_label} references unknown citation {citation_id}"
             )
         for cid in related:
             if cid not in concepts:
                 raise ValueError(
-                    f"Timeline entry {row.get('event')} references unknown concept {cid}"
+                    f"Timeline entry {event_label} references unknown concept {cid}"
                 )
 
     quiz_bank = json.loads((source_dir / "quiz_bank.json").read_text(encoding="utf-8"))
@@ -420,7 +427,7 @@ def _insert_timeline(
     for row in events:
         year = int(row["year"]) if row.get("year") else None
         description = row.get("why_it_matters")
-        event_label = row.get("event")
+        event_label = row.get("event") or row.get("event_label")
         citation = row.get("citation_id") or row.get("citation")
         for concept_id in row.get("concept_ids", []):
             if concept_id not in concepts:
