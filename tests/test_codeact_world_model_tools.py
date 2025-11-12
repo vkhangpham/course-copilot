@@ -2,7 +2,14 @@ import tempfile
 from pathlib import Path
 
 from scripts.ingest_handcrafted import ingest
-from apps.codeact.tools.world_model import fetch_concepts, search_events, lookup_paper, record_claim
+from apps.codeact.tools.world_model import (
+    fetch_concepts,
+    list_claims,
+    list_relationships,
+    lookup_paper,
+    record_claim,
+    search_events,
+)
 from world_model.storage import WorldModelStore
 
 # The tests expect the world-model SQLite to exist in a temp dir, so we ingest a
@@ -50,3 +57,17 @@ def test_record_claim_persists(tmp_path: Path) -> None:
     db = WorldModelStore(store)
     rows = db.query("SELECT subject_id, body FROM claims WHERE body = ?", ("Test claim",))
     assert rows and rows[0][0] == "relational_model"
+
+
+def test_list_claims_returns_records(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    record_claim(subject="relational_model", content="Claim", citation=None, store_path=store)
+    claims = list_claims(subject_id="relational_model", store_path=store)
+    assert any(claim["subject_id"] == "relational_model" for claim in claims)
+
+
+def test_list_relationships_filters(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    relationships = list_relationships(source_id="relational_model", store_path=store)
+    assert relationships, "Expected relationship rows"
+    assert relationships[0]["source_id"] == "relational_model"

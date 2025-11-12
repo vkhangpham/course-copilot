@@ -1,5 +1,7 @@
 import io
 import json
+import os
+import shutil
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -20,6 +22,23 @@ class CLIRunPocTests(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         self.repo_root = Path(self._tmp.name)
         self._prepare_repo()
+        self._openai_key = os.environ.get("OPENAI_API_KEY")
+        os.environ["OPENAI_API_KEY"] = self._openai_key or "test-openai-key"
+        self.addCleanup(self._restore_openai_key)
+        self._notebook_slug = os.environ.get("OPEN_NOTEBOOK_SLUG")
+        self.addCleanup(self._restore_notebook_env)
+
+    def _restore_openai_key(self) -> None:
+        if self._openai_key is None:
+            os.environ.pop("OPENAI_API_KEY", None)
+        else:
+            os.environ["OPENAI_API_KEY"] = self._openai_key
+
+    def _restore_notebook_env(self) -> None:
+        if self._notebook_slug is None:
+            os.environ.pop("OPEN_NOTEBOOK_SLUG", None)
+        else:
+            os.environ["OPEN_NOTEBOOK_SLUG"] = self._notebook_slug
 
     def _prepare_repo(self) -> None:
         (self.repo_root / "config").mkdir(parents=True, exist_ok=True)
@@ -82,6 +101,27 @@ evaluation:
 """
         (self.repo_root / "config" / "pipeline.yaml").write_text(pipeline_yaml.strip(), encoding="utf-8")
         self._seed_dataset(dataset_dir, quiz_bank)
+        self.constraints_path = self.repo_root / "constraints_override.yaml"
+        self.constraints_path.write_text(
+            yaml_dump(
+                {
+                    "title": "Alt CLI Course",
+                    "description": "Override",
+                    "duration_weeks": 5,
+                    "focus_areas": ["Transactions"],
+                    "tone": "mentor",
+                    "audience": {
+                        "persona": "Override Persona",
+                        "prior_knowledge": ["SQL"],
+                        "goals": ["Ship"],
+                    },
+                    "required_sources": ["paper_a"],
+                    "banned_sources": [],
+                    "learning_objectives": ["Explain overrides"],
+                }
+            ),
+            encoding="utf-8",
+        )
 
     def _seed_dataset(self, dataset_dir: Path, quiz_bank: Path) -> None:
         (dataset_dir / "authors.csv").write_text(
@@ -230,6 +270,25 @@ evaluation:
         exit_code, output, _ = self._run_cli(["--ablations", "no_world_model"])
         self.assertEqual(exit_code, 0)
         self.assertNotIn("[highlights]", output)
+
+    def test_cli_constraints_override_applied(self) -> None:
+        exit_code, _, output_dir = self._run_cli(["--constraints", str(self.constraints_path)])
+        self.assertEqual(exit_code, 0)
+        plan_text = (output_dir / "course_plan.md").read_text(encoding="utf-8")
+        self.assertIn("Alt CLI Course", plan_text)
+
+    def test_cli_concept_alias_overrides_dataset_dir(self) -> None:
+        concept_override = self.repo_root / "alt_data" / "database_systems"
+        shutil.copytree(self.dataset_dir, concept_override)
+        shutil.rmtree(self.dataset_dir)
+
+        exit_code, _, _ = self._run_cli(["--concept", str(concept_override)])
+        self.assertEqual(exit_code, 0)
+
+    def test_cli_notebook_override_updates_env(self) -> None:
+        exit_code, _, _ = self._run_cli(["--notebook", "custom-slug"])
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(os.environ.get("OPEN_NOTEBOOK_SLUG"), "custom-slug")
 
 
 if __name__ == "__main__":

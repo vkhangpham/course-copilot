@@ -53,6 +53,13 @@ def test_query_claims_handles_missing_concept(tmp_path: Path) -> None:
     assert rows == []
 
 
+def test_query_claims_without_filter_returns_rows(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    rows = query_claims(store, None, limit=5)
+    assert rows
+    assert all("concept" in row for row in rows)
+
+
 def test_query_papers_filters_by_keyword(tmp_path: Path) -> None:
     store = _build_store(tmp_path)
     rows = query_papers(store, keyword="relational")

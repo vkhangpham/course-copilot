@@ -18,6 +18,11 @@ EXPORT_MIRROR_ENV = "OPEN_NOTEBOOK_EXPORT_MIRROR"
 DEFAULT_EXPORT_DIR = Path("outputs/notebook_exports")
 
 
+def _export_dir_configured() -> bool:
+    raw = os.getenv(EXPORT_DIR_ENV)
+    return bool(raw and raw.strip())
+
+
 def push_notebook_section(
     *,
     notebook_slug: str | None = None,
@@ -29,15 +34,20 @@ def push_notebook_section(
 ) -> Dict[str, Any]:
     """Send a markdown section to the configured Open Notebook instance."""
 
-    slug = notebook_slug or os.getenv("OPEN_NOTEBOOK_SLUG")
+    slug = (notebook_slug or os.getenv("OPEN_NOTEBOOK_SLUG") or "").strip()
     if not slug:
         raise ValueError("Notebook slug required (set OPEN_NOTEBOOK_SLUG or pass notebook_slug)")
 
-    base_url = api_base or os.getenv("OPEN_NOTEBOOK_API_BASE")
+    base_url = (api_base or os.getenv("OPEN_NOTEBOOK_API_BASE") or "").strip()
     token = api_key or os.getenv("OPEN_NOTEBOOK_API_KEY")
     payload_citations = list(citations or [])
 
     if not base_url:
+        if not _export_dir_configured():
+            raise ValueError(
+                "Open Notebook API base required (set OPEN_NOTEBOOK_API_BASE or pass api_base). "
+                "To run offline, set OPEN_NOTEBOOK_EXPORT_DIR to opt into local exports."
+            )
         return _persist_stub_export(
             notebook_slug=slug,
             title=title,
@@ -56,7 +66,7 @@ def push_notebook_section(
         )
         logger.info(
             "push_notebook_section succeeded",
-            extra={"notebook": notebook_slug, "api_base": base_url},
+            extra={"notebook": slug, "api_base": base_url},
         )
         if _should_mirror_exports():
             _persist_stub_export(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional
 
 import typer
 from rich.console import Console
@@ -77,12 +77,20 @@ def query_timeline(
     ]
 
 
-def query_claims(store_path: Path, concept_id: str) -> List[dict]:
+def query_claims(
+    store_path: Path,
+    concept_id: Optional[str] = None,
+    limit: int = 25,
+) -> List[dict]:
     store = _resolve_store(store_path)
-    sql = (
-        "SELECT subject_id, body, citation, created_at FROM claims WHERE subject_id = ? ORDER BY created_at DESC"
-    )
-    rows = store.query(sql, (concept_id,))
+    sql = "SELECT subject_id, body, citation, created_at FROM claims"
+    params: List[Any] = []
+    if concept_id:
+        sql += " WHERE subject_id = ?"
+        params.append(concept_id)
+    sql += " ORDER BY created_at DESC LIMIT ?"
+    params.append(limit)
+    rows = store.query(sql, tuple(params))
     return [
         {
             "concept": row[0],
@@ -262,18 +270,25 @@ def timeline(
 
 @app.command()
 def claims(
-    concept: str = typer.Argument(..., help="Concept identifier (see concepts command)."),
+    concept: Optional[str] = typer.Argument(
+        None,
+        help="Concept identifier to filter by (omit to show all claims).",
+    ),
     store: Path = typer.Option(Path("world_model/state.sqlite"), "--store"),
+    limit: int = typer.Option(25, min=1, help="Maximum number of rows to display."),
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
-    """Show definition/provenance claims for a concept."""
+    """Show claims recorded in the world model."""
 
-    rows = query_claims(store, concept)
+    rows = query_claims(store, concept, limit)
     if as_json:
         typer.echo(json.dumps(rows, indent=2, ensure_ascii=False))
         return
     if not rows:
-        console.print(f"[yellow]No claims stored for {concept}[/yellow]")
+        if concept:
+            console.print(f"[yellow]No claims stored for {concept}[/yellow]")
+        else:
+            console.print("[yellow]No claims found in the store.[/yellow]")
         return
     _print_table(["Concept", "Claim", "Citation"], rows, ["concept", "body", "citation"])
 

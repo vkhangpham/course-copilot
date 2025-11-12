@@ -19,6 +19,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Path to the pipeline YAML (default: config/pipeline.yaml)",
     )
     parser.add_argument(
+        "--constraints",
+        default=None,
+        help="Optional course constraints YAML that overrides the pipeline config.",
+    )
+    parser.add_argument(
         "--repo-root",
         default=".",
         help="Repository root (default: current directory)",
@@ -34,9 +39,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override the dataset directory defined in config.world_model.dataset_dir",
     )
     parser.add_argument(
+        "--concept",
+        default=None,
+        help="Alias for --dataset-dir (matches docs runbook).",
+    )
+    parser.add_argument(
         "--world-model-store",
         default=None,
         help="Override the SQLite world-model store path defined in config.world_model.sqlite_path",
+    )
+    parser.add_argument(
+        "--notebook",
+        default=None,
+        help="Override the notebook slug used for Open Notebook exports.",
     )
     parser.add_argument(
         "--ablations",
@@ -66,16 +81,22 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
+        constraints_path = Path(args.constraints).resolve() if args.constraints else None
+        concept_override = Path(args.concept).resolve() if args.concept else None
+        dataset_override = Path(args.dataset_dir).resolve() if args.dataset_dir else concept_override
+
         ctx = bootstrap_pipeline(
             config_path=Path(args.config),
             repo_root=Path(args.repo_root),
             output_dir=Path(args.output_dir).resolve() if args.output_dir else None,
             ablations=args.ablations,
-            dataset_dir_override=Path(args.dataset_dir).resolve() if args.dataset_dir else None,
+            dataset_dir_override=dataset_override,
             world_model_store_override=Path(args.world_model_store).resolve()
             if args.world_model_store
             else None,
             ingest_before_run=args.ingest_world_model,
+            constraints_path=constraints_path,
+            notebook_slug_override=args.notebook,
         )
         artifacts = run_pipeline(ctx, dry_run=args.dry_run)
         _print_eval_summary(artifacts, quiet=args.quiet)
@@ -147,6 +168,11 @@ def _print_highlight_hint(artifacts: PipelineRunArtifacts | None, *, quiet: bool
     """Surface the highlight artifact path (if any) after the run."""
 
     if artifacts is None or quiet:
+        return
+
+    # When the world model is disabled via ablations we still emit placeholder
+    # artifacts, but we should not imply that a WM-derived highlight exists.
+    if not getattr(artifacts, "use_world_model", True):
         return
 
     highlight_path = getattr(artifacts, "highlights", None)

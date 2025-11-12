@@ -34,6 +34,21 @@ class WorldModelAdapterTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0][1], "Seed concept summary")
 
+    def test_list_claims_filters_by_subject(self) -> None:
+        self.adapter.record_claim(subject="concept_seed", content="Claim A", citation=None)
+        claims = self.adapter.list_claims(subject_id="concept_seed")
+        self.assertTrue(claims)
+        self.assertEqual(claims[0]["subject_id"], "concept_seed")
+
+    def test_list_relationships_returns_rows(self) -> None:
+        self.adapter.store.execute_many(
+            "INSERT INTO relationships(source_id, target_id, relation_type, justification) VALUES (?, ?, ?, ?)",
+            [("concept_seed", "concept_parent", "prerequisite", "reference")],
+        )
+        relationships = self.adapter.list_relationships(source_id="concept_seed")
+        self.assertTrue(relationships)
+        self.assertEqual(relationships[0]["relation_type"], "prerequisite")
+
     def test_fetch_concept_tree_returns_expected_fields(self) -> None:
         tree = self.adapter.fetch_concept_tree(topic="Seed", max_depth=0, limit=1)
         self.assertTrue(tree)

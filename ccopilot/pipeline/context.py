@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from ccopilot.core.ablation import AblationConfig
 from ccopilot.core.config import PipelineConfig
+from ccopilot.core.dspy_runtime import DSPyModelHandles
 from ccopilot.core.provenance import ProvenanceLogger
 
 
@@ -52,5 +53,6 @@ class PipelineContext(BaseModel):
     paths: PipelinePaths
     env: Dict[str, str] = Field(default_factory=dict)
     provenance: ProvenanceLogger
+    dspy_handles: DSPyModelHandles | None = None
 
     model_config = ConfigDict(arbitrary_types_allowed=True)

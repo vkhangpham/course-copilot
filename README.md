@@ -40,7 +40,7 @@ The stubbed pipeline emits:
 
 After every non-dry run the CLI also prints a short evaluation summary (overall score plus rubric pass/fail). If the student graders are disabled or missing, it reports that status instead of a score so operators immediately know why no grade was recorded. Pass `--quiet` when scripting to suppress these `[eval]` / `[highlights]` hints while still writing every artifact.
 
-Notebook exports pull their defaults from environment variables that `coursegen-poc` now sets during bootstrap: `OPEN_NOTEBOOK_API_BASE`, `OPEN_NOTEBOOK_API_KEY`, and `OPEN_NOTEBOOK_SLUG`. The CodeAct `push_notebook_section` tool will fall back to these values whenever the orchestrator does not pass explicit overrides, so make sure the config’s `notebook` section is filled in before running against a real instance.
+Notebook exports pull their defaults from environment variables that `coursegen-poc` now sets during bootstrap: `OPEN_NOTEBOOK_API_BASE`, `OPEN_NOTEBOOK_API_KEY`, and `OPEN_NOTEBOOK_SLUG`. The CodeAct `push_notebook_section` tool will fall back to these values whenever the orchestrator does not pass explicit overrides, so make sure the config’s `notebook` section is filled in before running against a real instance. If you intentionally run without a live Open Notebook API, set `OPEN_NOTEBOOK_EXPORT_DIR=/path/to/exports` to opt into offline `.jsonl` exports; otherwise the tool now raises an error when no API base is configured.
 
 ### Running the grader CLI
 
@@ -51,6 +51,26 @@ python -m apps.orchestrator.eval_loop --artifacts-dir outputs --lectures-dir lec
 ```
 
 Add `--quiet` when you only care about the JSONL output under `outputs/evaluations/` and don’t want the console summary; other options (like `--required-source`) map 1:1 with the orchestrator’s grading hooks.
+
+### Portal backend + shadcn UI
+
+A minimal observability surface now lives under `apps/portal_backend` (FastAPI) and `frontend/` (Next.js + shadcn/ui). It reads the manifests that `coursegen-poc` emits under `outputs/artifacts` and exposes them as a small dashboard.
+
+1. Start the API (defaults to `http://localhost:8001` but honors `PORTAL_OUTPUTS_DIR` and `PORTAL_NOTEBOOK_SLUG`):
+   ```bash
+   uvicorn apps.portal_backend.main:app --reload --port 8001
+   ```
+2. Install FE deps and launch the Next.js dev server (uses `NEXT_PUBLIC_PORTAL_API_BASE`, defaulting to `http://localhost:8001`):
+   ```bash
+   cd frontend
+   pnpm install   # npm/yarn also work
+   pnpm dev
+   ```
+3. Visit `http://localhost:3000` to see the latest run summary, world-model highlights, rubric scores, and a Notebook shortcut. The UI polls the backend on every page load, so re-run the CLI to refresh data.
+
+Optional env vars:
+- `NEXT_PUBLIC_NOTEBOOK_BASE` — base URL of your Open Notebook instance; combined with `OPEN_NOTEBOOK_SLUG` (or `PORTAL_NOTEBOOK_SLUG`) for the “Open Notebook” button.
+- `NEXT_PUBLIC_TRIGGER_RUN_URL` — link to whatever automation you use to kick off a new orchestrator run (defaults to `#`).
 
 ## Development Workflow
 - Use **bd (beads)** for issue tracking (`bd ready --json`, `bd update <id> --status in_progress`).

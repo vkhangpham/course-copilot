@@ -10,7 +10,8 @@ from typing import Dict
 from dotenv import load_dotenv
 
 from ccopilot.core.ablation import AblationConfig, parse_ablation_flag
-from ccopilot.core.config import PipelineConfig, load_pipeline_config
+from ccopilot.core.config import PipelineConfig, load_course_constraints, load_pipeline_config
+from ccopilot.core.dspy_runtime import DSPyConfigurationError, configure_dspy_models
 from ccopilot.core.provenance import ProvenanceEvent, ProvenanceLogger
 
 from .context import PipelineContext, PipelinePaths
@@ -42,6 +43,8 @@ def bootstrap_pipeline(
     dataset_dir_override: Path | None = None,
     world_model_store_override: Path | None = None,
     ingest_before_run: bool = False,
+    constraints_path: Path | None = None,
+    notebook_slug_override: str | None = None,
 ) -> PipelineContext:
     """
     Load configuration, environment variables, and construct the pipeline context.
@@ -58,6 +61,10 @@ def bootstrap_pipeline(
         Comma-separated ablation flags (see `AblationSwitch`).
     env_keys:
         Environment variables to capture for provenance logging.
+    constraints_path:
+        Optional path to a course constraints YAML that overrides config.course.
+    notebook_slug_override:
+        Optional notebook slug override for Notebook exports.
     """
 
     load_dotenv()  # make .env values available
@@ -68,6 +75,10 @@ def bootstrap_pipeline(
 
     config: PipelineConfig = load_pipeline_config(config_path)
 
+    if constraints_path is not None:
+        constraints = load_course_constraints(constraints_path.resolve())
+        config = config.model_copy(update={"course": constraints})
+
     if dataset_dir_override or world_model_store_override:
         world_model_cfg = config.world_model
         update_payload = {}
@@ -77,6 +88,10 @@ def bootstrap_pipeline(
             update_payload["sqlite_path"] = world_model_store_override.resolve()
         world_model_cfg = world_model_cfg.model_copy(update=update_payload)
         config = config.model_copy(update={"world_model": world_model_cfg})
+    if notebook_slug_override:
+        notebook_cfg = config.notebook.model_copy(update={"notebook_slug": notebook_slug_override})
+        config = config.model_copy(update={"notebook": notebook_cfg})
+
     ablation_cfg: AblationConfig = parse_ablation_flag(ablations)
 
     paths = PipelinePaths(
@@ -95,6 +110,24 @@ def bootstrap_pipeline(
         paths=paths,
         env=env_snapshot,
         provenance=provenance,
+    )
+
+    try:
+        ctx.dspy_handles = configure_dspy_models(config.models)
+    except DSPyConfigurationError as exc:
+        raise RuntimeError("Unable to configure DSPy/OpenAI models") from exc
+
+    ctx.provenance.log(
+        ProvenanceEvent(
+            stage="bootstrap",
+            message="DSPy OpenAI models configured",
+            agent="ccopilot.pipeline",
+            payload={
+                "teacher_model": config.models.teacher_model,
+                "ta_model": config.models.ta_model,
+                "student_model": config.models.student_model,
+            },
+        )
     )
 
     _ensure_dataset_exists(config.world_model.dataset_dir)

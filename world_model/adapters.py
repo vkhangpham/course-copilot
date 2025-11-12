@@ -193,3 +193,63 @@ class WorldModelAdapter:
             "body": content,
             "citation": citation,
         }
+
+    def list_claims(
+        self,
+        *,
+        subject_id: str | None = None,
+        limit: int = 25,
+    ) -> list[dict[str, Any]]:
+        sql = "SELECT id, subject_id, body, citation, created_at FROM claims WHERE 1=1"
+        params: List[Any] = []
+        if subject_id:
+            sql += " AND subject_id = ?"
+            params.append(subject_id)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        rows = self.store.query(sql, tuple(params))
+        return [
+            {
+                "id": row[0],
+                "subject_id": row[1],
+                "body": row[2],
+                "citation": row[3],
+                "created_at": row[4],
+            }
+            for row in rows
+        ]
+
+    def list_relationships(
+        self,
+        *,
+        source_id: str | None = None,
+        target_id: str | None = None,
+        relation_type: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        sql = (
+            "SELECT source_id, target_id, relation_type, justification "
+            "FROM relationships WHERE 1=1"
+        )
+        params: List[Any] = []
+        if source_id:
+            sql += " AND source_id = ?"
+            params.append(source_id)
+        if target_id:
+            sql += " AND target_id = ?"
+            params.append(target_id)
+        if relation_type:
+            sql += " AND relation_type = ?"
+            params.append(relation_type)
+        sql += " ORDER BY id ASC LIMIT ?"
+        params.append(limit)
+        rows = self.store.query(sql, tuple(params))
+        return [
+            {
+                "source_id": row[0],
+                "target_id": row[1],
+                "relation_type": row[2],
+                "justification": row[3],
+            }
+            for row in rows
+        ]

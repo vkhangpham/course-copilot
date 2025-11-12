@@ -51,3 +51,28 @@ def record_claim(
     store_path: Path | None = None,
 ) -> dict[str, Any]:
     return _adapter(store_path).record_claim(subject=subject, content=content, citation=citation)
+
+
+def list_claims(
+    *,
+    subject_id: str | None = None,
+    limit: int = 25,
+    store_path: Path | None = None,
+) -> list[dict[str, Any]]:
+    return _adapter(store_path).list_claims(subject_id=subject_id, limit=limit)
+
+
+def list_relationships(
+    *,
+    source_id: str | None = None,
+    target_id: str | None = None,
+    relation_type: str | None = None,
+    limit: int = 50,
+    store_path: Path | None = None,
+) -> list[dict[str, Any]]:
+    return _adapter(store_path).list_relationships(
+        source_id=source_id,
+        target_id=target_id,
+        relation_type=relation_type,
+        limit=limit,
+    )
