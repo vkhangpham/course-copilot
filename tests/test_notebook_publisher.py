@@ -42,6 +42,18 @@ def test_derive_title_handles_bom_heading() -> None:
     assert derived == "Week 1 – Overview"
 
 
+def test_derive_title_handles_setext_heading() -> None:
+    markdown = """
+Week 1 — Relational Thinking
+============================
+
+Content goes here
+    """
+
+    derived = NotebookPublisher._derive_title(markdown, fallback="Fallback Title")
+    assert derived == "Week 1 — Relational Thinking"
+
+
 def test_publish_invokes_push_notebook_section(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     calls: List[dict] = []
 
@@ -179,6 +191,14 @@ def test_chunk_markdown_sections_handles_bom_prefixed_headings() -> None:
     assert chunks[0][1] == "line"
     assert chunks[1][0] == "Week 1"
     assert chunks[1][1] == "content"
+
+
+def test_chunk_markdown_sections_handles_setext_headings() -> None:
+    markdown = """Introduction\n===========\nBody\n\nWeek 1\n------\nmore"""
+    chunks = chunk_markdown_sections(markdown, "Fallback")
+    assert len(chunks) == 2
+    assert chunks[0] == ("Introduction", "Body")
+    assert chunks[1] == ("Week 1", "more")
 
 
 def test_build_sections_from_markdown_limits_sections(tmp_path: Path) -> None:

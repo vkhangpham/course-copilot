@@ -20,6 +20,24 @@ def _strip_zero_width_prefix(text: str) -> str:
     return text.lstrip(_ZERO_WIDTH_PREFIXES)
 
 
+def _is_setext_underline(line: str) -> bool:
+    stripped = _strip_zero_width_prefix(line.strip())
+    if not stripped:
+        return False
+    unique_chars = set(stripped)
+    return unique_chars.issubset({"=", "-"}) and len(stripped.replace(" ", "")) >= 3
+
+
+def _extract_setext_heading(lines: List[str], underline: str) -> str | None:
+    if not lines or not _is_setext_underline(underline):
+        return None
+    candidate = _strip_zero_width_prefix(lines[-1].strip())
+    if not candidate:
+        return None
+    lines.pop()
+    return candidate
+
+
 @dataclass(slots=True)
 class NotebookSectionInput:
     title: str
@@ -161,12 +179,17 @@ class NotebookPublisher:
 
     @staticmethod
     def _derive_title(markdown: str, *, fallback: str) -> str:
-        for line in markdown.splitlines():
+        lines = markdown.splitlines()
+        for idx, line in enumerate(lines):
             stripped = _strip_zero_width_prefix(line.strip())
             if stripped.startswith("#"):
                 heading = _strip_zero_width_prefix(stripped.lstrip("# ").strip())
                 if heading:
                     return heading
+            if idx > 0 and _is_setext_underline(line):
+                candidate = _strip_zero_width_prefix(lines[idx - 1].strip())
+                if candidate:
+                    return candidate
         return fallback
 
 
@@ -202,15 +225,30 @@ def chunk_markdown_sections(markdown: str, fallback_title: str) -> List[tuple[st
         if content:
             sections.append((current_title, content))
 
-    for line in markdown.splitlines():
+    lines = markdown.splitlines()
+    idx = 0
+    while idx < len(lines):
+        line = lines[idx]
         heading = _extract_heading(line)
+        if not heading:
+            heading = _extract_setext_heading(current_lines, line)
+            if heading:
+                # Setext underline should not appear in section body.
+                idx += 1
+                if current_lines:
+                    flush()
+                current_title = heading
+                current_lines = []
+                continue
         if heading:
             if current_lines:
                 flush()
             current_title = heading
             current_lines = []
+            idx += 1
             continue
         current_lines.append(line)
+        idx += 1
 
     if current_lines:
         flush()
