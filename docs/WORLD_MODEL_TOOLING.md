@@ -29,8 +29,12 @@ All IDs are lowercase snake_case and must match across files (concepts ↔ taxon
 | Validate dataset | `validate-handcrafted data/handcrafted/database_systems` |
 | Ingest snapshot | `python scripts/ingest_handcrafted.py data/handcrafted/database_systems world_model/state.sqlite --jsonl outputs/world_model/snapshot.jsonl` |
 | Inspect concepts | `wm-inspect concepts --store world_model/state.sqlite --topic transaction` |
+| List timeline events | `wm-inspect timeline --store world_model/state.sqlite --concept transactions --year 2012` |
 | List papers | `wm-inspect papers --keyword relational --year 1970` |
 | List authors | `wm-inspect authors --keyword stonebraker` |
+| Show definitions | `wm-inspect definitions --concept transaction_management` |
+| Inspect graph edges | `wm-inspect graph --concept relational_model` |
+| Inspect stored artifacts | `wm-inspect artifacts --type quiz_bank --store world_model/state.sqlite` |
 | Run orchestrator with fresh ingest | `coursegen-poc --config config/pipeline.yaml --ingest-world-model` |
 
 The `coursegen-poc` CLI also accepts `--dataset-dir` and `--world-model-store` if you need to point
