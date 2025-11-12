@@ -49,6 +49,7 @@ class TeacherArtifacts:
     provenance: Path
     manifest: Path
     highlights: Path | None = None
+    highlight_source: str | None = None
     teacher_trace: Path | None = None
     notebook_exports: List[Dict[str, Any]] | None = None
     notebook_export_summary: Dict[str, Any] | None = None
@@ -100,6 +101,7 @@ class TeacherOrchestrator:
         for path in (output_dir, lecture_dir, eval_dir, prov_dir, manifest_dir):
             path.mkdir(parents=True, exist_ok=True)
 
+        highlight_source: str | None
         if self.ctx.ablations.use_world_model:
             world_model_highlights = self._collect_world_model_highlights(world_model_store)
             manifest_world_model_highlights = world_model_highlights
@@ -109,11 +111,18 @@ class TeacherOrchestrator:
                 world_model_highlights,
                 dataset_summary,
             )
+            highlight_source = "world_model"
         else:
             world_model_highlights = self._collect_dataset_highlights()
-            manifest_world_model_highlights = None
-            highlight_artifact = None
-            self.logger.info("World-model ablation enabled; skipping persisted highlight snapshot.")
+            manifest_world_model_highlights = world_model_highlights
+            highlight_artifact = self._emit_world_model_highlights_artifact(
+                manifest_dir,
+                ts,
+                world_model_highlights,
+                dataset_summary,
+            )
+            highlight_source = "dataset"
+            self.logger.info("World-model ablation enabled; using dataset highlight fallback only.")
 
         teacher_trace: Path | None = None
         if self.ctx.ablations.allow_recursion:
@@ -210,6 +219,7 @@ class TeacherOrchestrator:
             teacher_trace,
             notebook_exports,
             notebook_export_summary,
+            highlight_source=highlight_source,
         )
 
         self.ctx.provenance.log(
@@ -238,6 +248,7 @@ class TeacherOrchestrator:
             provenance=provenance,
             manifest=manifest,
             highlights=highlight_artifact,
+            highlight_source=highlight_source,
             teacher_trace=teacher_trace,
             notebook_exports=notebook_exports,
             notebook_export_summary=notebook_export_summary,
@@ -669,6 +680,8 @@ class TeacherOrchestrator:
         teacher_trace: Path | None = None,
         notebook_exports: List[Dict[str, Any]] | None = None,
         notebook_export_summary: Dict[str, Any] | None = None,
+        *,
+        highlight_source: str | None = None,
     ) -> Path:
         manifest: Dict[str, Any] = {
             "course_plan": str(course_plan),
@@ -686,6 +699,7 @@ class TeacherOrchestrator:
             "evaluation": evaluation_payload,
             "world_model_highlights": world_model_highlights,
             "world_model_highlight_artifact": str(highlight_artifact) if highlight_artifact else None,
+            "highlight_source": highlight_source,
             "teacher_trace": str(teacher_trace) if teacher_trace else None,
             "notebook_exports": notebook_exports,
             "notebook_export_summary": notebook_export_summary,
@@ -745,7 +759,10 @@ class TeacherOrchestrator:
         return None
 
     def _generate_codeact_lecture_section(
-        self, world_model_highlights: Dict[str, Any] | None
+        self,
+        world_model_highlights: Dict[str, Any] | None,
+        *,
+        use_cache: bool = True,
     ) -> str | None:
         if not self.ctx.ablations.allow_recursion:
             self.logger.debug("Recursion disabled; skipping CodeAct lecture author.")
@@ -754,7 +771,7 @@ class TeacherOrchestrator:
             self.logger.debug("World-model ablation enabled; skipping CodeAct lecture author.")
             return None
         cached = self._teacher_cache.get("lecture_section")
-        if cached:
+        if use_cache and cached:
             return cached
         if not self.registry:
             return None
@@ -779,7 +796,8 @@ class TeacherOrchestrator:
         corrected = getattr(enforcement, "corrected_section", None) if enforcement else None
         final_section = str(corrected or section)
         self.logger.info("DraftLectureSection produced CodeAct content (citations=%s).", bool(corrected))
-        self._teacher_cache["lecture_section"] = final_section
+        if use_cache:
+            self._teacher_cache["lecture_section"] = final_section
         return final_section
 
     def _run_codeact_program(
@@ -1131,7 +1149,10 @@ class TeacherOrchestrator:
         world_model_highlights: Dict[str, Any] | None,
     ) -> Path:
         base_text = lecture_path.read_text(encoding="utf-8")
-        refreshed_section = self._generate_codeact_lecture_section(world_model_highlights)
+        refreshed_section = self._generate_codeact_lecture_section(
+            world_model_highlights,
+            use_cache=False,
+        )
         mutation_note = self._format_mutation_note(iteration, reason)
         if refreshed_section:
             mutated_text = f"{refreshed_section}\n\n---\n### Previous Draft\n{base_text}\n"
