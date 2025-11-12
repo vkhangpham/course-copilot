@@ -133,7 +133,7 @@ Refer to `docs/PLAN.md`, `docs/PoC.md`, and `docs/ARCHITECTURE.md` for detailed 
 ## World-Model Tooling
 1. **Validate inputs** – `validate-handcrafted data/handcrafted/database_systems` (Typer CLI) fails fast when authors/papers/concepts/timeline/quiz rows drift out of sync. Run this before committing dataset edits.
 2. **Rebuild snapshots** – `python scripts/ingest_handcrafted.py data/handcrafted/database_systems outputs/world_model/state.sqlite --jsonl outputs/world_model/snapshot.jsonl` regenerates both the SQLite store and a JSON Lines dump. You can also pass `--ingest-world-model` to `coursegen-poc` to chain validation + ingest before the orchestrator runs.
-3. **Inspect data** – `wm-inspect concepts --store outputs/world_model/state.sqlite --topic transaction` (plus `timeline`, `claims`, `papers`, `authors`, `definitions`, `graph`, and the newer `artifacts` command) renders quick JSON tables without opening SQLite. Useful for debugging prompts and CodeAct tools. Pass `wm-inspect artifacts --type quiz_bank` (or `course_outline`) to see just that class of assets.
+3. **Inspect data** – `wm-inspect concepts --topic transaction` (plus `timeline`, `claims`, `papers`, `authors`, `definitions`, `graph`, and the newer `artifacts` command) renders quick JSON tables without opening SQLite. The CLI now auto-detects the snapshot under `outputs/world_model/state.sqlite`, so `--store` is only needed if you point at a custom path (or set `WORLD_MODEL_STORE`). Pass `wm-inspect artifacts --type quiz_bank` (or `course_outline`) to see just that class of assets.
 
 See `docs/WORLD_MODEL_TOOLING.md` for a full walkthrough (dataset layout, provenance expectations, troubleshooting tips).
 

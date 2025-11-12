@@ -24,17 +24,19 @@ All IDs are lowercase snake_case and must match across files (concepts ↔ taxon
 
 ## Common commands
 
+> **Note:** `wm-inspect` automatically targets `outputs/world_model/state.sqlite` from the repo root. Use the `--store` flag or `WORLD_MODEL_STORE` env var only when pointing at an alternate snapshot.
+
 | Action | Command |
 | ------ | ------- |
 | Validate dataset | `validate-handcrafted data/handcrafted/database_systems` |
 | Ingest snapshot | `python scripts/ingest_handcrafted.py data/handcrafted/database_systems outputs/world_model/state.sqlite --jsonl outputs/world_model/snapshot.jsonl` |
-| Inspect concepts | `wm-inspect concepts --store outputs/world_model/state.sqlite --topic transaction` |
-| List timeline events | `wm-inspect timeline --store outputs/world_model/state.sqlite --concept transactions --year 2012` |
+| Inspect concepts | `wm-inspect concepts --topic transaction` |
+| List timeline events | `wm-inspect timeline --concept transactions --year 2012` |
 | List papers | `wm-inspect papers --keyword relational --year 1970` |
 | List authors | `wm-inspect authors --keyword stonebraker` |
 | Show definitions | `wm-inspect definitions --concept transaction_management` |
 | Inspect graph edges | `wm-inspect graph --concept relational_model` |
-| Inspect stored artifacts | `wm-inspect artifacts --type quiz_bank --store outputs/world_model/state.sqlite` |
+| Inspect stored artifacts | `wm-inspect artifacts --type quiz_bank` |
 | Run orchestrator with fresh ingest | `coursegen-poc --config config/pipeline.yaml --ingest-world-model` |
 
 The `coursegen-poc` CLI also accepts `--dataset-dir` and `--world-model-store` if you need to point
@@ -57,7 +59,7 @@ at alternate datasets or snapshots.
   creates parent directories) and that another agent doesn’t hold a reservation on the file.
 - **CLI can’t find dataset** – pass `--dataset-dir /path/to/dataset` when running `coursegen-poc` or
   set the path in `config/pipeline.yaml` under `world_model.dataset_dir`.
-- **Need a quick sample** – `wm-inspect timeline --store outputs/world_model/state.sqlite --year 2012`
+- **Need a quick sample** – `wm-inspect timeline --year 2012`
   (or combine with `--concept relational_model`) prints JSON rows filtered by the
   provided arguments.
 
