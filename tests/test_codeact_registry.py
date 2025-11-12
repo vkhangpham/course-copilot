@@ -3,6 +3,7 @@ from unittest import mock
 import pytest
 
 from apps.codeact.registry import CodeActRegistry, ToolBinding
+from ccopilot.core.dspy_runtime import DSPyModelHandles
 from apps.orchestrator.codeact_registry import build_default_registry
 
 
@@ -62,3 +63,24 @@ def test_default_registry_builds_programs(
     mock_plan.assert_called_once()
     mock_lecture.assert_called_once()
     mock_enforce.assert_called_once()
+
+
+@mock.patch("apps.orchestrator.codeact_registry.build_plan_course_program")
+@mock.patch("apps.orchestrator.codeact_registry.build_draft_lecture_program")
+@mock.patch("apps.orchestrator.codeact_registry.build_enforce_citations_program")
+def test_registry_passes_lm_handles(
+    mock_enforce: mock.MagicMock,
+    mock_lecture: mock.MagicMock,
+    mock_plan: mock.MagicMock,
+) -> None:
+    handles = DSPyModelHandles(teacher=object(), ta=object(), student=object())
+
+    registry = build_default_registry(dspy_handles=handles)
+    registry.build_program("PlanCourse")
+    registry.build_program("DraftLectureSection")
+    registry.build_program("EnforceCitations")
+
+    mock_plan.assert_called_with(lm=handles.teacher)
+    mock_lecture.assert_called_with(lm=handles.ta)
+    # Enforce defaults to student -> ta -> teacher fallback
+    mock_enforce.assert_called_with(lm=handles.student)

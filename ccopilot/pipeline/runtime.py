@@ -23,6 +23,7 @@ class PipelineRunArtifacts:
     provenance: Path
     manifest: Path
     highlights: Path | None = None
+    use_world_model: bool = True
 
 
 def run_pipeline(ctx: PipelineContext, *, dry_run: bool = False) -> PipelineRunArtifacts | None:
@@ -75,7 +76,7 @@ def run_pipeline(ctx: PipelineContext, *, dry_run: bool = False) -> PipelineRunA
 
     from apps.orchestrator import Orchestrator
 
-    codeact_registry = build_default_registry()
+    codeact_registry = build_default_registry(dspy_handles=ctx.dspy_handles)
     orchestrator = Orchestrator(ctx, codeact_registry=codeact_registry)
     orch_artifacts = orchestrator.run(
         dataset_summary=dataset_summary,
@@ -106,6 +107,7 @@ def run_pipeline(ctx: PipelineContext, *, dry_run: bool = False) -> PipelineRunA
         provenance=orch_artifacts.provenance,
         manifest=orch_artifacts.manifest,
         highlights=orch_artifacts.highlights,
+        use_world_model=ctx.ablations.use_world_model,
     )
 
 

@@ -17,12 +17,14 @@ from apps.codeact.tools import (
 
 @mock.patch("apps.codeact.programs.dspy")
 def test_plan_course_program_uses_expected_tools(mock_dspy) -> None:
-    program = programs.build_plan_course_program(max_iters=7)
+    lm = object()
+    program = programs.build_plan_course_program(max_iters=7, lm=lm)
     assert program is mock_dspy.CodeAct.return_value
 
     args, kwargs = mock_dspy.CodeAct.call_args
     assert args[0] is PlanCourse
     assert kwargs["max_iters"] == 7
+    assert kwargs["lm"] is lm
     tool_names = [tool.__name__ for tool in kwargs["tools"]]
     assert tool_names == [
         fetch_concepts.__name__,
@@ -35,9 +37,11 @@ def test_plan_course_program_uses_expected_tools(mock_dspy) -> None:
 
 @mock.patch("apps.codeact.programs.dspy")
 def test_draft_lecture_program_wires_all_tools(mock_dspy) -> None:
-    programs.build_draft_lecture_program(max_iters=4)
+    lm = object()
+    programs.build_draft_lecture_program(max_iters=4, lm=lm)
     args, kwargs = mock_dspy.CodeAct.call_args
     assert args[0] is DraftLectureSection
+    assert kwargs["lm"] is lm
     tool_names = {tool.__name__ for tool in kwargs["tools"]}
     assert {
         fetch_concepts.__name__,
@@ -54,9 +58,11 @@ def test_draft_lecture_program_wires_all_tools(mock_dspy) -> None:
 
 @mock.patch("apps.codeact.programs.dspy")
 def test_enforce_citations_program(mock_dspy) -> None:
-    programs.build_enforce_citations_program(max_iters=2)
+    lm = object()
+    programs.build_enforce_citations_program(max_iters=2, lm=lm)
     args, kwargs = mock_dspy.CodeAct.call_args
     assert args[0] is EnforceCitations
     assert kwargs["max_iters"] == 2
+    assert kwargs["lm"] is lm
     tool_names = [tool.__name__ for tool in kwargs["tools"]]
     assert tool_names == [load_dataset_asset.__name__, lookup_paper.__name__]

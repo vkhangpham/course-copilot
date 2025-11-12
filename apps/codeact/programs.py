@@ -22,22 +22,31 @@ DEFAULT_LECTURE_ITERS = 6
 DEFAULT_ENFORCE_ITERS = 3
 
 
-def build_plan_course_program(*, max_iters: int = DEFAULT_PLAN_ITERS) -> dspy.Module:
+def build_plan_course_program(
+    *,
+    max_iters: int = DEFAULT_PLAN_ITERS,
+    lm: object | None = None,
+) -> dspy.Module:
     """Return a PlanCourse CodeAct program wired with safe tools."""
 
-    return dspy.CodeAct(
-        PlanCourse,
-        tools=[fetch_concepts, load_dataset_asset, search_events, lookup_paper, run_sql_query],
-        max_iters=max_iters,
-    )
+    kwargs: dict[str, object] = {
+        "tools": [fetch_concepts, load_dataset_asset, search_events, lookup_paper, run_sql_query],
+        "max_iters": max_iters,
+    }
+    if lm is not None:
+        kwargs["lm"] = lm
+    return dspy.CodeAct(PlanCourse, **kwargs)
 
 
-def build_draft_lecture_program(*, max_iters: int = DEFAULT_LECTURE_ITERS) -> dspy.Module:
+def build_draft_lecture_program(
+    *,
+    max_iters: int = DEFAULT_LECTURE_ITERS,
+    lm: object | None = None,
+) -> dspy.Module:
     """Return a DraftLectureSection CodeAct program."""
 
-    return dspy.CodeAct(
-        DraftLectureSection,
-        tools=[
+    kwargs: dict[str, object] = {
+        "tools": [
             fetch_concepts,
             search_events,
             lookup_paper,
@@ -47,21 +56,27 @@ def build_draft_lecture_program(*, max_iters: int = DEFAULT_LECTURE_ITERS) -> ds
             run_sql_query,
             push_notebook_section,
         ],
-        max_iters=max_iters,
-    )
+        "max_iters": max_iters,
+    }
+    if lm is not None:
+        kwargs["lm"] = lm
+    return dspy.CodeAct(DraftLectureSection, **kwargs)
 
 
 def build_enforce_citations_program(
     *,
     max_iters: int = DEFAULT_ENFORCE_ITERS,
+    lm: object | None = None,
 ) -> dspy.Module:
     """Return an EnforceCitations CodeAct program."""
 
-    return dspy.CodeAct(
-        EnforceCitations,
-        tools=[load_dataset_asset, lookup_paper],
-        max_iters=max_iters,
-    )
+    kwargs: dict[str, object] = {
+        "tools": [load_dataset_asset, lookup_paper],
+        "max_iters": max_iters,
+    }
+    if lm is not None:
+        kwargs["lm"] = lm
+    return dspy.CodeAct(EnforceCitations, **kwargs)
 
 
 __all__ = [
