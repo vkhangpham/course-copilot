@@ -144,7 +144,6 @@ Run `python scripts/ingest_handcrafted.py data/handcrafted/database_systems worl
 - World model tools operate on SQLite file; they return dictionaries (`list[dict[str, Any]]`) ready for CodeAct JSON serialization.
 - `outputs/world_model/latest.jsonl` mirrors inserted nodes/edges for provenance.
 - `wm-inspect` (Typer CLI under `scripts/query_world_model.py`) exposes read-only views of the snapshot. Commands currently include `concepts`, `timeline`, `claims`, `papers`, `authors`, `definitions`, `graph`, and `artifacts` so developers can review relationships/definitions and see which quiz banks/course outlines were ingested without opening SQLite manually.
-- `wm-inspect` (Typer CLI under `scripts/query_world_model.py`) exposes read-only views of the snapshot. Commands currently include `concepts`, `timeline`, `claims`, `papers`, `authors`, `definitions`, `graph`, and `artifacts` so developers can review relationships/definitions and see which quiz banks/course outlines were ingested without opening SQLite manually.
 
 ## 4. CodeAct Tool Signatures (initial set)
 
