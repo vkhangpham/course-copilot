@@ -36,16 +36,19 @@ def ingest(
 
     dest_path = dest_path.resolve()
     dest_path.parent.mkdir(parents=True, exist_ok=True)
-    if dest_path.exists():
-        dest_path.unlink()
+    temp_path = _temporary_sqlite_path(dest_path)
+    if temp_path.exists():
+        temp_path.unlink()
 
     datasets = _load_datasets(source_dir)
 
     # Ensure schema exists before opening our own connection.
-    WorldModelStore(dest_path)
+    WorldModelStore(temp_path)
 
-    conn = sqlite3.connect(dest_path)
+    conn = sqlite3.connect(temp_path)
     conn.execute("PRAGMA foreign_keys = ON;")
+    ingest_success = False
+    summary: Dict[str, int] | None = None
     try:
         with conn:
             _insert_authors(conn, datasets["authors"])
@@ -67,13 +70,28 @@ def ingest(
             "concepts": len(datasets["concepts"]),
             "timeline": len(datasets["timeline"]),
         }
+        ingest_success = True
     finally:
         conn.close()
+        if not ingest_success and temp_path.exists():
+            temp_path.unlink(missing_ok=True)
+
+    if summary is None:
+        raise RuntimeError("Ingest failed before completion")
+
+    temp_path.replace(dest_path)
 
     if jsonl_path:
         _write_snapshot(jsonl_path, datasets)
 
     return summary
+
+
+def _temporary_sqlite_path(dest_path: Path) -> Path:
+    suffix = dest_path.suffix or ""
+    if suffix:
+        return dest_path.with_suffix(suffix + ".tmp")
+    return dest_path.with_name(dest_path.name + ".tmp")
 
 
 # ---------------------------------------------------------------------------

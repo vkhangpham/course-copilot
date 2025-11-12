@@ -3,6 +3,8 @@ from pathlib import Path
 import shutil
 import sqlite3
 
+import pytest
+
 from scripts import ingest_handcrafted as ingest
 
 DATASET = Path("data/handcrafted/database_systems")
@@ -124,3 +126,23 @@ def test_ingest_timeline_accepts_event_label_column(tmp_path: Path) -> None:
         label = conn.execute("SELECT event_label FROM observations").fetchone()[0]
 
     assert label == "Milestone"
+
+
+def test_ingest_preserves_existing_store_on_failure(tmp_path: Path) -> None:
+    dataset_dir = _write_minimal_dataset(tmp_path)
+    store_path = tmp_path / "state.sqlite"
+    ingest.ingest(dataset_dir, store_path)
+    original_bytes = store_path.read_bytes()
+
+    broken_dir = _write_minimal_dataset(tmp_path / "broken")
+    timeline_path = broken_dir / "timeline.csv"
+    timeline_path.write_text(
+        "year,event,why_it_matters,related_concepts,citation_id\n"
+        "1970,Broken,Matters,unknown_concept,paper_a\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError):
+        ingest.ingest(broken_dir, store_path)
+
+    assert store_path.read_bytes() == original_bytes
