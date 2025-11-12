@@ -4,7 +4,7 @@ Objective: audit the recent orchestrator/portal/notebook changes for latent bugs
 
 ## Steps
 1. ☑ Recon: scanned TeacherOrchestrator, pipeline runtime, notebook tooling, and portal surfaces; noted ablation + client edge cases still at risk.
-2. ☑ Static checks: focused on ablation gating (world model + recursion) and notebook export preflight fallbacks; confirmed manifests/portal assumptions. Adjusted orchestrator so manifest highlights are blank when WM ablated while still feeding dataset highlights to plan/lecture generation.
+2. ☑ Static checks: focused on ablation gating (world model + recursion) and notebook export preflight fallbacks; confirmed manifests/portal assumptions. Adjusted orchestrator so we skip the SQLite world-model pull entirely when ablated, while still feeding dataset highlights to plan/lecture generation and leaving manifests blank.
 3. ☑ Fixes: patched prior ablation + notebook guard issues and, as part of the ongoing audit, fixed the portal run-detail slug so overrides display correctly (`apps/portal_backend/main.py`, `tests/test_portal_backend.py`).
 4. ☐ Continue audit passes (pipeline warnings, portal endpoints, CLI surfaces) and wrap up with findings + any follow-up bead recommendations. *(In progress — next focus: ablation gating in TeacherOrchestrator/student loop and portal run-detail surfaces.)*
 
