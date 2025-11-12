@@ -201,9 +201,9 @@ def chunk_markdown_sections(markdown: str, fallback_title: str) -> List[tuple[st
             if current_lines:
                 flush()
             current_title = heading
-            current_lines = [line]
-        else:
-            current_lines.append(line)
+            current_lines = []
+            continue
+        current_lines.append(line)
 
     if current_lines:
         flush()
@@ -228,9 +228,11 @@ def build_sections_from_markdown(
     markdown = path.read_text(encoding="utf-8")
     sections: List[NotebookSectionInput] = []
     for title, content in chunk_markdown_sections(markdown, fallback_title):
-        line_count = sum(1 for _ in content.splitlines())
+        is_fallback_section = title == fallback_title
+        line_count = sum(1 for line in content.splitlines() if line.strip())
         if line_count < min_lines:
-            continue
+            if line_count == 0 or is_fallback_section:
+                continue
         sections.append(NotebookSectionInput(title=title, path=path, content=content))
         if max_sections is not None and len(sections) >= max_sections:
             break

@@ -160,6 +160,10 @@ def test_chunk_markdown_sections_extracts_headings() -> None:
     assert len(chunks) == 3
     titles = [title for title, _ in chunks]
     assert titles == ["Intro", "Week 1", "Week 2"]
+    # Ensure heading text is not duplicated inside the section body.
+    assert chunks[0][1] == "line"
+    assert chunks[1][1] == "content"
+    assert chunks[2][1] == "more"
 
 
 def test_build_sections_from_markdown_limits_sections(tmp_path: Path) -> None:
