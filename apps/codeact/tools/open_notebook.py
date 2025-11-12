@@ -39,6 +39,11 @@ def _supports_ensure_notebook(instance: object) -> bool:
     return callable(ensure)
 
 
+def _client_class_supports_ensure() -> bool:
+    ensure = getattr(OpenNotebookClient, "ensure_notebook", None)
+    return callable(ensure)
+
+
 def _export_dir_configured() -> bool:
     raw = os.getenv(EXPORT_DIR_ENV)
     return bool(raw and raw.strip())
@@ -143,22 +148,20 @@ def push_notebook_section(
     try:
         need_preflight = _auto_create_enabled(auto_create) and cache_key not in _ENSURED_NOTEBOOKS
         if need_preflight:
-            ensure_client = None
-            if client is not None:
-                if _supports_ensure_notebook(client):
-                    ensure_client = client
-                else:
-                    logger.debug(
-                        "Notebook client lacks ensure_notebook; falling back to default client",
-                        extra={"client": type(client).__name__, "notebook": slug},
-                    )
-            ensure_notebook_exists(
-                notebook_slug=slug,
-                api_base=base_url,
-                api_key=token,
-                client=ensure_client,
-            )
-            _ENSURED_NOTEBOOKS.add(cache_key)
+            ensure_client = client if client and _supports_ensure_notebook(client) else None
+            if ensure_client is None and not _client_class_supports_ensure():
+                logger.debug(
+                    "Skipping notebook auto-create; no ensure-capable client available",
+                    extra={"client": type(client).__name__ if client else None, "notebook": slug},
+                )
+            else:
+                ensure_notebook_exists(
+                    notebook_slug=slug,
+                    api_base=base_url,
+                    api_key=token,
+                    client=ensure_client,
+                )
+                _ENSURED_NOTEBOOKS.add(cache_key)
         response = client.push_note(
             slug,
             title,

@@ -93,6 +93,37 @@ def test_push_notebook_section_calls_api_when_base(monkeypatch, tmp_path):
     assert not export_path.exists()
 
 
+def test_push_notebook_section_skips_preflight_without_ensure(monkeypatch, tmp_path):
+    monkeypatch.setenv("OPEN_NOTEBOOK_EXPORT_DIR", str(tmp_path))
+
+    class MinimalClient:
+        def __init__(self, config):
+            self.config = config
+
+        def push_note(self, notebook_slug, title, content_md, citations):
+            return {"ok": True}
+
+        def close(self):
+            pass
+
+    def boom(**_kwargs):  # pragma: no cover - guard should prevent calling this
+        raise AssertionError("ensure_notebook_exists should not run when client lacks ensure_notebook")
+
+    monkeypatch.setattr("apps.codeact.tools.open_notebook.OpenNotebookClient", MinimalClient)
+    monkeypatch.setattr("apps.codeact.tools.open_notebook.ensure_notebook_exists", boom)
+
+    result = push_notebook_section(
+        notebook_slug="db-poc",
+        title="Week 4",
+        content_md="# Content",
+        citations=["codd-1970"],
+        api_base="http://localhost:5055",
+        api_key="token",
+    )
+
+    assert result == {"ok": True}
+
+
 def test_push_notebook_section_requires_slug(monkeypatch, tmp_path):
     monkeypatch.delenv("OPEN_NOTEBOOK_SLUG", raising=False)
     monkeypatch.setenv("OPEN_NOTEBOOK_EXPORT_DIR", str(tmp_path))
