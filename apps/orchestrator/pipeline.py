@@ -9,8 +9,10 @@ from pathlib import Path
 from typing import Any, Dict
 
 from apps.codeact.registry import CodeActRegistry
+from apps.codeact.tools.world_model import fetch_concepts, lookup_paper, search_events
 from ccopilot.core.provenance import ProvenanceEvent
 from ccopilot.pipeline.context import PipelineContext
+from .students import StudentGraderPool
 
 LOGGER_NAME = "coursegen.orchestrator"
 
@@ -61,6 +63,8 @@ class Orchestrator:
         for path in (output_dir, lecture_dir, eval_dir, prov_dir, manifest_dir):
             path.mkdir(parents=True, exist_ok=True)
 
+        world_model_highlights = self._collect_world_model_highlights(world_model_store)
+
         self.logger.info(
             "Running placeholder orchestrator",
             extra={
@@ -87,23 +91,40 @@ class Orchestrator:
             )
         )
 
-        course_plan = self._emit_course_plan(output_dir, dataset_summary)
+        course_plan = self._emit_course_plan(
+            output_dir,
+            dataset_summary,
+            world_model_highlights,
+        )
         self._log_stage(
             "plan_course",
             {"course_plan": str(course_plan)},
         )
-        lecture = self._emit_placeholder_lecture(lecture_dir, dataset_summary)
+        lecture = self._emit_placeholder_lecture(
+            lecture_dir,
+            dataset_summary,
+            world_model_highlights,
+        )
         self._log_stage(
             "draft_lecture",
             {"lecture": str(lecture)},
         )
-        eval_report = self._emit_eval_report(eval_dir, ts)
+        evaluation_payload = self._evaluate_artifacts(lecture)
+        eval_report = self._emit_eval_report(eval_dir, ts, evaluation_payload)
         self._log_stage(
             "evaluate",
-            {"eval_report": str(eval_report)},
+            {
+                "eval_report": str(eval_report),
+                "use_students": evaluation_payload.get("use_students"),
+                "overall_score": evaluation_payload.get("overall_score"),
+            },
         )
         provenance = self._emit_provenance_record(
-            prov_dir / f"run-{ts}.jsonl", course_plan, lecture, dataset_summary
+            prov_dir / f"run-{ts}.jsonl",
+            course_plan,
+            lecture,
+            dataset_summary,
+            world_model_highlights,
         )
         manifest = self._emit_manifest(
             manifest_dir / f"run-{ts}-manifest.json",
@@ -114,6 +135,8 @@ class Orchestrator:
             dataset_summary,
             world_model_store,
             snapshot_exists,
+            evaluation_payload,
+            world_model_highlights,
         )
 
         self.ctx.provenance.log(
@@ -125,6 +148,8 @@ class Orchestrator:
                     "course_plan": str(course_plan),
                     "lecture": str(lecture),
                     "eval_report": str(eval_report),
+                    "evaluation": evaluation_payload,
+                    "world_model_highlights": world_model_highlights or {},
                 },
             )
         )
@@ -182,17 +207,47 @@ class Orchestrator:
             handle.write("Each real run will include citations, examples, and student prompts.\n")
             focus = (dataset_summary.get("top_domains") or ["Database Systems"])[0]
             handle.write(f"\n_Current dataset focus: {focus}_\n")
+            handle.write("\n## Learning Objectives & Assessments\n")
+            handle.write("- Learning objective: Explain the relational model, SQL, and why normalization matters.\n")
+            handle.write(
+                "- Assessment strategy: short concept quizzes plus a transactional lab on locking and recovery.\n\n"
+            )
+            handle.write("## Concept Coverage\n")
+            handle.write(
+                "We revisit relational algebra and SQL before contrasting concurrency control mechanisms,"
+            )
+            handle.write(
+                " recovery logs, and distributed systems such as Spanner and resilient NewSQL engines.\n\n"
+            )
+            handle.write("## Worked Example\n")
+            handle.write(
+                "Consider a banking workload: a transaction debits one account and credits another. "
+            )
+            handle.write(
+                "We trace how two-phase locking prevents lost updates while recovery replays committed entries.\n\n"
+            )
+            handle.write("## Review Questions\n")
+            handle.write(
+                "1. Why does strict two-phase locking guarantee serializability?\n"
+                "2. Which SQL query would expose a partial failure in the example above?\n"
+            )
+            handle.write("\n## Sources & Citations\n")
+            handle.write(
+                "- Codd (1970) formalized the relational model and relational algebra [`codd-1970`].\n"
+            )
+            handle.write(
+                "- System R (1976) demonstrated cost-based SQL optimization and transactions [`system-r-1976`].\n"
+            )
+            handle.write(
+                "- Postgres, ARIES, and Spanner extend these ideas to modern distributed databases.\n"
+            )
         return lecture_path
 
-    def _emit_eval_report(self, eval_dir: Path, ts: str) -> Path:
+    def _emit_eval_report(self, eval_dir: Path, ts: str, payload: Dict[str, Any]) -> Path:
         eval_path = eval_dir / f"run-{ts}.jsonl"
-        payload = {
-            "timestamp": ts,
-            "use_students": self.ctx.ablations.use_students,
-            "note": "Student graders disabled while PoC plumbing lands.",
-        }
+        record = {"timestamp": ts, **payload}
         with eval_path.open("w", encoding="utf-8") as handle:
-            handle.write(json.dumps(payload) + "\n")
+            handle.write(json.dumps(record) + "\n")
         return eval_path
 
     def _emit_provenance_record(
@@ -228,6 +283,7 @@ class Orchestrator:
         dataset_summary: Dict[str, Any],
         world_model_store: Path,
         snapshot_exists: bool,
+        evaluation_payload: Dict[str, Any],
     ) -> Path:
         manifest: Dict[str, Any] = {
             "course_plan": str(course_plan),
@@ -242,7 +298,35 @@ class Orchestrator:
             "dataset_summary": dataset_summary,
             "world_model_store": str(world_model_store),
             "world_model_store_exists": snapshot_exists,
+            "evaluation": evaluation_payload,
         }
         with path.open("w", encoding="utf-8") as handle:
             json.dump(manifest, handle, indent=2)
         return path
+
+    def _evaluate_artifacts(self, lecture_path: Path) -> Dict[str, Any]:
+        if not self.ctx.ablations.use_students:
+            return {"use_students": False, "status": "students_disabled"}
+
+        rubrics_path = self.ctx.config.evaluation.rubrics_path
+        try:
+            grader = StudentGraderPool.from_yaml(
+                rubrics_path,
+                required_sources=self.ctx.config.course.required_sources,
+            )
+        except FileNotFoundError:
+            return {
+                "use_students": False,
+                "status": "missing_rubrics",
+                "rubrics_path": str(rubrics_path),
+            }
+        except ValueError as exc:
+            return {
+                "use_students": False,
+                "status": "invalid_rubrics",
+                "error": str(exc),
+                "rubrics_path": str(rubrics_path),
+            }
+
+        results = grader.evaluate(lecture_path)
+        return {"use_students": True, **results, "rubrics_path": str(rubrics_path)}

@@ -30,7 +30,34 @@ class CLIRunPocTests(unittest.TestCase):
         schema_path = self.repo_root / "world_model" / "schema.sql"
         schema_path.write_text("CREATE TABLE IF NOT EXISTS concepts(id TEXT PRIMARY KEY);\n", encoding="utf-8")
         rubrics_path = self.repo_root / "evals" / "rubrics.yaml"
-        rubrics_path.write_text("rubrics: []\n", encoding="utf-8")
+        rubrics_payload = {
+            "coverage": {
+                "description": "Coverage",
+                "pass_threshold": 0.6,
+                "checklist": [
+                    "Mentions relational model and SQL fundamentals",
+                    "Addresses transactions, recovery, and concurrency",
+                    "Includes distributed/modern databases",
+                ],
+            },
+            "grounding": {
+                "description": "Grounding",
+                "pass_threshold": 0.7,
+                "checklist": [
+                    "Every learning objective references at least one primary source",
+                    "Claims cite papers from papers.csv",
+                ],
+            },
+            "pedagogy": {
+                "description": "Pedagogy",
+                "pass_threshold": 0.7,
+                "checklist": [
+                    "States learning objectives and assessments",
+                    "Includes worked examples and review questions",
+                ],
+            },
+        }
+        rubrics_path.write_text(yaml_dump(rubrics_payload), encoding="utf-8")
         quiz_bank = dataset_dir / "quiz_bank.json"
 
         pipeline_yaml = f"""
@@ -134,6 +161,12 @@ evaluation:
         manifest = json.loads(manifest_path.read_text())
         self.assertIn("dataset_summary", manifest)
         self.assertIn("world_model_store", manifest)
+        self.assertTrue(manifest["evaluation"].get("use_students"))
+
+        eval_report = output_dir / "evaluations"
+        report_path = next(eval_report.glob("run-*.jsonl"))
+        eval_payload = json.loads(report_path.read_text().splitlines()[0])
+        self.assertIn("overall_score", eval_payload)
 
     def test_cli_dry_run_skips_artifacts(self) -> None:
         output_dir = self.repo_root / "outputs"
@@ -170,6 +203,8 @@ evaluation:
         self.assertEqual(exit_code, 0)
         self.assertTrue(sqlite_path.exists())
         self.assertTrue((output_dir / "course_plan.md").exists())
+        eval_report_dir = output_dir / "evaluations"
+        self.assertTrue(any(eval_report_dir.glob("run-*.jsonl")))
 
 
 if __name__ == "__main__":

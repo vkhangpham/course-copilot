@@ -30,7 +30,34 @@ class PipelineRuntimeTests(unittest.TestCase):
         eval_dir = self.repo_root / "evals"
         eval_dir.mkdir(parents=True)
         rubrics_path = eval_dir / "rubrics.yaml"
-        rubrics_path.write_text("rubrics: []\n", encoding="utf-8")
+        rubrics_payload = {
+            "coverage": {
+                "description": "Ensures foundational topics are present",
+                "pass_threshold": 0.6,
+                "checklist": [
+                    "Mentions relational model and SQL fundamentals",
+                    "Addresses transactions, recovery, and concurrency",
+                    "Includes distributed/modern databases",
+                ],
+            },
+            "grounding": {
+                "description": "Checks for citations",
+                "pass_threshold": 0.7,
+                "checklist": [
+                    "Every learning objective references at least one primary source",
+                    "Claims cite papers from papers.csv",
+                ],
+            },
+            "pedagogy": {
+                "description": "Clarity of instruction",
+                "pass_threshold": 0.7,
+                "checklist": [
+                    "States learning objectives and assessments",
+                    "Includes worked examples and review questions",
+                ],
+            },
+        }
+        rubrics_path.write_text(yaml.safe_dump(rubrics_payload, sort_keys=False), encoding="utf-8")
 
         quiz_bank = self.repo_root / "quiz_bank.json"
         quiz_bank.write_text("[]\n", encoding="utf-8")
@@ -154,6 +181,13 @@ evaluation:
         manifest = json.loads(artifacts.manifest.read_text(encoding="utf-8"))
         self.assertEqual(manifest["course_plan"], str(artifacts.course_plan))
         self.assertEqual(manifest["lecture"], str(artifacts.lecture))
+        self.assertIn("evaluation", manifest)
+        self.assertTrue(manifest["evaluation"].get("use_students"))
+
+        eval_record = json.loads(artifacts.eval_report.read_text(encoding="utf-8").splitlines()[0])
+        self.assertTrue(eval_record["use_students"])
+        self.assertGreaterEqual(eval_record.get("overall_score", 0), 0)
+        self.assertGreater(len(eval_record.get("rubrics", [])), 0)
 
     def test_missing_store_triggers_auto_ingest(self) -> None:
         ctx = bootstrap_pipeline(
@@ -171,6 +205,20 @@ evaluation:
             output_dir=self.output_dir,
         )
         self.assertTrue(sqlite_path.exists(), "Bootstrap should auto-ingest when store is missing")
+
+    def test_student_ablation_skips_eval(self) -> None:
+        ctx = bootstrap_pipeline(
+            config_path=self.config_path,
+            repo_root=self.repo_root,
+            output_dir=self.output_dir,
+            ablations="no_students",
+        )
+        artifacts = run_pipeline(ctx, dry_run=False)
+
+        assert artifacts is not None
+        eval_record = json.loads(artifacts.eval_report.read_text(encoding="utf-8").splitlines()[0])
+        self.assertFalse(eval_record["use_students"])
+        self.assertEqual(eval_record["status"], "students_disabled")
 
     def test_missing_dataset_dir_raises(self) -> None:
         dataset_dir = self.repo_root / "data"
