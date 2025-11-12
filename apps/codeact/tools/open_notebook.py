@@ -20,7 +20,7 @@ DEFAULT_EXPORT_DIR = Path("outputs/notebook_exports")
 
 def push_notebook_section(
     *,
-    notebook_slug: str,
+    notebook_slug: str | None = None,
     title: str,
     content_md: str,
     citations: List[str] | None = None,
@@ -29,13 +29,17 @@ def push_notebook_section(
 ) -> Dict[str, Any]:
     """Send a markdown section to the configured Open Notebook instance."""
 
+    slug = notebook_slug or os.getenv("OPEN_NOTEBOOK_SLUG")
+    if not slug:
+        raise ValueError("Notebook slug required (set OPEN_NOTEBOOK_SLUG or pass notebook_slug)")
+
     base_url = api_base or os.getenv("OPEN_NOTEBOOK_API_BASE")
     token = api_key or os.getenv("OPEN_NOTEBOOK_API_KEY")
     payload_citations = list(citations or [])
 
     if not base_url:
         return _persist_stub_export(
-            notebook_slug=notebook_slug,
+            notebook_slug=slug,
             title=title,
             content_md=content_md,
             citations=payload_citations,
@@ -45,7 +49,7 @@ def push_notebook_section(
     client = OpenNotebookClient(config)
     try:
         response = client.push_note(
-            notebook_slug,
+            slug,
             title,
             content_md,
             payload_citations,
@@ -56,7 +60,7 @@ def push_notebook_section(
         )
         if _should_mirror_exports():
             _persist_stub_export(
-                notebook_slug=notebook_slug,
+                notebook_slug=slug,
                 title=title,
                 content_md=content_md,
                 citations=payload_citations,

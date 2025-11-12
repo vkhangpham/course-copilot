@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from apps.codeact.tools.open_notebook import push_notebook_section
 
 
@@ -8,9 +10,9 @@ def test_push_notebook_section_persists_stub_when_api_missing(monkeypatch, tmp_p
     monkeypatch.delenv("OPEN_NOTEBOOK_API_BASE", raising=False)
     monkeypatch.delenv("OPEN_NOTEBOOK_API_KEY", raising=False)
     monkeypatch.setenv("OPEN_NOTEBOOK_EXPORT_DIR", str(tmp_path))
+    monkeypatch.setenv("OPEN_NOTEBOOK_SLUG", "db-poc")
 
     result = push_notebook_section(
-        notebook_slug="DB-PoC",
         title="Week 1",
         content_md="**content**",
         citations=["codd-1970"],
@@ -23,22 +25,21 @@ def test_push_notebook_section_persists_stub_when_api_missing(monkeypatch, tmp_p
     entry = json.loads(lines[0])
     assert entry["title"] == "Week 1"
     assert entry["citations"] == ["codd-1970"]
-    assert entry["notebook"] == "DB-PoC"
+    assert entry["notebook"] == "db-poc"
 
 
 def test_push_notebook_section_appends_stub_entries(monkeypatch, tmp_path):
     monkeypatch.delenv("OPEN_NOTEBOOK_API_BASE", raising=False)
     monkeypatch.delenv("OPEN_NOTEBOOK_API_KEY", raising=False)
     monkeypatch.setenv("OPEN_NOTEBOOK_EXPORT_DIR", str(tmp_path))
+    monkeypatch.setenv("OPEN_NOTEBOOK_SLUG", "db-poc")
 
     push_notebook_section(
-        notebook_slug="db-poc",
         title="Intro",
         content_md="A",
         citations=[],
     )
     push_notebook_section(
-        notebook_slug="db-poc",
         title="Transactions",
         content_md="B",
         citations=["aries"],
@@ -90,3 +91,10 @@ def test_push_notebook_section_calls_api_when_base(monkeypatch, tmp_path):
     assert calls[-1] == ("closed",)
     export_path = tmp_path / "db-poc.jsonl"
     assert not export_path.exists()
+
+
+def test_push_notebook_section_requires_slug(monkeypatch, tmp_path):
+    monkeypatch.delenv("OPEN_NOTEBOOK_SLUG", raising=False)
+    monkeypatch.setenv("OPEN_NOTEBOOK_EXPORT_DIR", str(tmp_path))
+    with pytest.raises(ValueError):
+        push_notebook_section(title="No slug", content_md="test")
