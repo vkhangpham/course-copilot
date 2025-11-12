@@ -133,6 +133,15 @@ def _write_run(
     return manifest
 
 
+def _first_actual_export(manifest: dict) -> dict:
+    exports = manifest.get("notebook_exports") or []
+    for entry in exports:
+        if str(entry.get("kind", "")).lower() == "preflight":
+            continue
+        return entry
+    raise AssertionError("No actual notebook export found")
+
+
 def test_health_without_runs(portal_settings: PortalSettings) -> None:
     client = TestClient(app)
     response = client.get("/health")
@@ -161,8 +170,9 @@ def test_list_runs_and_detail(portal_settings: PortalSettings) -> None:
     assert detail["manifest"]["dataset_summary"] == manifest["dataset_summary"]
     assert "Course Plan" in detail["course_plan_excerpt"]
     assert detail["notebook_slug"] == "database-systems-poc"
-    assert detail["notebook_exports"][0]["status"] == "ok"
-    assert detail["notebook_exports"][0]["note_id"] == "note-1"
+    first_export = detail["notebook_exports"][0]
+    assert first_export["status"] == "ok"
+    assert first_export["note_id"] == "note-1"
     assert all(entry["title"] != "notebook_preflight" for entry in detail["notebook_exports"])
     assert detail["evaluation_attempts"][0]["iteration"] == 1
     assert detail["evaluation_attempts"][0]["overall_score"] == 0.5
@@ -240,14 +250,20 @@ def test_run_detail_prefers_export_notebook_slug(portal_settings: PortalSettings
 
 
 def test_run_detail_falls_back_to_response_id(portal_settings: PortalSettings) -> None:
-    _write_run(portal_settings.outputs_dir, include_notebook=True)
+    manifest = _write_run(portal_settings.outputs_dir, include_notebook=True)
     manifest_path = portal_settings.outputs_dir / "artifacts" / "run-20250101-000000-manifest.json"
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-    payload["notebook_exports"][0]["response"] = {
-        "status": "ok",
-        "notebook": "database-systems-poc",
-        "id": "note-xyz",
-    }
+    exports = payload["notebook_exports"]
+    for entry in exports:
+        if str(entry.get("kind", "")).lower() == "preflight":
+            continue
+        entry["response"] = {
+            "status": "ok",
+            "notebook": "database-systems-poc",
+            "id": "note-xyz",
+        }
+        break
+    payload["notebook_exports"] = exports
     manifest_path.write_text(json.dumps(payload), encoding="utf-8")
 
     client = TestClient(app)
@@ -307,9 +323,10 @@ def test_notebook_exports_endpoint(portal_settings: PortalSettings) -> None:
     exports = response.json()
     assert len(exports) == 1
     entry = exports[0]
+    expected_manifest_entry = _first_actual_export(manifest)
     assert entry["status"] == "ok"
     assert entry["notebook"] == "database-systems-poc"
-    assert entry["title"] == manifest["notebook_exports"][0]["title"]
+    assert entry["title"] == expected_manifest_entry["title"]
 
 
 def test_rejects_paths_outside_workspace(portal_settings: PortalSettings) -> None:
