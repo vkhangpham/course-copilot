@@ -100,8 +100,12 @@ class TeacherOrchestrator:
         for path in (output_dir, lecture_dir, eval_dir, prov_dir, manifest_dir):
             path.mkdir(parents=True, exist_ok=True)
 
+        world_model_highlights = self._collect_world_model_highlights(world_model_store)
+        manifest_world_model_highlights = (
+            world_model_highlights if self.ctx.ablations.use_world_model else None
+        )
+        highlight_artifact: Path | None = None
         if self.ctx.ablations.use_world_model:
-            world_model_highlights = self._collect_world_model_highlights(world_model_store)
             highlight_artifact = self._emit_world_model_highlights_artifact(
                 manifest_dir,
                 ts,
@@ -109,9 +113,7 @@ class TeacherOrchestrator:
                 dataset_summary,
             )
         else:
-            world_model_highlights = None
-            highlight_artifact = None
-            self.logger.info("World-model ablation enabled; skipping highlight collection.")
+            self.logger.info("World-model ablation enabled; skipping persisted highlight snapshot.")
 
         teacher_trace: Path | None = None
         if self.ctx.ablations.allow_recursion:
@@ -190,7 +192,7 @@ class TeacherOrchestrator:
             course_plan,
             lecture,
             dataset_summary,
-            world_model_highlights,
+            manifest_world_model_highlights,
             notebook_export_summary,
         )
         manifest = self._emit_manifest(
@@ -203,7 +205,7 @@ class TeacherOrchestrator:
             world_model_store,
             snapshot_exists,
             evaluation_payload,
-            world_model_highlights,
+            manifest_world_model_highlights,
             highlight_artifact,
             teacher_trace,
             notebook_exports,
