@@ -135,11 +135,65 @@ def query_authors(store_path: Path, keyword: Optional[str] = None) -> List[dict]
     ]
 
 
+def query_definitions(store_path: Path, concept_id: Optional[str] = None) -> List[dict]:
+    store = _resolve_store(store_path)
+    sql = "SELECT subject_id, body, citation, provenance FROM claims WHERE created_by = 'definition'"
+    params: tuple = tuple()
+    if concept_id:
+        sql += " AND subject_id = ?"
+        params = (concept_id,)
+    sql += " ORDER BY subject_id"
+    rows = store.query(sql, params)
+    return [
+        {
+            "concept": row[0],
+            "text": row[1],
+            "citation": row[2],
+            "source_excerpt": _extract_excerpt(row[3]),
+        }
+        for row in rows
+    ]
+
+
+def query_graph_edges(store_path: Path, concept_id: Optional[str] = None) -> List[dict]:
+    store = _resolve_store(store_path)
+    sql = "SELECT source_id, target_id, relation_type, justification FROM relationships"
+    params: tuple = tuple()
+    if concept_id:
+        sql += " WHERE source_id = ? OR target_id = ?"
+        params = (concept_id, concept_id)
+    sql += " ORDER BY source_id, target_id"
+    rows = store.query(sql, params)
+    return [
+        {
+            "source": row[0],
+            "target": row[1],
+            "relation": row[2],
+            "justification": row[3],
+        }
+        for row in rows
+    ]
+
+
 def _print_table(headers: list[str], rows: List[dict], keys: list[str]) -> None:
     table = Table(*headers)
     for row in rows:
         table.add_row(*[str(row.get(key, "")) for key in keys])
     console.print(table)
+
+
+def _extract_excerpt(raw: object) -> str | None:
+    if not raw:
+        return None
+    try:
+        payload = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):  # pragma: no cover - defensive
+        return None
+    if isinstance(payload, dict):
+        excerpt = payload.get("source_excerpt") or payload.get("excerpt")
+        if isinstance(excerpt, str) and excerpt.strip():
+            return excerpt.strip()
+    return None
 
 
 @app.command()
@@ -226,6 +280,42 @@ def authors(
         console.print("[yellow]No matching authors found.[/yellow]")
         return
     _print_table(["ID", "Name", "Affiliation"], rows, ["id", "name", "affiliation"])
+
+
+@app.command(name="definitions")
+def definitions_command(
+    store: Path = typer.Option(Path("world_model/state.sqlite"), "--store"),
+    concept: Optional[str] = typer.Option(None, help="Filter by concept id."),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """List stored definitions for one or all concepts."""
+
+    rows = query_definitions(store, concept)
+    if as_json:
+        typer.echo(json.dumps(rows, indent=2, ensure_ascii=False))
+        return
+    if not rows:
+        console.print("[yellow]No definitions found.[/yellow]")
+        return
+    _print_table(["Concept", "Definition", "Citation"], rows, ["concept", "text", "citation"])
+
+
+@app.command(name="graph")
+def graph_command(
+    store: Path = typer.Option(Path("world_model/state.sqlite"), "--store"),
+    concept: Optional[str] = typer.Option(None, help="Filter edges touching this concept."),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Show concept relationships stored in the graph."""
+
+    rows = query_graph_edges(store, concept)
+    if as_json:
+        typer.echo(json.dumps(rows, indent=2, ensure_ascii=False))
+        return
+    if not rows:
+        console.print("[yellow]No relationships found.[/yellow]")
+        return
+    _print_table(["Source", "Relation", "Target"], rows, ["source", "relation", "target"])
 
 
 if __name__ == "__main__":  # pragma: no cover

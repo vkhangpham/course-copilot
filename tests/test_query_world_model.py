@@ -7,6 +7,8 @@ from scripts.query_world_model import (
     query_authors,
     query_claims,
     query_concepts,
+    query_definitions,
+    query_graph_edges,
     query_papers,
     query_timeline,
 )
@@ -67,3 +69,20 @@ def test_query_authors_filters_by_keyword(tmp_path: Path) -> None:
             "affiliation": "UC Berkeley",
         }
     ]
+
+
+def test_query_definitions_returns_rows(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    rows = query_definitions(store, concept_id="transaction_management")
+    assert rows
+    assert rows[0]["concept"] == "transaction_management"
+
+
+def test_query_graph_edges_filters_on_concept(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    rows = query_graph_edges(store, concept_id="relational_model")
+    assert rows
+    assert all(
+        row["source"] == "relational_model" or row["target"] == "relational_model"
+        for row in rows
+    )
