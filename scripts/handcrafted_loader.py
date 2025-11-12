@@ -172,8 +172,17 @@ def _load_csv(path: Path, *, required: bool = True) -> list[dict[str, str]]:
         rows: list[dict[str, str]] = []
         for row in reader:
             cleaned = {key: (value.strip() if isinstance(value, str) else value) for key, value in row.items()}
-            if cleaned.get("id"):
-                rows.append(cleaned)
+            has_value = False
+            for value in cleaned.values():
+                if isinstance(value, str) and value.strip():
+                    has_value = True
+                    break
+                if value not in (None, ""):
+                    has_value = True
+                    break
+            if not has_value:
+                continue
+            rows.append(cleaned)
         return rows
 
 

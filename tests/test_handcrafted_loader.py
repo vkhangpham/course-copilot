@@ -11,6 +11,7 @@ def test_load_dataset_smoke() -> None:
     assert dataset.papers, "Papers should load"
     assert dataset.authors, "Authors should load"
     assert dataset.course_outline.get("weeks"), "Course outline weeks should be present"
+    assert dataset.timeline, "Timeline entries should be preserved"
 
 
 def test_validate_dataset_clean() -> None:
