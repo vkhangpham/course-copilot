@@ -101,9 +101,12 @@ class TeacherOrchestrator:
         for path in (output_dir, lecture_dir, eval_dir, prov_dir, manifest_dir):
             path.mkdir(parents=True, exist_ok=True)
 
-        highlight_source: str | None
+        highlight_source: str | None = None
         if self.ctx.ablations.use_world_model:
-            world_model_highlights = self._collect_world_model_highlights(world_model_store)
+            (
+                world_model_highlights,
+                highlight_source,
+            ) = self._collect_world_model_highlights(world_model_store)
             manifest_world_model_highlights = world_model_highlights
             highlight_artifact = self._emit_world_model_highlights_artifact(
                 manifest_dir,
@@ -111,7 +114,6 @@ class TeacherOrchestrator:
                 world_model_highlights,
                 dataset_summary,
             )
-            highlight_source = "world_model"
         else:
             world_model_highlights = self._collect_dataset_highlights()
             manifest_world_model_highlights = world_model_highlights
@@ -121,7 +123,8 @@ class TeacherOrchestrator:
                 world_model_highlights,
                 dataset_summary,
             )
-            highlight_source = "dataset"
+            if world_model_highlights:
+                highlight_source = "dataset"
             self.logger.info("World-model ablation enabled; using dataset highlight fallback only.")
 
         teacher_trace: Path | None = None
@@ -917,13 +920,14 @@ class TeacherOrchestrator:
         *,
         concept_limit: int = 3,
         timeline_limit: int = 3,
-    ) -> Dict[str, Any]:
-        """Return a trimmed slice of the world model for downstream artifacts."""
+    ) -> tuple[Dict[str, Any], str | None]:
+        """Return a trimmed slice of the world model and the data source used."""
 
         highlights = self._collect_dataset_highlights()
+        fallback_label = "dataset" if highlights else None
 
         if not self.ctx.ablations.use_world_model or not store_path.exists():
-            return highlights
+            return highlights, fallback_label
 
         try:
             concept_rows = fetch_concepts(depth=1, limit=concept_limit, store_path=store_path)
@@ -953,20 +957,25 @@ class TeacherOrchestrator:
                 else:
                     break
 
+            sourced_from_world_model = False
             if concept_highlights:
                 highlights["concepts"] = concept_highlights
+                sourced_from_world_model = True
             if timeline_highlights:
                 highlights["timeline"] = timeline_highlights
+                sourced_from_world_model = True
             if spotlight_paper:
                 highlights["spotlight_paper"] = spotlight_paper
-            return highlights
+                sourced_from_world_model = True
+
+            return highlights, ("world_model" if sourced_from_world_model else fallback_label)
         except Exception as exc:  # pragma: no cover - defensive guardrail
             self.logger.warning(
                 "World-model highlights unavailable: %s",
                 exc,
                 extra={"store_path": str(store_path)},
             )
-            return highlights
+            return highlights, fallback_label
 
     def _collect_dataset_highlights(
         self,

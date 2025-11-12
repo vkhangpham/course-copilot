@@ -187,3 +187,54 @@ def test_mutation_loop_requests_fresh_lecture_sections(tmp_path: Path) -> None:
     mutated_text = lecture_path.read_text(encoding="utf-8")
     assert "Draft 2" in mutated_text
     assert call_log == ["1", "2"], "Mutation loop should bypass cached lecture sections"
+
+
+def test_world_model_highlights_source_falls_back(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    ctx = _make_context(tmp_path)
+    orch = TeacherOrchestrator(ctx)
+
+    def fake_dataset_highlights(self):  # type: ignore[override]
+        return {"syllabus_modules": [{"week": 1, "title": "Fallback", "outcomes": []}]}
+
+    monkeypatch.setattr(TeacherOrchestrator, "_collect_dataset_highlights", fake_dataset_highlights)
+
+    store_path = tmp_path / "world_model.sqlite"
+    store_path.write_text("", encoding="utf-8")
+
+    def boom(**_kwargs):
+        raise RuntimeError("wm down")
+
+    monkeypatch.setattr("apps.orchestrator.teacher.fetch_concepts", boom)
+
+    highlights, source = orch._collect_world_model_highlights(store_path)
+    assert source == "dataset"
+    assert highlights.get("syllabus_modules")
+
+
+def test_world_model_highlights_source_reports_world_model(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    ctx = _make_context(tmp_path)
+    orch = TeacherOrchestrator(ctx)
+
+    monkeypatch.setattr(TeacherOrchestrator, "_collect_dataset_highlights", lambda self: {})
+
+    store_path = tmp_path / "world_model.sqlite"
+    store_path.write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(
+        "apps.orchestrator.teacher.fetch_concepts",
+        lambda **_kwargs: [
+            {"id": "c1", "name": "Concept", "summary": "Summary", "children": [], "prerequisites": []}
+        ],
+    )
+    monkeypatch.setattr(
+        "apps.orchestrator.teacher.search_events",
+        lambda **_kwargs: [{"year": 2024, "event": "Milestone", "summary": "Context", "citation_id": "paper-1"}],
+    )
+    monkeypatch.setattr(
+        "apps.orchestrator.teacher.lookup_paper",
+        lambda _paper_id, **_kwargs: {"id": "paper-1", "title": "Paper", "year": 2024, "venue": "Conf"},
+    )
+
+    highlights, source = orch._collect_world_model_highlights(store_path)
+    assert source == "world_model"
+    assert "concepts" in highlights
