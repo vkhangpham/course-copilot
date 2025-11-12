@@ -38,6 +38,7 @@ from .shared_state import SharedStateHandles
 from .students import StudentGraderPool
 
 LOGGER_NAME = "coursegen.orchestrator"
+WORLD_MODEL_PROGRAMS = {"PlanCourse", "DraftLectureSection", "EnforceCitations"}
 
 
 @dataclass(slots=True)
@@ -108,7 +109,7 @@ class TeacherOrchestrator:
                 dataset_summary,
             )
         else:
-            world_model_highlights = {}
+            world_model_highlights = None
             highlight_artifact = None
             self.logger.info("World-model ablation enabled; skipping highlight collection.")
 
@@ -219,7 +220,7 @@ class TeacherOrchestrator:
                     "lecture": str(lecture),
                     "eval_report": str(eval_report),
                     "evaluation": evaluation_payload,
-                    "world_model_highlights": world_model_highlights or {},
+                    "world_model_highlights": world_model_highlights,
                     "highlight_artifact": str(highlight_artifact) if highlight_artifact else None,
                     "teacher_trace": str(teacher_trace) if teacher_trace else None,
                     "notebook_exports": notebook_exports,
@@ -259,6 +260,9 @@ class TeacherOrchestrator:
         dataset_summary: Dict[str, Any],
         world_model_highlights: Dict[str, Any] | None,
     ) -> Path | None:
+        if not self.ctx.ablations.allow_recursion:
+            self.logger.debug("Recursion disabled; teacher loop skipped.")
+            return None
         prompt_path = self.ctx.paths.repo_root / "prompts" / "teacher_seed.txt"
         if not prompt_path.exists():
             self.logger.debug("Teacher prompt missing at %s; skipping RLM run", prompt_path)
@@ -639,7 +643,7 @@ class TeacherOrchestrator:
                 "world_model_enabled": self.ctx.ablations.use_world_model,
                 "students_enabled": self.ctx.ablations.use_students,
                 "dataset_summary": dataset_summary,
-                "world_model_highlights": world_model_highlights or {},
+                "world_model_highlights": world_model_highlights,
                 "notebook_export_summary": notebook_export_summary,
             },
         }
@@ -678,7 +682,7 @@ class TeacherOrchestrator:
             "world_model_store": str(world_model_store),
             "world_model_store_exists": snapshot_exists and self.ctx.ablations.use_world_model,
             "evaluation": evaluation_payload,
-            "world_model_highlights": world_model_highlights or {},
+            "world_model_highlights": world_model_highlights,
             "world_model_highlight_artifact": str(highlight_artifact) if highlight_artifact else None,
             "teacher_trace": str(teacher_trace) if teacher_trace else None,
             "notebook_exports": notebook_exports,
@@ -715,6 +719,12 @@ class TeacherOrchestrator:
         if not self.ctx.ablations.allow_recursion:
             self.logger.debug("Recursion disabled; skipping CodeAct plan outline.")
             return None
+        if not self.ctx.ablations.use_world_model:
+            self.logger.debug("World-model ablation enabled; skipping CodeAct plan outline.")
+            return None
+        if not self.ctx.ablations.use_world_model:
+            self.logger.debug("World-model ablation enabled; skipping CodeAct plan outline.")
+            return None
         cached = self._teacher_cache.get("outline")
         if cached:
             return cached
@@ -740,6 +750,12 @@ class TeacherOrchestrator:
     ) -> str | None:
         if not self.ctx.ablations.allow_recursion:
             self.logger.debug("Recursion disabled; skipping CodeAct lecture author.")
+            return None
+        if not self.ctx.ablations.use_world_model:
+            self.logger.debug("World-model ablation enabled; skipping CodeAct lecture author.")
+            return None
+        if not self.ctx.ablations.use_world_model:
+            self.logger.debug("World-model ablation enabled; skipping CodeAct lecture author.")
             return None
         cached = self._teacher_cache.get("lecture_section")
         if cached:
@@ -779,6 +795,9 @@ class TeacherOrchestrator:
         **kwargs: Any,
     ) -> Any | None:
         if not self.registry:
+            return None
+        if not self.ctx.ablations.use_world_model and name in WORLD_MODEL_PROGRAMS:
+            self.logger.info("World-model ablation enabled; skipping CodeAct program %s", name)
             return None
         allowed = self._allowed_tools_for_role(role)
         lm_handle = self._lm_handle_for_role(lm_role)
