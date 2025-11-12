@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List
 
 from world_model.adapters import WorldModelAdapter
 
-DEFAULT_STORE = Path("world_model/state.sqlite")
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+DEFAULT_STORE = (PROJECT_ROOT / "outputs" / "world_model" / "state.sqlite").resolve()
 STORE_ENV_VAR = "WORLD_MODEL_STORE"
 
 
@@ -75,4 +76,54 @@ def list_relationships(
         target_id=target_id,
         relation_type=relation_type,
         limit=limit,
+    )
+
+
+def link_concepts(
+    *,
+    source_id: str,
+    target_id: str,
+    relation_type: str,
+    justification: str | None = None,
+    store_path: Path | None = None,
+) -> dict[str, Any]:
+    return _adapter(store_path).link_concepts(
+        source_id=source_id,
+        target_id=target_id,
+        relation_type=relation_type,
+        justification=justification,
+    )
+
+
+def append_timeline_event(
+    *,
+    event_label: str,
+    related_concept: str,
+    summary: str | None = None,
+    event_year: int | None = None,
+    citation: str | None = None,
+    store_path: Path | None = None,
+) -> dict[str, Any]:
+    return _adapter(store_path).append_timeline_event(
+        event_label=event_label,
+        related_concept=related_concept,
+        summary=summary,
+        event_year=event_year,
+        citation=citation,
+    )
+
+
+def persist_outline(
+    outline: Dict[str, Any] | List[Dict[str, Any]],
+    *,
+    version: int | None = None,
+    source_uri: str | None = None,
+    metadata: Dict[str, Any] | None = None,
+    store_path: Path | None = None,
+) -> dict[str, Any]:
+    return _adapter(store_path).persist_outline(
+        outline,
+        version=version,
+        source_uri=source_uri,
+        metadata=metadata,
     )

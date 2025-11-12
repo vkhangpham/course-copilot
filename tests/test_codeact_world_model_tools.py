@@ -3,10 +3,14 @@ from pathlib import Path
 
 from scripts.ingest_handcrafted import ingest
 from apps.codeact.tools.world_model import (
+    DEFAULT_STORE,
+    append_timeline_event,
     fetch_concepts,
+    link_concepts,
     list_claims,
     list_relationships,
     lookup_paper,
+    persist_outline,
     record_claim,
     search_events,
 )
@@ -16,6 +20,11 @@ from world_model.storage import WorldModelStore
 # miniature snapshot before each assertion.
 
 DATASET = Path("data/handcrafted/database_systems")
+
+
+def test_world_model_default_store_is_repo_relative() -> None:
+    expected = (Path(__file__).resolve().parents[1] / "outputs" / "world_model" / "state.sqlite").resolve()
+    assert DEFAULT_STORE == expected
 
 
 def _build_store(tmp_path: Path) -> Path:
@@ -71,3 +80,51 @@ def test_list_relationships_filters(tmp_path: Path) -> None:
     relationships = list_relationships(source_id="relational_model", store_path=store)
     assert relationships, "Expected relationship rows"
     assert relationships[0]["source_id"] == "relational_model"
+
+
+def test_link_concepts_tool_adds_relationship(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    rel = link_concepts(
+        source_id="relational_model",
+        target_id="schema_design",
+        relation_type="reinforces",
+        justification="Test",
+        store_path=store,
+    )
+    assert rel["relation_type"] == "reinforces"
+    db = WorldModelStore(store)
+    rows = db.query(
+        "SELECT relation_type FROM relationships WHERE id = ?",
+        (rel["id"],),
+    )
+    assert rows[0][0] == "reinforces"
+
+
+def test_append_timeline_event_tool_writes_row(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    event = append_timeline_event(
+        event_label="CodeAct milestone",
+        related_concept="relational_model",
+        summary="Generated via CodeAct",
+        event_year=2025,
+        store_path=store,
+    )
+    db = WorldModelStore(store)
+    rows = db.query(
+        "SELECT event_label FROM observations WHERE id = ?",
+        (event["id"],),
+    )
+    assert rows and rows[0][0] == "CodeAct milestone"
+
+
+def test_persist_outline_tool_records_artifact(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    outline = {"weeks": [{"week": 1, "title": "Intro"}]}
+    artifact = persist_outline(outline, version=2, store_path=store)
+    assert artifact["payload"]["version"] == 2
+    db = WorldModelStore(store)
+    rows = db.query(
+        "SELECT artifact_type FROM artifacts WHERE id = ?",
+        (artifact["id"],),
+    )
+    assert rows and rows[0][0] == "course_outline"
