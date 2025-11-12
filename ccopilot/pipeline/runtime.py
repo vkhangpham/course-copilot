@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List
@@ -21,6 +22,7 @@ class PipelineRunArtifacts:
     eval_report: Path
     provenance: Path
     manifest: Path
+    highlights: Path | None = None
 
 
 def run_pipeline(ctx: PipelineContext, *, dry_run: bool = False) -> PipelineRunArtifacts | None:
@@ -31,6 +33,7 @@ def run_pipeline(ctx: PipelineContext, *, dry_run: bool = False) -> PipelineRunA
     dataset = _load_dataset(ctx)
     dataset_summary = _summarize_dataset(dataset)
     world_model_store = ctx.config.world_model.sqlite_path
+    os.environ["WORLD_MODEL_STORE"] = str(world_model_store)
     snapshot_exists = world_model_store.exists()
 
     ctx.provenance.log(
@@ -91,6 +94,7 @@ def run_pipeline(ctx: PipelineContext, *, dry_run: bool = False) -> PipelineRunA
                 "lecture": str(orch_artifacts.lecture),
                 "eval_report": str(orch_artifacts.eval_report),
                 "manifest": str(orch_artifacts.manifest),
+                "highlights": str(orch_artifacts.highlights) if orch_artifacts.highlights else None,
             },
         )
     )
@@ -101,6 +105,7 @@ def run_pipeline(ctx: PipelineContext, *, dry_run: bool = False) -> PipelineRunA
         eval_report=orch_artifacts.eval_report,
         provenance=orch_artifacts.provenance,
         manifest=orch_artifacts.manifest,
+        highlights=orch_artifacts.highlights,
     )
 
 

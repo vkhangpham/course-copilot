@@ -73,7 +73,9 @@ def main(argv: list[str] | None = None) -> int:
             ingest_before_run=args.ingest_world_model,
         )
         artifacts = run_pipeline(ctx, dry_run=args.dry_run)
-        _print_eval_summary(artifacts)  # safe even when artifacts is None
+        _print_eval_summary(artifacts)
+        _print_highlight_hint(artifacts)
+        _print_highlight_hint(artifacts)
     except FileNotFoundError as exc:
         parser.error(str(exc))
     except Exception as exc:  # noqa: BLE001 - bubble up to CLI for now
@@ -111,6 +113,20 @@ def _print_eval_summary(artifacts: PipelineRunArtifacts | None) -> None:
     print(f"[eval] overall={overall_display} | rubrics: {rubric_summary} | report={eval_path}")
 
 
+def _print_highlight_hint(artifacts: PipelineRunArtifacts | None) -> None:
+    if artifacts is None:
+        return
+
+    highlight_path = artifacts.highlights
+    if not highlight_path:
+        return
+
+    if highlight_path.exists():
+        print(f"[highlights] saved to {highlight_path}")
+    else:
+        print(f"[highlights] expected at {highlight_path} (missing)")
+
+
 def _load_eval_record(path: Path) -> dict[str, Any]:
     line = path.read_text(encoding="utf-8").splitlines()
     if not line:
@@ -135,6 +151,22 @@ def _format_rubric_summary(rubrics: Iterable[dict[str, Any]]) -> str:
         passed = "PASS" if rubric.get("passed") else "FAIL"
         items.append(f"{name}:{passed}({score})")
     return ", ".join(items) if items else "no rubrics"
+
+
+def _print_highlight_hint(artifacts: PipelineRunArtifacts | None) -> None:
+    """Surface the highlight artifact path (if any) after the run."""
+
+    if artifacts is None:
+        return
+
+    highlight_path = getattr(artifacts, "highlights", None)
+    if not highlight_path:
+        return
+
+    if highlight_path.exists():
+        print(f"[highlights] saved to {highlight_path}")
+    else:  # pragma: no cover - defensive logging
+        print(f"[highlights] expected at {highlight_path} (missing)")
 
 
 if __name__ == "__main__":

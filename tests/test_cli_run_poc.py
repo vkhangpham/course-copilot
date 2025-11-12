@@ -183,12 +183,14 @@ evaluation:
         eval_payload = json.loads(report_path.read_text().splitlines()[0])
         self.assertIn("overall_score", eval_payload)
         self.assertIn("[eval] overall=", output)
+        self.assertIn("[highlights] saved to", output)
 
     def test_cli_dry_run_skips_artifacts(self) -> None:
         exit_code, output, output_dir = self._run_cli(["--dry-run"])
         self.assertEqual(exit_code, 0)
         self.assertFalse((output_dir / "course_plan.md").exists())
         self.assertNotIn("[eval]", output)
+        self.assertNotIn("[highlights]", output)
 
     def test_cli_ingest_flag_refreshes_world_model(self) -> None:
         sqlite_path = self.repo_root / "world_model" / "state.sqlite"
@@ -201,15 +203,22 @@ evaluation:
         eval_report_dir = output_dir / "evaluations"
         self.assertTrue(any(eval_report_dir.glob("run-*.jsonl")))
         self.assertIn("[eval] overall=", output)
+        self.assertIn("[highlights] saved to", output)
 
     def test_cli_reports_students_disabled_when_ablation_set(self) -> None:
         exit_code, output, output_dir = self._run_cli(["--ablations", "no_students"])
         self.assertEqual(exit_code, 0)
         self.assertIn("student graders skipped", output)
+        self.assertIn("[highlights] saved to", output)
         eval_report = next((output_dir / "evaluations").glob("run-*.jsonl"))
         payload = json.loads(eval_report.read_text().splitlines()[0])
         self.assertFalse(payload["use_students"])
         self.assertEqual(payload["status"], "students_disabled")
+
+    def test_cli_no_world_model_skips_highlight_hint(self) -> None:
+        exit_code, output, _ = self._run_cli(["--ablations", "no_world_model"])
+        self.assertEqual(exit_code, 0)
+        self.assertNotIn("[highlights]", output)
 
 
 if __name__ == "__main__":
