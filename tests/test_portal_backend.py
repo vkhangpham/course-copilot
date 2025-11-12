@@ -123,6 +123,7 @@ def _write_run(
         "world_model_highlights": {"concepts": [{"id": "relational_model", "summary": "Foundations"}]},
         "world_model_highlight_artifact": str(artifacts_dir / f"run-{run_id}-highlights.json"),
         "teacher_trace": str(teacher_trace_path),
+        "highlight_source": "world_model",
     }
     if notebook_exports is not None:
         manifest["notebook_exports"] = notebook_exports
@@ -140,6 +141,11 @@ def _first_actual_export(manifest: dict) -> dict:
             continue
         return entry
     raise AssertionError("No actual notebook export found")
+
+
+def _relative_from_manifest(entry: dict, settings: PortalSettings) -> str:
+    absolute = Path(entry["path"])
+    return str(absolute.resolve().relative_to(settings.outputs_dir.resolve()))
 
 
 def test_health_without_runs(portal_settings: PortalSettings) -> None:
@@ -170,11 +176,13 @@ def test_list_runs_and_detail(portal_settings: PortalSettings) -> None:
     assert detail["manifest"]["dataset_summary"] == manifest["dataset_summary"]
     assert "Course Plan" in detail["course_plan_excerpt"]
     assert detail["notebook_slug"] == "database-systems-poc"
+    assert detail["highlight_source"] == "world_model"
     first_export = detail["notebook_exports"][0]
     expected_manifest_export = _first_actual_export(manifest)
+    expected_relative = _relative_from_manifest(expected_manifest_export, portal_settings)
     assert first_export["status"] == "ok"
     assert first_export["note_id"] == "note-1"
-    assert first_export["path"] == expected_manifest_export["path"]
+    assert first_export["path"] == expected_relative
     assert all(entry["title"] != "notebook_preflight" for entry in detail["notebook_exports"])
     assert detail["evaluation_attempts"][0]["iteration"] == 1
     assert detail["evaluation_attempts"][0]["overall_score"] == 0.5
@@ -192,12 +200,29 @@ def test_list_runs_and_detail(portal_settings: PortalSettings) -> None:
 
     trace_names = {trace["name"] for trace in detail["trace_files"]}
     assert "teacher_trace" in trace_names
+    highlights_trace = next(trace for trace in detail["trace_files"] if trace["name"] == "highlights")
+    assert highlights_trace["label"] == "World-model highlights"
 
     assert detail["manifest"].get("notebook_exports") is not None
 
     trace_resp = client.get(f"/runs/{run_id}/traces/teacher_trace")
     assert trace_resp.status_code == 200
     assert "Simulated teacher loop" in trace_resp.text
+
+
+def test_dataset_highlight_source_updates_trace_label(portal_settings: PortalSettings) -> None:
+    run_id = "20250102-000000"
+    _write_run(portal_settings.outputs_dir, run_id=run_id, include_notebook=True)
+    manifest_path = portal_settings.outputs_dir / "artifacts" / f"run-{run_id}-manifest.json"
+    data = json.loads(manifest_path.read_text())
+    data["highlight_source"] = "dataset"
+    manifest_path.write_text(json.dumps(data), encoding="utf-8")
+
+    client = TestClient(app)
+    detail = client.get(f"/runs/{run_id}").json()
+    assert detail["highlight_source"] == "dataset"
+    highlights_trace = next(trace for trace in detail["trace_files"] if trace["name"] == "highlights")
+    assert highlights_trace["label"] == "Dataset highlights"
 
     notebook_resp = client.get(f"/runs/{run_id}/notebook-exports")
     assert notebook_resp.status_code == 200
@@ -278,7 +303,8 @@ def test_run_detail_falls_back_to_response_id(portal_settings: PortalSettings) -
     export = data["notebook_exports"][0]
     assert export["note_id"] == "note-xyz"
     assert export["section_id"] == "note-xyz"
-    assert export["path"] == _first_actual_export(manifest)["path"]
+    expected_relative = _relative_from_manifest(_first_actual_export(manifest), portal_settings)
+    assert export["path"] == expected_relative
 
 
 def test_resolve_path_blocks_outside_outputs(tmp_path: Path) -> None:
@@ -330,10 +356,11 @@ def test_notebook_exports_endpoint(portal_settings: PortalSettings) -> None:
     assert len(exports) == 1
     entry = exports[0]
     expected_manifest_entry = _first_actual_export(manifest)
+    expected_relative = _relative_from_manifest(expected_manifest_entry, portal_settings)
     assert entry["status"] == "ok"
     assert entry["notebook"] == "database-systems-poc"
     assert entry["title"] == expected_manifest_entry["title"]
-    assert entry["path"] == expected_manifest_entry["path"]
+    assert entry["path"] == expected_relative
 
 
 def test_rejects_paths_outside_workspace(portal_settings: PortalSettings) -> None:

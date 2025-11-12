@@ -109,6 +109,7 @@ class RunDetail(BaseModel):
     manifest: Dict[str, Any]
     dataset_summary: Dict[str, Any] | None = None
     ablations: Dict[str, Any] | None = None
+    highlight_source: str | None = None
     evaluation: Dict[str, Any] | None = None
     course_plan_excerpt: str | None = None
     lecture_excerpt: str | None = None
@@ -174,6 +175,7 @@ def get_run_detail(run_id: str, settings: PortalSettings = Depends(get_settings)
         manifest=manifest,
         dataset_summary=manifest.get("dataset_summary"),
         ablations=manifest.get("ablations"),
+        highlight_source=manifest.get("highlight_source"),
         evaluation=manifest.get("evaluation"),
         course_plan_excerpt=_read_excerpt(course_plan_path),
         lecture_excerpt=_read_excerpt(lecture_path),
@@ -293,12 +295,13 @@ def _timestamp_for(path: Path) -> datetime:
 def collect_trace_files(run_id: str, manifest: Dict[str, Any], settings: PortalSettings) -> List[TraceFile]:
     """Aggregate available trace/provenance artifacts for a run."""
 
+    highlight_label = _highlight_label(manifest.get("highlight_source"))
     candidates = [
         ("provenance", "Provenance log", manifest.get("provenance")),
         ("evaluation", "Evaluation report", manifest.get("eval_report")),
         (
             "highlights",
-            "World-model highlights",
+            highlight_label,
             manifest.get("world_model_highlight_artifact") or manifest.get("world_model_highlights_artifact"),
         ),
         ("teacher_trace", "Teacher trace", manifest.get("teacher_trace")),
@@ -324,6 +327,19 @@ def collect_trace_files(run_id: str, manifest: Dict[str, Any], settings: PortalS
     return list(seen.values())
 
 
+def _highlight_label(source: Any) -> str:
+    label = "World-model highlights"
+    if not isinstance(source, str):
+        return label
+    normalized = source.strip().lower()
+    if normalized == "dataset":
+        return "Dataset highlights"
+    if normalized and normalized != "world_model":
+        cleaned = normalized.replace("_", " ")
+        return f"{cleaned.title()} highlights"
+    return label
+
+
 def _parse_notebook_exports(manifest: Dict[str, Any], settings: PortalSettings) -> List[NotebookExport]:
     entries = manifest.get("notebook_exports")
     results: List[NotebookExport] = []
@@ -345,6 +361,12 @@ def _parse_notebook_exports(manifest: Dict[str, Any], settings: PortalSettings) 
         if section_id is None:
             section_id = response_id
         resolved_path = _safe_resolve(settings, entry.get("path"))
+        relative_path = None
+        if resolved_path:
+            try:
+                relative_path = resolved_path.relative_to(settings.outputs_dir.resolve())
+            except ValueError:
+                relative_path = Path(resolved_path.name)
         results.append(
             NotebookExport(
                 title=str(entry.get("title")) if entry.get("title") else None,
@@ -353,7 +375,7 @@ def _parse_notebook_exports(manifest: Dict[str, Any], settings: PortalSettings) 
                 notebook=response.get("notebook") if response else None,
                 note_id=note_id,
                 section_id=section_id,
-                path=str(resolved_path) if resolved_path else None,
+                path=str(relative_path) if relative_path else None,
             )
         )
     return results

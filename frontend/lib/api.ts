@@ -44,6 +44,7 @@ export type RunDetail = {
   manifest: Record<string, unknown>;
   dataset_summary?: Record<string, unknown> | null;
   ablations?: Record<string, boolean> | null;
+  highlight_source?: string | null;
   evaluation?: {
     overall_score?: number | null;
     rubrics?: { name: string; passed: boolean; score?: number | null }[];

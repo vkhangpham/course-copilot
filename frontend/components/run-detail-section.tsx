@@ -8,10 +8,43 @@ import type { NotebookExportEntry, RunDetail } from "@/lib/api";
 
 const PORTAL_API_BASE = process.env.NEXT_PUBLIC_PORTAL_API_BASE ?? "http://localhost:8001";
 
+function formatHighlightSource(value?: string | null): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  return value
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+    .trim();
+}
+
 export function RunDetailSection({ detail }: { detail: RunDetail | null }) {
   const highlights = (detail?.manifest?.["world_model_highlights"] as Record<string, unknown>) || {};
   const concepts = (highlights["concepts"] as { id: string; summary?: string }[]) || [];
   const timeline = (highlights["timeline"] as { year?: string; event?: string; summary?: string }[]) || [];
+  const highlightSourceRaw =
+    (typeof detail?.highlight_source === "string" && detail.highlight_source) ||
+    (typeof detail?.manifest?.["highlight_source"] === "string"
+      ? (detail?.manifest?.["highlight_source"] as string)
+      : undefined);
+  const highlightSource = highlightSourceRaw?.toLowerCase();
+  const highlightTitle =
+    highlightSource === "dataset"
+      ? "Dataset highlights"
+      : highlightSource && highlightSource !== "world_model"
+        ? `${formatHighlightSource(highlightSourceRaw) ?? "Highlights"} highlights`
+        : "World-model highlights";
+  const highlightDescription =
+    highlightSource === "dataset"
+      ? "Summary pulled directly from the handcrafted dataset when the world model ablation is enabled."
+      : "Key modules, timeline beats, and exercises derived from the current world model snapshot.";
+  const highlightBadgeText =
+    highlightSource === "dataset"
+      ? "Dataset fallback"
+      : highlightSource && highlightSource !== "world_model"
+        ? formatHighlightSource(highlightSourceRaw)
+        : "World model";
+  const highlightBadgeVariant = highlightSource === "dataset" ? "secondary" : "outline";
   const rubrics = detail?.evaluation?.rubrics ?? [];
   const evaluationAttempts = detail?.evaluation_attempts ?? [];
   const notebookSlug = detail?.notebook_slug ?? process.env.NEXT_PUBLIC_PORTAL_NOTEBOOK_SLUG;
@@ -107,9 +140,14 @@ export function RunDetailSection({ detail }: { detail: RunDetail | null }) {
 
       <div className="grid gap-6 md:grid-cols-3">
         <Card className="md:col-span-2">
-          <CardHeader>
-            <CardTitle>World-model highlights</CardTitle>
-            <CardDescription>Top concept clusters and timeline events from the latest run.</CardDescription>
+          <CardHeader className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <CardTitle>{highlightTitle}</CardTitle>
+              <CardDescription>{highlightDescription}</CardDescription>
+            </div>
+            <Badge variant={highlightBadgeVariant} className="w-fit">
+              {highlightBadgeText}
+            </Badge>
           </CardHeader>
           <CardContent className="grid gap-4 lg:grid-cols-2">
             {concepts.slice(0, 3).map((concept) => (
