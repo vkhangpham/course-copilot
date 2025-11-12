@@ -722,9 +722,6 @@ class TeacherOrchestrator:
         if not self.ctx.ablations.use_world_model:
             self.logger.debug("World-model ablation enabled; skipping CodeAct plan outline.")
             return None
-        if not self.ctx.ablations.use_world_model:
-            self.logger.debug("World-model ablation enabled; skipping CodeAct plan outline.")
-            return None
         cached = self._teacher_cache.get("outline")
         if cached:
             return cached
@@ -750,9 +747,6 @@ class TeacherOrchestrator:
     ) -> str | None:
         if not self.ctx.ablations.allow_recursion:
             self.logger.debug("Recursion disabled; skipping CodeAct lecture author.")
-            return None
-        if not self.ctx.ablations.use_world_model:
-            self.logger.debug("World-model ablation enabled; skipping CodeAct lecture author.")
             return None
         if not self.ctx.ablations.use_world_model:
             self.logger.debug("World-model ablation enabled; skipping CodeAct lecture author.")
