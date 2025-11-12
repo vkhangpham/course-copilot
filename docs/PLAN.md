@@ -98,13 +98,12 @@ external/
    - **Open Notebook** project structure (`/api`, `/open_notebook`, `/frontend`, `run_api.py`) for integration points. ([GitHub][5])
 
 2. **Python env.**
-   - Python 3.11, `pip install dspy duckdb sqlite-utils pydantic fastapi uvicorn networkx orjson python-dotenv`.
-   - `pip install -e external/rlm` if needed (or add to `PYTHONPATH`).
-   - Add `.env` for API keys (OpenAI/Gemini if relevant), DB paths, Open Notebook API base.
+  - Python 3.11, `pip install dspy duckdb sqlite-utils pydantic fastapi uvicorn networkx orjson python-dotenv`.
+  - `pip install -e external/rlm` if needed (or add to `PYTHONPATH`).
+  - Add `.env` for API keys (OpenAI/Gemini if relevant), DB paths, Open Notebook API base. DSPy now reads per-role keys in order: `api_key_env` (from `config/model_config.yaml`), `OPENAI_API_KEY_<ROLE>`, and finally `OPENAI_API_KEY`. API bases follow the same pattern via `api_base` / `OPENAI_API_BASE_<ROLE>` / `OPENAI_API_BASE`. CodeAct factories are wired to those handles (PlanCourse/Lecture/Enforce use the TA handle today; future student programs draw from the student handle automatically).
+  - The teacher RLM imports `rlm.rlm_repl` from the vendored checkout by default (`vendor/rlm` inside this repo). If you’re iterating on a separate clone or a local branch, export `COURSEGEN_VENDOR_RLM_PATH=/absolute/path/to/rlm_checkout` before running the CLI so the orchestrator adds that directory to `sys.path`.
 
-3. **Model configs.** In `/config/model_config.yaml`, set LM ids for:
-   - **Teacher** and **T/As** (same frontier LM fine) with `max_depth=1` recursion (per RLM reference). ([Alex L. Zhang][1])
-   - Temperature and budget caps per task.
+3. **Model configs.** Use `/config/model_config.yaml` to set per-role providers/models (teacher/ta/student) plus optional API key/base env overrides. Temperatures/max tokens fall back to `default_temperature` / `default_max_tokens` if a role omits them.
 
 ---
 
@@ -197,7 +196,9 @@ This mirrors Kosmos’ notion of a **structured world model shared across agents
 
 - Spin up or point to your fork of **Open Notebook** (FastAPI + Next.js). From PoC we only need endpoints to **create a notebook** and **add sections** (or write a skinny `/api/import` in your fork to accept Markdown and optional metadata). Repo layout shows `/api`, `run_api.py`, `/open_notebook`, `/frontend` for reference. ([GitHub][5])
 - CodeAct tools `on_create_notebook(...)` and `on_add_section(...)` POST to that API.
-- Teacher triggers the export after student checks pass.
+- Teacher triggers the export after student checks pass. For local development, set `OPEN_NOTEBOOK_EXPORT_DIR=/path/to/jsonl` to capture offline exports and `OPEN_NOTEBOOK_EXPORT_MIRROR=1` if you want the API path to double-write to disk. `OPEN_NOTEBOOK_API_BASE`, `OPEN_NOTEBOOK_API_KEY`, and `OPEN_NOTEBOOK_SLUG` are resolved from the pipeline config/CLI; overriding them via env lets you point the orchestrator at a dev stack without editing YAML. Use `--skip-notebook-create` (or `OPEN_NOTEBOOK_AUTO_CREATE=0`) when you want to disable the default “pre-flight” notebook creation step.
+- NotebookPublisher chunks artifacts before shipping: the course plan is split into up to five sections and the current lecture into three sections so Open Notebook receives digestible notes with per-section citations. The manifest now records `notebook_export_summary` (success/skipped/error counts, note IDs, queued export paths) so the CLI and portal can report export health without scraping raw responses.
+- A dedicated FastAPI mock + httpx transport now lives in `tests/mocks/notebook_api.py`. Use the `NotebookAPIMock.patch_open_notebook_client()` helper in integration tests (see `tests/test_pipeline_runtime.py`, `tests/test_cli_run_poc.py`, and `tests/test_open_notebook_tools.py`) to run the full pipeline against the mock API without a live server. This mock captures section IDs, enforces auth headers, and mirrors the offline export behavior so CLI hints and manifests include note IDs even in tests.
 
 > For educators’ affordances of the NotebookLM paradigm, see applied discussions as context (grounded summarization, citations, podcast export, etc.), which our Open Notebook fork mirrors. ([NSUWorks][8])
 
