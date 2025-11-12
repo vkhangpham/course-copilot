@@ -38,7 +38,7 @@ def bootstrap_pipeline(
     repo_root: Path | None = None,
     output_dir: Path | None = None,
     ablations: str | None = None,
-    env_keys: tuple[str, ...] = ("OPENAI_API_KEY", "OPEN_NOTEBOOK_API_BASE"),
+    env_keys: tuple[str, ...] = ("OPENAI_API_KEY", "OPEN_NOTEBOOK_API_BASE", "OPEN_NOTEBOOK_SLUG"),
     dataset_dir_override: Path | None = None,
     world_model_store_override: Path | None = None,
     ingest_before_run: bool = False,
@@ -99,6 +99,7 @@ def bootstrap_pipeline(
 
     _ensure_dataset_exists(config.world_model.dataset_dir)
     _refresh_world_model_if_needed(ctx, ingest_before_run)
+    _apply_notebook_env(ctx)
 
     return ctx
 
@@ -148,3 +149,38 @@ def _ingest_world_model(ctx: PipelineContext) -> None:
             payload={**summary, "snapshot": str(snapshot_path)},
         )
     )
+
+
+def _apply_notebook_env(ctx: PipelineContext) -> None:
+    """Export notebook configuration to environment variables for downstream tools."""
+
+    notebook_cfg = ctx.config.notebook
+    applied: dict[str, object] = {}
+
+    if notebook_cfg.api_base:
+        os.environ["OPEN_NOTEBOOK_API_BASE"] = notebook_cfg.api_base
+        applied["api_base"] = notebook_cfg.api_base
+
+    if notebook_cfg.auth_token:
+        os.environ["OPEN_NOTEBOOK_API_KEY"] = notebook_cfg.auth_token
+        applied["token_provided"] = True
+    elif "OPEN_NOTEBOOK_API_KEY" in os.environ:
+        applied.setdefault("token_provided", True)
+
+    if notebook_cfg.notebook_slug:
+        os.environ["OPEN_NOTEBOOK_SLUG"] = notebook_cfg.notebook_slug
+        applied["notebook_slug"] = notebook_cfg.notebook_slug
+
+    if applied:
+        ctx.provenance.log(
+            ProvenanceEvent(
+                stage="bootstrap",
+                message="Notebook API configuration exported to environment",
+                agent="ccopilot.pipeline",
+                payload={
+                    "api_base": applied.get("api_base"),
+                    "token_provided": applied.get("token_provided", False),
+                    "notebook_slug": applied.get("notebook_slug"),
+                },
+            )
+        )

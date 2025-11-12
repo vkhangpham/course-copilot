@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 import tempfile
 import unittest
@@ -11,11 +12,22 @@ from ccopilot.pipeline import bootstrap_pipeline, run_pipeline
 
 class PipelineRuntimeTests(unittest.TestCase):
     def setUp(self) -> None:
+        self._env_backup = {
+            key: os.environ.get(key)
+            for key in ("OPEN_NOTEBOOK_API_BASE", "OPEN_NOTEBOOK_API_KEY", "OPEN_NOTEBOOK_SLUG")
+        }
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.repo_root = Path(self._tmp.name)
         self.config_path = self._write_pipeline_config()
         self.output_dir = self.repo_root / "outputs"
+
+    def tearDown(self) -> None:
+        for key, value in self._env_backup.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
     def _write_pipeline_config(self) -> Path:
         wm_dir = self.repo_root / "world_model"
@@ -85,6 +97,7 @@ models:
 notebook:
   api_base: "http://localhost:5055"
   notebook_slug: "test-notebook"
+  auth_token: "test-token"
 world_model:
   schema_path: "{schema_path}"
   dataset_dir: "{dataset_dir}"
@@ -174,13 +187,27 @@ evaluation:
         self.assertTrue(artifacts.eval_report.exists())
         self.assertTrue(artifacts.provenance.exists())
         self.assertTrue(artifacts.manifest.exists())
+        self.assertIsNotNone(artifacts.highlights)
+        assert artifacts.highlights is not None
+        self.assertTrue(artifacts.highlights.exists())
 
         plan_text = artifacts.course_plan.read_text(encoding="utf-8")
         self.assertIn("Test Course", plan_text)
+        self.assertIn("Concept Highlights", plan_text)
+        self.assertIn("concept_a", plan_text)
 
         manifest = json.loads(artifacts.manifest.read_text(encoding="utf-8"))
         self.assertEqual(manifest["course_plan"], str(artifacts.course_plan))
         self.assertEqual(manifest["lecture"], str(artifacts.lecture))
+        highlights = manifest.get("world_model_highlights")
+        self.assertIsNotNone(highlights)
+        assert highlights is not None
+        self.assertIn("concepts", highlights)
+        self.assertTrue(any(entry["id"] == "concept_a" for entry in highlights["concepts"]))
+        self.assertEqual(
+            manifest.get("world_model_highlight_artifact"),
+            str(artifacts.highlights),
+        )
         self.assertIn("evaluation", manifest)
         self.assertTrue(manifest["evaluation"].get("use_students"))
 
@@ -188,6 +215,10 @@ evaluation:
         self.assertTrue(eval_record["use_students"])
         self.assertGreaterEqual(eval_record.get("overall_score", 0), 0)
         self.assertGreater(len(eval_record.get("rubrics", [])), 0)
+
+        highlight_payload = json.loads(artifacts.highlights.read_text(encoding="utf-8"))
+        self.assertIn("world_model_highlights", highlight_payload)
+        self.assertTrue(highlight_payload["world_model_highlights"].get("concepts"))
 
     def test_missing_store_triggers_auto_ingest(self) -> None:
         ctx = bootstrap_pipeline(
@@ -231,6 +262,38 @@ evaluation:
                 repo_root=self.repo_root,
                 output_dir=self.output_dir,
             )
+
+    def test_bootstrap_sets_notebook_env(self) -> None:
+        os.environ.pop("OPEN_NOTEBOOK_API_BASE", None)
+        os.environ.pop("OPEN_NOTEBOOK_API_KEY", None)
+        os.environ.pop("OPEN_NOTEBOOK_SLUG", None)
+
+        bootstrap_pipeline(
+            config_path=self.config_path,
+            repo_root=self.repo_root,
+            output_dir=self.output_dir,
+        )
+
+        self.assertEqual(os.environ["OPEN_NOTEBOOK_API_BASE"], "http://localhost:5055")
+        self.assertEqual(os.environ["OPEN_NOTEBOOK_API_KEY"], "test-token")
+        self.assertEqual(os.environ["OPEN_NOTEBOOK_SLUG"], "test-notebook")
+
+    def test_highlight_artifact_skipped_when_world_model_disabled(self) -> None:
+        ctx = bootstrap_pipeline(
+            config_path=self.config_path,
+            repo_root=self.repo_root,
+            output_dir=self.output_dir,
+            ablations="no_world_model",
+        )
+        artifacts = run_pipeline(ctx, dry_run=False)
+
+        self.assertIsNotNone(artifacts)
+        assert artifacts is not None
+        self.assertIsNone(artifacts.highlights)
+
+        manifest = json.loads(artifacts.manifest.read_text(encoding="utf-8"))
+        self.assertEqual(manifest.get("world_model_highlights"), {})
+        self.assertIsNone(manifest.get("world_model_highlight_artifact"))
 
 
 if __name__ == "__main__":

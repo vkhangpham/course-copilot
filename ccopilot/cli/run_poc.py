@@ -53,6 +53,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Rebuild the SQLite world model from the handcrafted dataset before running.",
     )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Suppress evaluation/highlight summaries on stdout.",
+    )
     return parser
 
 
@@ -73,9 +78,8 @@ def main(argv: list[str] | None = None) -> int:
             ingest_before_run=args.ingest_world_model,
         )
         artifacts = run_pipeline(ctx, dry_run=args.dry_run)
-        _print_eval_summary(artifacts)
-        _print_highlight_hint(artifacts)
-        _print_highlight_hint(artifacts)
+        _print_eval_summary(artifacts, quiet=args.quiet)
+        _print_highlight_hint(artifacts, quiet=args.quiet)
     except FileNotFoundError as exc:
         parser.error(str(exc))
     except Exception as exc:  # noqa: BLE001 - bubble up to CLI for now
@@ -85,10 +89,10 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _print_eval_summary(artifacts: PipelineRunArtifacts | None) -> None:
+def _print_eval_summary(artifacts: PipelineRunArtifacts | None, *, quiet: bool = False) -> None:
     """Emit a human-readable evaluation summary for CLI users."""
 
-    if artifacts is None:
+    if artifacts is None or quiet:
         return
 
     eval_path = artifacts.eval_report
@@ -111,20 +115,6 @@ def _print_eval_summary(artifacts: PipelineRunArtifacts | None) -> None:
     overall_display = _format_score(overall)
     rubric_summary = _format_rubric_summary(record.get("rubrics") or [])
     print(f"[eval] overall={overall_display} | rubrics: {rubric_summary} | report={eval_path}")
-
-
-def _print_highlight_hint(artifacts: PipelineRunArtifacts | None) -> None:
-    if artifacts is None:
-        return
-
-    highlight_path = artifacts.highlights
-    if not highlight_path:
-        return
-
-    if highlight_path.exists():
-        print(f"[highlights] saved to {highlight_path}")
-    else:
-        print(f"[highlights] expected at {highlight_path} (missing)")
 
 
 def _load_eval_record(path: Path) -> dict[str, Any]:
@@ -153,10 +143,10 @@ def _format_rubric_summary(rubrics: Iterable[dict[str, Any]]) -> str:
     return ", ".join(items) if items else "no rubrics"
 
 
-def _print_highlight_hint(artifacts: PipelineRunArtifacts | None) -> None:
+def _print_highlight_hint(artifacts: PipelineRunArtifacts | None, *, quiet: bool = False) -> None:
     """Surface the highlight artifact path (if any) after the run."""
 
-    if artifacts is None:
+    if artifacts is None or quiet:
         return
 
     highlight_path = getattr(artifacts, "highlights", None)

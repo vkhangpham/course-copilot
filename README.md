@@ -36,6 +36,9 @@ The stubbed pipeline emits:
 - `outputs/lectures/module_01.md`
 - `outputs/evals/run-<timestamp>.jsonl`
 - `outputs/provenance/run-<timestamp>.jsonl`
+- `outputs/artifacts/run-<timestamp>-highlights.json` (world-model concept/timeline slices powering the stub plan/lecture)
+
+After every non-dry run the CLI also prints a short evaluation summary (overall score plus rubric pass/fail). If the student graders are disabled or missing, it reports that status instead of a score so operators immediately know why no grade was recorded.
 
 ## Development Workflow
 - Use **bd (beads)** for issue tracking (`bd ready --json`, `bd update <id> --status in_progress`).

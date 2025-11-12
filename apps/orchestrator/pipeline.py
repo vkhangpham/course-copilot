@@ -24,6 +24,7 @@ class PipelineArtifacts:
     eval_report: Path
     provenance: Path
     manifest: Path
+    highlights: Path | None = None
 
 
 class Orchestrator:
@@ -64,6 +65,12 @@ class Orchestrator:
             path.mkdir(parents=True, exist_ok=True)
 
         world_model_highlights = self._collect_world_model_highlights(world_model_store)
+        highlight_artifact = self._emit_world_model_highlights_artifact(
+            manifest_dir,
+            ts,
+            world_model_highlights,
+            dataset_summary,
+        )
 
         self.logger.info(
             "Running placeholder orchestrator",
@@ -137,6 +144,7 @@ class Orchestrator:
             snapshot_exists,
             evaluation_payload,
             world_model_highlights,
+            highlight_artifact,
         )
 
         self.ctx.provenance.log(
@@ -150,6 +158,7 @@ class Orchestrator:
                     "eval_report": str(eval_report),
                     "evaluation": evaluation_payload,
                     "world_model_highlights": world_model_highlights or {},
+                    "highlight_artifact": str(highlight_artifact) if highlight_artifact else None,
                 },
             )
         )
@@ -160,6 +169,7 @@ class Orchestrator:
             eval_report=eval_report,
             provenance=provenance,
             manifest=manifest,
+            highlights=highlight_artifact,
         )
 
     def _log_stage(self, stage_name: str, payload: Dict[str, Any]) -> None:
@@ -174,7 +184,12 @@ class Orchestrator:
 
     # ------------------------------------------------------------------
 
-    def _emit_course_plan(self, output_dir: Path, dataset_summary: Dict[str, Any]) -> Path:
+    def _emit_course_plan(
+        self,
+        output_dir: Path,
+        dataset_summary: Dict[str, Any],
+        world_model_highlights: Dict[str, Any] | None = None,
+    ) -> Path:
         course = self.ctx.config.course
         plan_path = output_dir / "course_plan.md"
         with plan_path.open("w", encoding="utf-8") as handle:
@@ -192,11 +207,44 @@ class Orchestrator:
                 handle.write(
                     f"- Domains: {', '.join(dataset_summary['top_domains'])}\n"
                 )
+            handle.write("\n")
+            highlights = world_model_highlights or {}
+            concepts = highlights.get("concepts") or []
+            if concepts:
+                handle.write("## Concept Highlights\n")
+                for concept in concepts:
+                    name = concept.get("name") or concept.get("id")
+                    summary = (concept.get("summary") or "").strip()
+                    summary = summary or "Summary pending in future runs."
+                    handle.write(f"- **{name}** ({concept.get('id')}): {summary}\n")
+                handle.write("\n")
+            timeline = highlights.get("timeline") or []
+            if timeline:
+                handle.write("## Timeline Signals\n")
+                for event in timeline:
+                    year = event.get("year") or "n.d."
+                    label = event.get("event") or "Milestone"
+                    concept_id = event.get("concept_id") or "unknown"
+                    handle.write(f"- {year}: {label} · related concept `{concept_id}`\n")
+                    summary = (event.get("summary") or "").strip()
+                    if summary:
+                        handle.write(f"  - {summary}\n")
+                handle.write("\n")
+            spotlight = highlights.get("spotlight_paper")
+            if spotlight:
+                handle.write("## Citation Spotlight\n")
+                handle.write(
+                    f"- {spotlight.get('title')} ({spotlight.get('year')}) — "
+                    f"{spotlight.get('venue') or 'venue tbd'}\n\n"
+                )
             handle.write("\n> Placeholder plan – replace once Teacher RLM is wired.\n")
         return plan_path
 
     def _emit_placeholder_lecture(
-        self, lecture_dir: Path, dataset_summary: Dict[str, Any]
+        self,
+        lecture_dir: Path,
+        dataset_summary: Dict[str, Any],
+        world_model_highlights: Dict[str, Any] | None = None,
     ) -> Path:
         lecture_path = lecture_dir / "module_01.md"
         with lecture_path.open("w", encoding="utf-8") as handle:
@@ -241,6 +289,33 @@ class Orchestrator:
             handle.write(
                 "- Postgres, ARIES, and Spanner extend these ideas to modern distributed databases.\n"
             )
+            highlights = world_model_highlights or {}
+            concept_highlights = highlights.get("concepts") or []
+            if concept_highlights:
+                concept = concept_highlights[0]
+                handle.write("\n### Spotlight Concept\n")
+                handle.write(
+                    f"{concept.get('name')} ({concept.get('id')}): "
+                    f"{(concept.get('summary') or 'Summary pending.').strip()}\n"
+                )
+            timeline_highlights = highlights.get("timeline") or []
+            if timeline_highlights:
+                event = timeline_highlights[0]
+                handle.write("\n### Timeline Anchor\n")
+                handle.write(
+                    f"{event.get('year') or 'n.d.'} – {event.get('event') or 'Milestone'} "
+                    f"(related concept `{event.get('concept_id')}`)\n"
+                )
+                summary = (event.get("summary") or "").strip()
+                if summary:
+                    handle.write(f"{summary}\n")
+            spotlight = highlights.get("spotlight_paper")
+            if spotlight:
+                handle.write("\n### Citation Preview\n")
+                handle.write(
+                    f"{spotlight.get('title')} ({spotlight.get('year')}) — "
+                    f"{spotlight.get('venue') or 'venue tbd'}\n"
+                )
         return lecture_path
 
     def _emit_eval_report(self, eval_dir: Path, ts: str, payload: Dict[str, Any]) -> Path:
@@ -256,6 +331,7 @@ class Orchestrator:
         course_plan: Path,
         lecture: Path,
         dataset_summary: Dict[str, Any],
+        world_model_highlights: Dict[str, Any] | None = None,
     ) -> Path:
         record = {
             "stage": "placeholder",
@@ -267,6 +343,7 @@ class Orchestrator:
                 "world_model_enabled": self.ctx.ablations.use_world_model,
                 "students_enabled": self.ctx.ablations.use_students,
                 "dataset_summary": dataset_summary,
+                "world_model_highlights": world_model_highlights or {},
             },
         }
         with path.open("w", encoding="utf-8") as handle:
@@ -284,6 +361,8 @@ class Orchestrator:
         world_model_store: Path,
         snapshot_exists: bool,
         evaluation_payload: Dict[str, Any],
+        world_model_highlights: Dict[str, Any] | None = None,
+        highlight_artifact: Path | None = None,
     ) -> Path:
         manifest: Dict[str, Any] = {
             "course_plan": str(course_plan),
@@ -299,10 +378,91 @@ class Orchestrator:
             "world_model_store": str(world_model_store),
             "world_model_store_exists": snapshot_exists,
             "evaluation": evaluation_payload,
+            "world_model_highlights": world_model_highlights or {},
+            "world_model_highlight_artifact": str(highlight_artifact) if highlight_artifact else None,
         }
         with path.open("w", encoding="utf-8") as handle:
             json.dump(manifest, handle, indent=2)
         return path
+
+    def _emit_world_model_highlights_artifact(
+        self,
+        artifacts_dir: Path,
+        ts: str,
+        world_model_highlights: Dict[str, Any] | None,
+        dataset_summary: Dict[str, Any],
+    ) -> Path | None:
+        """Persist highlight slices so other scripts can diff/inspect them."""
+
+        if not world_model_highlights:
+            return None
+
+        artifact_path = artifacts_dir / f"run-{ts}-highlights.json"
+        payload = {
+            "timestamp": ts,
+            "ablations": self.ctx.ablations.describe(),
+            "dataset_summary": dataset_summary,
+            "world_model_highlights": world_model_highlights,
+        }
+        with artifact_path.open("w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2)
+        return artifact_path
+
+    def _collect_world_model_highlights(
+        self,
+        store_path: Path,
+        *,
+        concept_limit: int = 3,
+        timeline_limit: int = 3,
+    ) -> Dict[str, Any]:
+        """Return a trimmed slice of the world model for placeholder artifacts."""
+
+        if not self.ctx.ablations.use_world_model or not store_path.exists():
+            return {}
+
+        try:
+            concept_rows = fetch_concepts(depth=1, limit=concept_limit, store_path=store_path)
+            concept_highlights = [
+                {
+                    "id": row.get("id"),
+                    "name": row.get("name"),
+                    "summary": row.get("summary"),
+                    "children": row.get("children", []),
+                    "prerequisites": row.get("prerequisites", []),
+                }
+                for row in concept_rows[:concept_limit]
+            ]
+
+            timeline_rows = search_events(limit=timeline_limit, store_path=store_path)
+            timeline_highlights = timeline_rows[:timeline_limit]
+
+            spotlight_paper: Dict[str, Any] | None = None
+            for event in timeline_highlights:
+                citation_id = event.get("citation_id")
+                if not citation_id:
+                    continue
+                try:
+                    spotlight_paper = lookup_paper(citation_id, store_path=store_path)
+                except ValueError:
+                    continue
+                else:
+                    break
+
+            highlights: Dict[str, Any] = {}
+            if concept_highlights:
+                highlights["concepts"] = concept_highlights
+            if timeline_highlights:
+                highlights["timeline"] = timeline_highlights
+            if spotlight_paper:
+                highlights["spotlight_paper"] = spotlight_paper
+            return highlights
+        except Exception as exc:  # pragma: no cover - defensive guardrail
+            self.logger.warning(
+                "World-model highlights unavailable: %s",
+                exc,
+                extra={"store_path": str(store_path)},
+            )
+            return {}
 
     def _evaluate_artifacts(self, lecture_path: Path) -> Dict[str, Any]:
         if not self.ctx.ablations.use_students:

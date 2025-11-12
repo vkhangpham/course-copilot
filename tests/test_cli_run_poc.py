@@ -215,6 +215,17 @@ evaluation:
         self.assertFalse(payload["use_students"])
         self.assertEqual(payload["status"], "students_disabled")
 
+    def test_cli_quiet_suppresses_summaries(self) -> None:
+        exit_code, output, output_dir = self._run_cli(["--quiet"])
+        self.assertEqual(exit_code, 0)
+        self.assertTrue((output_dir / "course_plan.md").exists())
+        self.assertNotIn("[eval]", output)
+        self.assertNotIn("[highlights]", output)
+        # Artifacts still exist even when we skip console summaries.
+        manifest_path = next((output_dir / "artifacts").glob("run-*-manifest.json"))
+        manifest = json.loads(manifest_path.read_text())
+        self.assertIn("world_model_highlight_artifact", manifest)
+
     def test_cli_no_world_model_skips_highlight_hint(self) -> None:
         exit_code, output, _ = self._run_cli(["--ablations", "no_world_model"])
         self.assertEqual(exit_code, 0)
