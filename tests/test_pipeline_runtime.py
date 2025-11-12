@@ -4,24 +4,44 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 from unittest import mock
 
 import yaml
 
 from ccopilot.core.dspy_runtime import DSPyModelHandles
+from ccopilot.core.config import read_yaml_file
 from ccopilot.pipeline import bootstrap_pipeline, run_pipeline
+from tests.mocks.notebook_api import NotebookAPIMock
 
 
 class PipelineRuntimeTests(unittest.TestCase):
+    @staticmethod
+    def _section_exports(entries: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+        if not entries:
+            return []
+        return [entry for entry in entries if not isinstance(entry, dict) or entry.get("kind") != "preflight"]
+
     def setUp(self) -> None:
         self._env_backup = {
             key: os.environ.get(key)
-            for key in ("OPEN_NOTEBOOK_API_BASE", "OPEN_NOTEBOOK_API_KEY", "OPEN_NOTEBOOK_SLUG")
+            for key in (
+                "OPEN_NOTEBOOK_API_BASE",
+                "OPEN_NOTEBOOK_API_KEY",
+                "OPEN_NOTEBOOK_SLUG",
+                "OPEN_NOTEBOOK_EXPORT_DIR",
+                "OPEN_NOTEBOOK_EXPORT_MIRROR",
+            )
         }
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
         self.repo_root = Path(self._tmp.name)
-        self.config_path = self._write_pipeline_config()
+        self.notebook_api = NotebookAPIMock()
+        self.addCleanup(self.notebook_api.close)
+        self.config_path = self._write_pipeline_config(
+            api_base=self.notebook_api.base_url,
+            auth_token=self.notebook_api.token,
+        )
         self.output_dir = self.repo_root / "outputs"
         self._dspy_handles = DSPyModelHandles(teacher=object(), ta=object(), student=object())
         patcher = mock.patch(
@@ -40,6 +60,7 @@ class PipelineRuntimeTests(unittest.TestCase):
         )
         self.addCleanup(registry_patcher.stop)
         self.mock_build_registry = registry_patcher.start()
+        os.environ["OPEN_NOTEBOOK_EXPORT_DIR"] = str(self.repo_root / "notebook_exports")
 
     def tearDown(self) -> None:
         for key, value in self._env_backup.items():
@@ -48,18 +69,24 @@ class PipelineRuntimeTests(unittest.TestCase):
             else:
                 os.environ[key] = value
 
-    def _write_pipeline_config(self) -> Path:
+    def _write_pipeline_config(
+        self,
+        *,
+        api_base: str = "",
+        auth_token: str = "test-token",
+        filename: str = "pipeline.yaml",
+    ) -> Path:
         wm_dir = self.repo_root / "world_model"
-        wm_dir.mkdir(parents=True)
+        wm_dir.mkdir(parents=True, exist_ok=True)
         schema_path = wm_dir / "schema.sql"
         schema_path.write_text("CREATE TABLE IF NOT EXISTS concepts(id TEXT PRIMARY KEY);\n", encoding="utf-8")
 
         dataset_dir = self.repo_root / "data" / "handcrafted"
-        dataset_dir.mkdir(parents=True)
+        dataset_dir.mkdir(parents=True, exist_ok=True)
         self._seed_dataset(dataset_dir)
 
         eval_dir = self.repo_root / "evals"
-        eval_dir.mkdir(parents=True)
+        eval_dir.mkdir(parents=True, exist_ok=True)
         rubrics_path = eval_dir / "rubrics.yaml"
         rubrics_payload = {
             "coverage": {
@@ -114,9 +141,9 @@ models:
   temperature: 0.1
   max_tokens: 512
 notebook:
-  api_base: "http://localhost:5055"
+  api_base: "{api_base}"
   notebook_slug: "test-notebook"
-  auth_token: "test-token"
+  auth_token: "{auth_token}"
 world_model:
   schema_path: "{schema_path}"
   dataset_dir: "{dataset_dir}"
@@ -126,7 +153,7 @@ evaluation:
   quiz_bank_path: "{quiz_bank}"
   max_mutations: 1
 """
-        config_path = self.repo_root / "pipeline.yaml"
+        config_path = self.repo_root / filename
         config_path.write_text(config_text.strip(), encoding="utf-8")
         return config_path
 
@@ -200,7 +227,8 @@ evaluation:
             output_dir=self.output_dir,
         )
         self.assertIs(ctx.dspy_handles, self._dspy_handles)
-        artifacts = run_pipeline(ctx, dry_run=False)
+        with self.notebook_api.patch_open_notebook_client():
+            artifacts = run_pipeline(ctx, dry_run=False)
 
         self.assertIsNotNone(artifacts)
         assert artifacts is not None
@@ -212,6 +240,10 @@ evaluation:
         self.assertIsNotNone(artifacts.highlights)
         assert artifacts.highlights is not None
         self.assertTrue(artifacts.highlights.exists())
+        self.assertIsNone(artifacts.teacher_trace)
+        self.assertIsNotNone(artifacts.notebook_exports)
+        self.assertIsNotNone(artifacts.notebook_export_summary)
+        self.assertIsNotNone(artifacts.notebook_export_summary)
 
         plan_text = artifacts.course_plan.read_text(encoding="utf-8")
         self.assertIn("Test Course", plan_text)
@@ -235,8 +267,31 @@ evaluation:
             manifest.get("world_model_highlight_artifact"),
             str(artifacts.highlights),
         )
+        self.assertTrue(manifest.get("teacher_trace") is None)
+        notebook_exports = manifest.get("notebook_exports")
+        self.assertIsNotNone(notebook_exports)
+        assert notebook_exports is not None
+        preflight_entry = next(
+            (entry for entry in notebook_exports if isinstance(entry, dict) and entry.get("kind") == "preflight"),
+            None,
+        )
+        self.assertIsNotNone(preflight_entry)
+        sections = self._section_exports(notebook_exports)
+        self.assertGreaterEqual(len(sections), 1)
+        self.assertIn("response", sections[0])
         self.assertIn("evaluation", manifest)
         self.assertTrue(manifest["evaluation"].get("use_students"))
+        self.assertIn("attempts", manifest["evaluation"])
+        self.assertIn("attempts", manifest["evaluation"])
+        self.assertGreaterEqual(len(self.notebook_api.notes), 1)
+        export_response = sections[0]["response"]
+        self.assertEqual(export_response.get("status"), "ok")
+        self.assertIn("note_id", export_response)
+
+        export_summary = manifest.get("notebook_export_summary")
+        self.assertIsNotNone(export_summary)
+        assert export_summary is not None
+        self.assertGreater(export_summary["success"], 0)
 
         eval_record = json.loads(artifacts.eval_report.read_text(encoding="utf-8").splitlines()[0])
         self.assertTrue(eval_record["use_students"])
@@ -275,12 +330,52 @@ evaluation:
             output_dir=self.output_dir,
             ablations="no_students",
         )
-        artifacts = run_pipeline(ctx, dry_run=False)
+        with self.notebook_api.patch_open_notebook_client():
+            artifacts = run_pipeline(ctx, dry_run=False)
 
         assert artifacts is not None
         eval_record = json.loads(artifacts.eval_report.read_text(encoding="utf-8").splitlines()[0])
         self.assertFalse(eval_record["use_students"])
         self.assertEqual(eval_record["status"], "students_disabled")
+
+    def test_world_model_ablation_skips_highlights(self) -> None:
+        ctx = bootstrap_pipeline(
+            config_path=self.config_path,
+            repo_root=self.repo_root,
+            output_dir=self.output_dir,
+            ablations="no_world_model",
+        )
+        with self.notebook_api.patch_open_notebook_client():
+            artifacts = run_pipeline(ctx, dry_run=False)
+
+        assert artifacts is not None
+        self.assertIsNone(artifacts.highlights)
+        manifest = json.loads(artifacts.manifest.read_text(encoding="utf-8"))
+        self.assertEqual(manifest["world_model_highlights"], {})
+        self.assertIsNone(manifest["world_model_highlight_artifact"])
+        self.assertTrue(
+            self.notebook_api.notes,
+            "Notebook export should still occur when only the world model is disabled",
+        )
+
+    def test_recursion_ablation_skips_notebook_exports(self) -> None:
+        ctx = bootstrap_pipeline(
+            config_path=self.config_path,
+            repo_root=self.repo_root,
+            output_dir=self.output_dir,
+            ablations="no_recursion",
+        )
+        with self.notebook_api.patch_open_notebook_client():
+            artifacts = run_pipeline(ctx, dry_run=False)
+
+        assert artifacts is not None
+        self.assertFalse(self.notebook_api.notes, "Notebook API should not be called when recursion is disabled")
+        manifest = json.loads(artifacts.manifest.read_text(encoding="utf-8"))
+        exports = manifest.get("notebook_exports") or []
+        self.assertTrue(exports, "Manifest should contain a placeholder notebook export entry")
+        reason = (exports[0].get("response") or {}).get("reason")
+        self.assertEqual(reason, "recursion_disabled")
+        self.assertIsNone(manifest.get("teacher_trace"))
 
     def test_missing_dataset_dir_raises(self) -> None:
         dataset_dir = self.repo_root / "data"
@@ -304,10 +399,17 @@ evaluation:
             repo_root=self.repo_root,
             output_dir=self.output_dir,
         )
+        cfg = read_yaml_file(self.config_path)
+        expected_base = cfg.get("notebook", {}).get("api_base") or ""
+        expected_slug = cfg.get("notebook", {}).get("notebook_slug") or ""
+        expected_key = cfg.get("notebook", {}).get("auth_token")
 
-        self.assertEqual(os.environ["OPEN_NOTEBOOK_API_BASE"], "http://localhost:5055")
-        self.assertEqual(os.environ["OPEN_NOTEBOOK_API_KEY"], "test-token")
-        self.assertEqual(os.environ["OPEN_NOTEBOOK_SLUG"], "test-notebook")
+        if expected_base:
+            self.assertEqual(os.environ["OPEN_NOTEBOOK_API_BASE"], expected_base)
+        if expected_slug:
+            self.assertEqual(os.environ["OPEN_NOTEBOOK_SLUG"], expected_slug)
+        if expected_key:
+            self.assertEqual(os.environ.get("OPEN_NOTEBOOK_API_KEY"), expected_key)
 
     def test_dataset_highlights_present_when_world_model_disabled(self) -> None:
         ctx = bootstrap_pipeline(
@@ -316,11 +418,14 @@ evaluation:
             output_dir=self.output_dir,
             ablations="no_world_model",
         )
-        artifacts = run_pipeline(ctx, dry_run=False)
+        with self.notebook_api.patch_open_notebook_client():
+            artifacts = run_pipeline(ctx, dry_run=False)
 
         self.assertIsNotNone(artifacts)
         assert artifacts is not None
         self.assertIsNotNone(artifacts.highlights)
+        self.assertIsNone(artifacts.teacher_trace)
+        self.assertIsNotNone(artifacts.notebook_exports)
 
         manifest = json.loads(artifacts.manifest.read_text(encoding="utf-8"))
         highlights = manifest.get("world_model_highlights")
@@ -333,6 +438,49 @@ evaluation:
             manifest.get("world_model_highlight_artifact"),
             str(artifacts.highlights),
         )
+        self.assertTrue(manifest.get("teacher_trace") is None)
+        notebook_exports = manifest.get("notebook_exports")
+        self.assertIsNotNone(notebook_exports)
+        assert notebook_exports is not None
+        sections = self._section_exports(notebook_exports)
+        self.assertTrue(sections)
+        self.assertIn("note_id", sections[0]["response"])
+        self.assertIn("attempts", manifest["evaluation"])
+        self.assertFalse(manifest.get("world_model_store_exists"))
+
+        export_summary = manifest.get("notebook_export_summary")
+        self.assertIsNotNone(export_summary)
+        assert export_summary is not None
+        self.assertGreaterEqual(export_summary["success"], 1)
+
+    def test_notebook_export_offline_queue_written(self) -> None:
+        offline_config = self._write_pipeline_config(api_base="", filename="pipeline-offline.yaml")
+        os.environ.pop("OPEN_NOTEBOOK_API_BASE", None)
+        os.environ.pop("OPEN_NOTEBOOK_API_KEY", None)
+        ctx = bootstrap_pipeline(
+            config_path=offline_config,
+            repo_root=self.repo_root,
+            output_dir=self.output_dir,
+        )
+        artifacts = run_pipeline(ctx, dry_run=False)
+
+        assert artifacts is not None
+        manifest = json.loads(artifacts.manifest.read_text(encoding="utf-8"))
+        exports = manifest.get("notebook_exports")
+        self.assertIsNotNone(exports)
+        assert exports is not None
+        sections = self._section_exports(exports)
+        self.assertTrue(sections)
+        response = sections[0]["response"]
+        self.assertEqual(response.get("status"), "queued")
+        export_path = Path(response["export_path"])
+        self.assertTrue(export_path.exists())
+        self.assertEqual(response.get("notebook"), "test-notebook")
+
+        export_summary = manifest.get("notebook_export_summary")
+        self.assertIsNotNone(export_summary)
+        assert export_summary is not None
+        self.assertGreaterEqual(len(export_summary.get("queued_exports", [])), 1)
 
 
 if __name__ == "__main__":
