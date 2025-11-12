@@ -6,6 +6,35 @@ export type RunListItem = {
   has_lecture: boolean;
   has_eval_report: boolean;
   overall_score?: number | null;
+  notebook_export_summary?: {
+    total?: number;
+    success?: number;
+    skipped?: number;
+    errors?: number;
+  } | null;
+};
+
+export type TraceFile = {
+  name: string;
+  label: string;
+  path: string;
+};
+
+export type NotebookExportEntry = {
+  title?: string | null;
+  citations?: string[];
+  status?: string | null;
+  notebook?: string | null;
+  note_id?: string | null;
+  section_id?: string | null;
+  path?: string | null;
+};
+
+export type TeacherTraceMeta = {
+  path: string;
+  action_count: number;
+  summary?: string | null;
+  prompt?: string | null;
 };
 
 export type RunDetail = {
@@ -22,6 +51,22 @@ export type RunDetail = {
   course_plan_excerpt?: string | null;
   lecture_excerpt?: string | null;
   notebook_slug?: string | null;
+  notebook_exports?: NotebookExportEntry[] | null;
+  evaluation_attempts?: {
+    iteration: number;
+    overall_score?: number | null;
+    quiz_pass_rate?: number | null;
+    failing_rubrics?: string[];
+    failing_questions?: string[];
+  }[] | null;
+  trace_files?: TraceFile[] | null;
+  teacher_trace?: TeacherTraceMeta | null;
+  notebook_export_summary?: {
+    total?: number;
+    success?: number;
+    skipped?: number;
+    errors?: number;
+  } | null;
 };
 
 const API_BASE = process.env.NEXT_PUBLIC_PORTAL_API_BASE ?? "http://localhost:8001";
@@ -47,4 +92,12 @@ export async function fetchRuns(): Promise<RunListItem[]> {
 
 export async function fetchRunDetail(runId: string): Promise<RunDetail> {
   return handle<RunDetail>(`${API_BASE}/runs/${runId}`);
+}
+
+export async function fetchNotebookExports(runId: string): Promise<NotebookExportEntry[]> {
+  return handle<NotebookExportEntry[]>(`${API_BASE}/runs/${runId}/notebook-exports`);
+}
+
+export async function fetchLatestRun(): Promise<RunDetail> {
+  return handle<RunDetail>(`${API_BASE}/runs/latest`);
 }

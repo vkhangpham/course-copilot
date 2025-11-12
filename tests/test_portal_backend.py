@@ -171,8 +171,10 @@ def test_list_runs_and_detail(portal_settings: PortalSettings) -> None:
     assert "Course Plan" in detail["course_plan_excerpt"]
     assert detail["notebook_slug"] == "database-systems-poc"
     first_export = detail["notebook_exports"][0]
+    expected_manifest_export = _first_actual_export(manifest)
     assert first_export["status"] == "ok"
     assert first_export["note_id"] == "note-1"
+    assert first_export["path"] == expected_manifest_export["path"]
     assert all(entry["title"] != "notebook_preflight" for entry in detail["notebook_exports"])
     assert detail["evaluation_attempts"][0]["iteration"] == 1
     assert detail["evaluation_attempts"][0]["overall_score"] == 0.5
@@ -217,12 +219,15 @@ def test_run_detail_handles_missing_artifacts(portal_settings: PortalSettings) -
     manifest = _write_run(portal_settings.outputs_dir, include_notebook=True)
     course_plan_path = Path(manifest["course_plan"])
     course_plan_path.unlink()
+    teacher_trace_path = Path(manifest["teacher_trace"])
+    teacher_trace_path.unlink()
 
     client = TestClient(app)
     response = client.get("/runs/20250101-000000")
     assert response.status_code == 200
     data = response.json()
     assert data["course_plan_excerpt"] is None
+    assert data["teacher_trace"] is None
 
 
 def test_latest_run_endpoint(portal_settings: PortalSettings) -> None:
@@ -273,6 +278,7 @@ def test_run_detail_falls_back_to_response_id(portal_settings: PortalSettings) -
     export = data["notebook_exports"][0]
     assert export["note_id"] == "note-xyz"
     assert export["section_id"] == "note-xyz"
+    assert export["path"] == _first_actual_export(manifest)["path"]
 
 
 def test_resolve_path_blocks_outside_outputs(tmp_path: Path) -> None:
@@ -327,6 +333,7 @@ def test_notebook_exports_endpoint(portal_settings: PortalSettings) -> None:
     assert entry["status"] == "ok"
     assert entry["notebook"] == "database-systems-poc"
     assert entry["title"] == expected_manifest_entry["title"]
+    assert entry["path"] == expected_manifest_entry["path"]
 
 
 def test_rejects_paths_outside_workspace(portal_settings: PortalSettings) -> None:

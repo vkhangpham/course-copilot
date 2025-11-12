@@ -212,13 +212,6 @@ export function RunDetailSection({ detail }: { detail: RunDetail | null }) {
               <div className="space-y-2">
                 <ArtifactLink label="Course plan" href={coursePlanUrl} />
                 <ArtifactLink label="Lecture" href={lectureUrl} />
-                {traceFiles.map((trace) => (
-                  <ArtifactLink
-                    key={trace.name}
-                    label={trace.label}
-                    href={`${PORTAL_API_BASE}/runs/${detail.run_id}/traces/${trace.name}`}
-                  />
-                ))}
               </div>
             )}
           </CardContent>
@@ -258,6 +251,11 @@ export function RunDetailSection({ detail }: { detail: RunDetail | null }) {
                   {noteId && (
                     <p className="mt-2 text-xs text-muted-foreground">
                       Note ID: <span className="font-mono">{noteId}</span>
+                    </p>
+                  )}
+                  {entry.path && (
+                    <p className="text-xs text-muted-foreground break-all">
+                      Source: <span className="font-mono">{entry.path}</span>
                     </p>
                   )}
                   {entry.notebook && (

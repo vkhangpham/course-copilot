@@ -91,6 +91,7 @@ class NotebookExport(BaseModel):
     notebook: str | None = None
     note_id: str | None = None
     section_id: str | None = None
+    path: str | None = None
 
 
 class EvaluationAttempt(BaseModel):
@@ -162,7 +163,7 @@ def get_run_detail(run_id: str, settings: PortalSettings = Depends(get_settings)
     lecture_path = _safe_resolve(settings, manifest.get("lecture"))
     trace_files = collect_trace_files(run_id, manifest, settings)
     teacher_trace = build_teacher_trace_meta(manifest, settings)
-    notebook_exports = _parse_notebook_exports(manifest)
+    notebook_exports = _parse_notebook_exports(manifest, settings)
     evaluation_attempts = _parse_evaluation_attempts(manifest)
     notebook_slug = _infer_notebook_slug(manifest, notebook_exports, settings)
 
@@ -210,7 +211,7 @@ def get_lecture(run_id: str, settings: PortalSettings = Depends(get_settings)) -
 def get_notebook_exports(run_id: str, settings: PortalSettings = Depends(get_settings)) -> List[NotebookExport]:
     manifest_path = _find_manifest_path(run_id, settings)
     manifest = _load_manifest(manifest_path)
-    return _parse_notebook_exports(manifest)
+    return _parse_notebook_exports(manifest, settings)
 
 
 @app.get("/runs/{run_id}/traces/{trace_name}", response_class=PlainTextResponse)
@@ -323,7 +324,7 @@ def collect_trace_files(run_id: str, manifest: Dict[str, Any], settings: PortalS
     return list(seen.values())
 
 
-def _parse_notebook_exports(manifest: Dict[str, Any]) -> List[NotebookExport]:
+def _parse_notebook_exports(manifest: Dict[str, Any], settings: PortalSettings) -> List[NotebookExport]:
     entries = manifest.get("notebook_exports")
     results: List[NotebookExport] = []
     if not isinstance(entries, list):
@@ -343,6 +344,7 @@ def _parse_notebook_exports(manifest: Dict[str, Any]) -> List[NotebookExport]:
             note_id = section_id or response_id
         if section_id is None:
             section_id = response_id
+        resolved_path = _safe_resolve(settings, entry.get("path"))
         results.append(
             NotebookExport(
                 title=str(entry.get("title")) if entry.get("title") else None,
@@ -351,6 +353,7 @@ def _parse_notebook_exports(manifest: Dict[str, Any]) -> List[NotebookExport]:
                 notebook=response.get("notebook") if response else None,
                 note_id=note_id,
                 section_id=section_id,
+                path=str(resolved_path) if resolved_path else None,
             )
         )
     return results
@@ -460,7 +463,7 @@ async def http_error_handler(_: Any, exc: HTTPException) -> JSONResponse:
 
 
 def build_teacher_trace_meta(manifest: Dict[str, Any], settings: PortalSettings) -> TeacherTraceMeta | None:
-    trace_path = settings.resolve_path(manifest.get("teacher_trace"))
+    trace_path = _safe_resolve(settings, manifest.get("teacher_trace"))
     if not trace_path or not trace_path.exists():
         return None
     try:
