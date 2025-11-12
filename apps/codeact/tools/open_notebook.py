@@ -143,19 +143,22 @@ def push_notebook_section(
     try:
         need_preflight = _auto_create_enabled(auto_create) and cache_key not in _ENSURED_NOTEBOOKS
         if need_preflight:
-            if client is not None and not _supports_ensure_notebook(client):
-                logger.debug(
-                    "Skipping notebook auto-create; client lacks ensure_notebook",
-                    extra={"client": type(client).__name__, "notebook": slug},
-                )
-            else:
-                ensure_notebook_exists(
-                    notebook_slug=slug,
-                    api_base=base_url,
-                    api_key=token,
-                    client=client,
-                )
-                _ENSURED_NOTEBOOKS.add(cache_key)
+            ensure_client = None
+            if client is not None:
+                if _supports_ensure_notebook(client):
+                    ensure_client = client
+                else:
+                    logger.debug(
+                        "Notebook client lacks ensure_notebook; falling back to default client",
+                        extra={"client": type(client).__name__, "notebook": slug},
+                    )
+            ensure_notebook_exists(
+                notebook_slug=slug,
+                api_base=base_url,
+                api_key=token,
+                client=ensure_client,
+            )
+            _ENSURED_NOTEBOOKS.add(cache_key)
         response = client.push_note(
             slug,
             title,
