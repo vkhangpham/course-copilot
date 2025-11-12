@@ -40,6 +40,8 @@ The stubbed pipeline emits:
 
 After every non-dry run the CLI also prints a short evaluation summary (overall score plus rubric pass/fail). If the student graders are disabled or missing, it reports that status instead of a score so operators immediately know why no grade was recorded.
 
+Notebook exports pull their defaults from environment variables that `coursegen-poc` now sets during bootstrap: `OPEN_NOTEBOOK_API_BASE`, `OPEN_NOTEBOOK_API_KEY`, and `OPEN_NOTEBOOK_SLUG`. The CodeAct `push_notebook_section` tool will fall back to these values whenever the orchestrator does not pass explicit overrides, so make sure the config’s `notebook` section is filled in before running against a real instance.
+
 ## Development Workflow
 - Use **bd (beads)** for issue tracking (`bd ready --json`, `bd update <id> --status in_progress`).
 - Communicate/coordinate via **MCP Agent Mail**; file reservations prevent stomping each other (see `AGENTS.md`).
@@ -55,7 +57,7 @@ Refer to `docs/PLAN.md`, `docs/PoC.md`, and `docs/ARCHITECTURE.md` for detailed 
 ## World-Model Tooling
 1. **Validate inputs** – `validate-handcrafted data/handcrafted/database_systems` (Typer CLI) fails fast when authors/papers/concepts/timeline/quiz rows drift out of sync. Run this before committing dataset edits.
 2. **Rebuild snapshots** – `python scripts/ingest_handcrafted.py data/handcrafted/database_systems world_model/state.sqlite --jsonl outputs/world_model/snapshot.jsonl` regenerates both the SQLite store and a JSON Lines dump. You can also pass `--ingest-world-model` to `coursegen-poc` to chain validation + ingest before the orchestrator runs.
-3. **Inspect data** – `wm-inspect concepts --store world_model/state.sqlite --topic transaction` (plus `timeline`, `claims`, `papers`, `authors`) renders quick JSON tables without opening SQLite. Useful for debugging prompts and CodeAct tools.
+3. **Inspect data** – `wm-inspect concepts --store world_model/state.sqlite --topic transaction` (plus `timeline`, `claims`, `papers`, `authors`, and the new `definitions` / `graph` commands) renders quick JSON tables without opening SQLite. Useful for debugging prompts and CodeAct tools.
 
 See `docs/WORLD_MODEL_TOOLING.md` for a full walkthrough (dataset layout, provenance expectations, troubleshooting tips).
 

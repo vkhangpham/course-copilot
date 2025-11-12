@@ -143,6 +143,7 @@ Run `python scripts/ingest_handcrafted.py data/handcrafted/database_systems worl
 ### 3.3 Tool consumption format
 - World model tools operate on SQLite file; they return dictionaries (`list[dict[str, Any]]`) ready for CodeAct JSON serialization.
 - `outputs/world_model/latest.jsonl` mirrors inserted nodes/edges for provenance.
+- `wm-inspect` (Typer CLI under `scripts/query_world_model.py`) exposes read-only views of the snapshot. Commands currently include `concepts`, `timeline`, `claims`, `papers`, `authors`, and the newly added `definitions` + `graph` inspectors so developers can review relationships/definitions without opening SQLite manually.
 
 ## 4. CodeAct Tool Signatures (initial set)
 
@@ -171,6 +172,7 @@ All tools must be synchronous, side-effect free except for `record_claim` + `pus
 4. **Evaluation hooks**: `apps/orchestrator/student_ops.py` collects quiz responses + rubric scores, writes to `outputs/evals/run-<ts>.jsonl`.
 5. **Provenance + summary**: `outputs/provenance/run-<ts>.jsonl` includes tool call transcripts, seeds, ablations used, and a pointer to the world-model highlight artifact saved under `outputs/artifacts/run-<ts>-highlights.json`.
 6. CLI returns exit code 0 on success, non-zero on failure, and prints (a) the evaluation summary (overall score + rubric pass/fail) whenever graders run and (b) the log path / reason when graders are skipped (dry run, `--ablations no_students`, missing rubrics).
+7. Notebook exports default to the environment variables populated during bootstrap: `OPEN_NOTEBOOK_API_BASE`, `OPEN_NOTEBOOK_API_KEY`, and `OPEN_NOTEBOOK_SLUG` (all derived from `PipelineConfig.notebook`). CodeAct tools fall back to these values whenever the orchestrator does not pass explicit overrides, keeping CLI + tools in sync.
 
 ## 6. Interface Contracts Between Workstreams
 
