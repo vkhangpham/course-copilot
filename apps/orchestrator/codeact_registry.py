@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+from apps.codeact.programs import (
+    build_draft_lecture_program,
+    build_enforce_citations_program,
+    build_plan_course_program,
+)
 from apps.codeact.registry import CodeActRegistry, ToolBinding
-from apps.codeact.signatures import DraftLectureSection, EnforceCitations, PlanCourse
 from apps.codeact.tools import (
     fetch_concepts,
+    list_claims,
+    list_relationships,
     load_dataset_asset,
     lookup_paper,
     push_notebook_section,
@@ -33,6 +39,22 @@ def build_default_registry() -> CodeActRegistry:
             signature="subject, claim -> claim_id",
             handler=record_claim,
             description="Store a grounded claim linked to a concept.",
+        )
+    )
+    registry.register_tool(
+        ToolBinding(
+            name="list_claims",
+            signature="subject? -> claim[]",
+            handler=list_claims,
+            description="List recorded claims, optionally filtered by subject.",
+        )
+    )
+    registry.register_tool(
+        ToolBinding(
+            name="list_relationships",
+            signature="filters -> relationship[]",
+            handler=list_relationships,
+            description="Inspect concept relationships (prereqs, hierarchies).",
         )
     )
     registry.register_tool(
@@ -79,6 +101,7 @@ def build_default_registry() -> CodeActRegistry:
     registry.register_program(
         "PlanCourse",
         ["fetch_concepts", "load_dataset_asset", "search_events", "lookup_paper", "run_sql_query"],
+        factory=build_plan_course_program,
     )
     registry.register_program(
         "DraftLectureSection",
@@ -87,12 +110,17 @@ def build_default_registry() -> CodeActRegistry:
             "search_events",
             "lookup_paper",
             "record_claim",
+            "list_relationships",
+            "list_claims",
             "run_sql_query",
+            "push_notebook_section",
         ],
+        factory=build_draft_lecture_program,
     )
     registry.register_program(
         "EnforceCitations",
         ["load_dataset_asset", "lookup_paper"],
+        factory=build_enforce_citations_program,
     )
 
     return registry

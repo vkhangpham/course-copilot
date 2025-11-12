@@ -1,37 +1,44 @@
-"""Declarative DSPy signatures used by CodeAct programs."""
+"""DSPy CodeAct signature definitions."""
+
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Dict
+import dspy
 
 
-@dataclass(frozen=True)
-class Signature:
-    name: str
-    description: str
-    inputs: Dict[str, str]
-    output: str
+class PlanCourse(dspy.Signature):
+    """Map structured course constraints into a multi-week outline."""
+
+    constraints = dspy.InputField(
+        desc="Serialized CourseConstraints payload (audience, tone, focus areas)."
+    )
+    outline = dspy.OutputField(
+        desc="Markdown outline with modules, readings, and deliverables."
+    )
 
 
-PlanCourse = Signature(
-    name="PlanCourse",
-    description="constraints -> outline",
-    inputs={"constraints": "Serialized CourseConstraints"},
-    output="markdown outline",
-)
+class DraftLectureSection(dspy.Signature):
+    """Expand a module plan plus grounded claims into a lecture section."""
 
-DraftLectureSection = Signature(
-    name="DraftLectureSection",
-    description="module context -> markdown section",
-    inputs={"module": "Module metadata", "claims": "List[Claim]"},
-    output="markdown section",
-)
+    module = dspy.InputField(
+        desc="Module metadata (week, learning objectives, required readings)."
+    )
+    claims = dspy.InputField(
+        desc="List of grounded claims/observations fetched from the world model."
+    )
+    section = dspy.OutputField(
+        desc="Markdown lecture or study-guide section with citations."
+    )
 
-EnforceCitations = Signature(
-    name="EnforceCitations",
-    description="md_section -> md_section",
-    inputs={"md_section": "Markdown"},
-    output="markdown section",
-)
 
-__all__ = ["Signature", "PlanCourse", "DraftLectureSection", "EnforceCitations"]
+class EnforceCitations(dspy.Signature):
+    """Review markdown sections and inject/repair citation markup."""
+
+    md_section = dspy.InputField(
+        desc="Markdown output from a TA program (may have missing citations)."
+    )
+    corrected_section = dspy.OutputField(
+        desc="Markdown with explicit citation tags suitable for Notebook export."
+    )
+
+
+__all__ = ["PlanCourse", "DraftLectureSection", "EnforceCitations"]
