@@ -38,9 +38,19 @@ The stubbed pipeline emits:
 - `outputs/provenance/run-<timestamp>.jsonl`
 - `outputs/artifacts/run-<timestamp>-highlights.json` (world-model concept/timeline slices powering the stub plan/lecture)
 
-After every non-dry run the CLI also prints a short evaluation summary (overall score plus rubric pass/fail). If the student graders are disabled or missing, it reports that status instead of a score so operators immediately know why no grade was recorded.
+After every non-dry run the CLI also prints a short evaluation summary (overall score plus rubric pass/fail). If the student graders are disabled or missing, it reports that status instead of a score so operators immediately know why no grade was recorded. Pass `--quiet` when scripting to suppress these `[eval]` / `[highlights]` hints while still writing every artifact.
 
 Notebook exports pull their defaults from environment variables that `coursegen-poc` now sets during bootstrap: `OPEN_NOTEBOOK_API_BASE`, `OPEN_NOTEBOOK_API_KEY`, and `OPEN_NOTEBOOK_SLUG`. The CodeAct `push_notebook_section` tool will fall back to these values whenever the orchestrator does not pass explicit overrides, so make sure the config’s `notebook` section is filled in before running against a real instance.
+
+### Running the grader CLI
+
+You can re-run the lightweight student graders without invoking the full orchestrator via:
+
+```bash
+python -m apps.orchestrator.eval_loop --artifacts-dir outputs --lectures-dir lectures --rubric evals/rubrics.yaml
+```
+
+Add `--quiet` when you only care about the JSONL output under `outputs/evaluations/` and don’t want the console summary; other options (like `--required-source`) map 1:1 with the orchestrator’s grading hooks.
 
 ## Development Workflow
 - Use **bd (beads)** for issue tracking (`bd ready --json`, `bd update <id> --status in_progress`).
