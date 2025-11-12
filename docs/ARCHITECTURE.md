@@ -144,6 +144,7 @@ Run `python scripts/ingest_handcrafted.py data/handcrafted/database_systems worl
 - World model tools operate on SQLite file; they return dictionaries (`list[dict[str, Any]]`) ready for CodeAct JSON serialization.
 - `outputs/world_model/latest.jsonl` mirrors inserted nodes/edges for provenance.
 - `wm-inspect` (Typer CLI under `scripts/query_world_model.py`) exposes read-only views of the snapshot. Commands currently include `concepts`, `timeline`, `claims`, `papers`, `authors`, and the newly added `definitions` + `graph` inspectors so developers can review relationships/definitions without opening SQLite manually.
+- `wm-inspect` (Typer CLI under `scripts/query_world_model.py`) exposes read-only views of the snapshot. Commands currently include `concepts`, `timeline`, `claims`, `papers`, `authors`, `definitions`, `graph`, and `artifacts` so developers can review relationships/definitions and see which quiz banks/course outlines were ingested without opening SQLite manually.
 
 ## 4. CodeAct Tool Signatures (initial set)
 
@@ -156,6 +157,8 @@ Run `python scripts/ingest_handcrafted.py data/handcrafted/database_systems worl
 | `record_claim` | `(concept_id: str, content: str, citations: list[str]) -> ClaimId` | Writes to WM snapshot |
 | `push_notebook_section` | `(notebook: str, section: dict) -> dict` | REST call to vendor/open-notebook |
 | `grade_module` | `(module_md: str, rubric_id: str) -> dict` | Wraps student graders |
+| `list_claims` | `(concept_id: Optional[str]) -> list[Claim]` | Read-only view of previously recorded claims for grounding/explanations |
+| `list_relationships` | `(concept_id: Optional[str]) -> list[Edge]` | Inspect prerequisite/graph edges for TA prompts |
 
 All tools must be synchronous, side-effect free except for `record_claim` + `push_notebook_section` (which log to provenance + Notebook). CodeAct code cannot `import` arbitrary modules—provide everything through tool arguments.
 
