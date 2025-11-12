@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
+from typing import Any, Iterable
 
-from ccopilot.pipeline import bootstrap_pipeline, run_pipeline
+from ccopilot.pipeline import PipelineRunArtifacts, bootstrap_pipeline, run_pipeline
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -70,7 +72,8 @@ def main(argv: list[str] | None = None) -> int:
             else None,
             ingest_before_run=args.ingest_world_model,
         )
-        run_pipeline(ctx, dry_run=args.dry_run)
+        artifacts = run_pipeline(ctx, dry_run=args.dry_run)
+        _print_eval_summary(artifacts)  # safe even when artifacts is None
     except FileNotFoundError as exc:
         parser.error(str(exc))
     except Exception as exc:  # noqa: BLE001 - bubble up to CLI for now
@@ -78,6 +81,60 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     return 0
+
+
+def _print_eval_summary(artifacts: PipelineRunArtifacts | None) -> None:
+    """Emit a human-readable evaluation summary for CLI users."""
+
+    if artifacts is None:
+        return
+
+    eval_path = artifacts.eval_report
+    if not eval_path.exists():
+        print(f"[eval] report missing at {eval_path}")
+        return
+
+    try:
+        record = _load_eval_record(eval_path)
+    except ValueError as exc:
+        print(f"[eval] unable to read {eval_path}: {exc}")
+        return
+
+    if not record.get("use_students"):
+        status = record.get("status", "students_disabled")
+        print(f"[eval] student graders skipped ({status}); report={eval_path}")
+        return
+
+    overall = record.get("overall_score")
+    overall_display = _format_score(overall)
+    rubric_summary = _format_rubric_summary(record.get("rubrics") or [])
+    print(f"[eval] overall={overall_display} | rubrics: {rubric_summary} | report={eval_path}")
+
+
+def _load_eval_record(path: Path) -> dict[str, Any]:
+    line = path.read_text(encoding="utf-8").splitlines()
+    if not line:
+        raise ValueError("empty evaluation file")
+    try:
+        return json.loads(line[0])
+    except json.JSONDecodeError as exc:  # pragma: no cover - defensive
+        raise ValueError("invalid JSON in evaluation file") from exc
+
+
+def _format_score(value: Any) -> str:
+    if isinstance(value, (int, float)):
+        return f"{value:.3f}"
+    return str(value) if value is not None else "n/a"
+
+
+def _format_rubric_summary(rubrics: Iterable[dict[str, Any]]) -> str:
+    items = []
+    for rubric in rubrics:
+        name = str(rubric.get("name", "?"))
+        score = _format_score(rubric.get("score"))
+        passed = "PASS" if rubric.get("passed") else "FAIL"
+        items.append(f"{name}:{passed}({score})")
+    return ", ".join(items) if items else "no rubrics"
 
 
 if __name__ == "__main__":

@@ -1,6 +1,8 @@
+import io
 import json
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 
 import yaml
@@ -141,18 +143,25 @@ evaluation:
             encoding="utf-8",
         )
 
-    def test_cli_run_produces_artifacts(self) -> None:
+    def _run_cli(self, extra_args: list[str] | None = None) -> tuple[int, str, Path]:
         output_dir = self.repo_root / "outputs"
-        exit_code = cli_main(
-            [
-                "--config",
-                str(self.repo_root / "config" / "pipeline.yaml"),
-                "--repo-root",
-                str(self.repo_root),
-                "--output-dir",
-                str(output_dir),
-            ]
-        )
+        args = [
+            "--config",
+            str(self.repo_root / "config" / "pipeline.yaml"),
+            "--repo-root",
+            str(self.repo_root),
+            "--output-dir",
+            str(output_dir),
+        ]
+        if extra_args:
+            args.extend(extra_args)
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            exit_code = cli_main(args)
+        return exit_code, buffer.getvalue(), output_dir
+
+    def test_cli_run_produces_artifacts(self) -> None:
+        exit_code, output, output_dir = self._run_cli()
         self.assertEqual(exit_code, 0)
         self.assertTrue((output_dir / "course_plan.md").exists())
         self.assertTrue((output_dir / "lectures" / "module_01.md").exists())
@@ -161,50 +170,46 @@ evaluation:
         manifest = json.loads(manifest_path.read_text())
         self.assertIn("dataset_summary", manifest)
         self.assertIn("world_model_store", manifest)
+        highlights = manifest.get("world_model_highlights")
+        self.assertIsNotNone(highlights)
+        assert highlights is not None
+        self.assertIn("concepts", highlights)
+        plan_text = (output_dir / "course_plan.md").read_text(encoding="utf-8")
+        self.assertIn("Concept Highlights", plan_text)
         self.assertTrue(manifest["evaluation"].get("use_students"))
 
         eval_report = output_dir / "evaluations"
         report_path = next(eval_report.glob("run-*.jsonl"))
         eval_payload = json.loads(report_path.read_text().splitlines()[0])
         self.assertIn("overall_score", eval_payload)
+        self.assertIn("[eval] overall=", output)
 
     def test_cli_dry_run_skips_artifacts(self) -> None:
-        output_dir = self.repo_root / "outputs"
-        exit_code = cli_main(
-            [
-                "--config",
-                str(self.repo_root / "config" / "pipeline.yaml"),
-                "--repo-root",
-                str(self.repo_root),
-                "--output-dir",
-                str(output_dir),
-                "--dry-run",
-            ]
-        )
+        exit_code, output, output_dir = self._run_cli(["--dry-run"])
         self.assertEqual(exit_code, 0)
         self.assertFalse((output_dir / "course_plan.md").exists())
+        self.assertNotIn("[eval]", output)
 
     def test_cli_ingest_flag_refreshes_world_model(self) -> None:
-        output_dir = self.repo_root / "outputs"
         sqlite_path = self.repo_root / "world_model" / "state.sqlite"
         if sqlite_path.exists():
             sqlite_path.unlink()
-        exit_code = cli_main(
-            [
-                "--config",
-                str(self.repo_root / "config" / "pipeline.yaml"),
-                "--repo-root",
-                str(self.repo_root),
-                "--output-dir",
-                str(output_dir),
-                "--ingest-world-model",
-            ]
-        )
+        exit_code, output, output_dir = self._run_cli(["--ingest-world-model"])
         self.assertEqual(exit_code, 0)
         self.assertTrue(sqlite_path.exists())
         self.assertTrue((output_dir / "course_plan.md").exists())
         eval_report_dir = output_dir / "evaluations"
         self.assertTrue(any(eval_report_dir.glob("run-*.jsonl")))
+        self.assertIn("[eval] overall=", output)
+
+    def test_cli_reports_students_disabled_when_ablation_set(self) -> None:
+        exit_code, output, output_dir = self._run_cli(["--ablations", "no_students"])
+        self.assertEqual(exit_code, 0)
+        self.assertIn("student graders skipped", output)
+        eval_report = next((output_dir / "evaluations").glob("run-*.jsonl"))
+        payload = json.loads(eval_report.read_text().splitlines()[0])
+        self.assertFalse(payload["use_students"])
+        self.assertEqual(payload["status"], "students_disabled")
 
 
 if __name__ == "__main__":
