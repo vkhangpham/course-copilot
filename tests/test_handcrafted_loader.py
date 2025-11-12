@@ -38,4 +38,15 @@ def test_validate_dataset_rejects_unknown_graph_citation(tmp_path: Path) -> None
     bad_edge["citations"] = ["unknown-paper"]
     dataset.graph.setdefault("edges", []).append(bad_edge)
     errors, _ = validate_dataset(dataset)
-    assert any("cites unknown paper" in err.lower() for err in errors)
+    assert any("unknown-paper" in err.lower() for err in errors)
+
+
+def test_validate_dataset_reports_graph_citation_once(tmp_path: Path) -> None:
+    dataset = load_dataset(DATASET_DIR)
+    bad_edge = dict(dataset.graph.get("edges", [])[0])
+    bad_edge["citations"] = ["missing-paper"]
+    dataset.graph.setdefault("edges", []).append(bad_edge)
+    errors, _ = validate_dataset(dataset)
+    citation_errors = [err for err in errors if "missing-paper" in err.lower()]
+    assert citation_errors, "Expected at least one citation error"
+    assert len(citation_errors) == 1, f"Duplicate citation errors detected: {citation_errors}"

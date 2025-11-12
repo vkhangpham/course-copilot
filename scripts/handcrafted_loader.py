@@ -100,14 +100,14 @@ def validate_dataset(dataset: HandcraftedDataset) -> tuple[list[str], list[str]]
             errors.append(f"Graph edge source {src} is not a known concept")
         if tgt not in concept_ids:
             errors.append(f"Graph edge target {tgt} is not a known concept")
+        missing_citations: set[str] = set()
         for citation in edge.get("citations", []) or []:
-            if citation not in paper_ids:
-                errors.append(
-                    f"Graph edge ({src}->{tgt}) references unknown paper {citation}"
-                )
-        for citation in edge.get("citations", []) or []:
-            if citation not in paper_ids:
-                errors.append(f"Graph edge ({src}->{tgt}) cites unknown paper {citation}")
+            if citation in paper_ids or citation in missing_citations:
+                continue
+            missing_citations.add(citation)
+            errors.append(
+                f"Graph edge ({src}->{tgt}) references unknown paper {citation}"
+            )
 
     # Definitions
     for definition in dataset.definitions:
