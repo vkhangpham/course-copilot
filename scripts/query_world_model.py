@@ -135,6 +135,26 @@ def query_authors(store_path: Path, keyword: Optional[str] = None) -> List[dict]
     ]
 
 
+def query_artifacts(store_path: Path, artifact_type: Optional[str] = None) -> List[dict]:
+    store = _resolve_store(store_path)
+    sql = "SELECT artifact_type, uri, metadata, created_at FROM artifacts"
+    params: tuple = tuple()
+    if artifact_type:
+        sql += " WHERE artifact_type = ?"
+        params = (artifact_type,)
+    sql += " ORDER BY created_at DESC"
+    rows = store.query(sql, params)
+    return [
+        {
+            "type": row[0],
+            "uri": row[1],
+            "metadata": _safe_json(row[2]),
+            "created_at": row[3],
+        }
+        for row in rows
+    ]
+
+
 def query_definitions(store_path: Path, concept_id: Optional[str] = None) -> List[dict]:
     store = _resolve_store(store_path)
     sql = "SELECT subject_id, body, citation, provenance FROM claims WHERE created_by = 'definition'"
@@ -194,6 +214,19 @@ def _extract_excerpt(raw: object) -> str | None:
         if isinstance(excerpt, str) and excerpt.strip():
             return excerpt.strip()
     return None
+
+
+def _safe_json(raw: object) -> dict | list | str | None:
+    if raw is None:
+        return None
+    if isinstance(raw, (dict, list)):
+        return raw
+    if isinstance(raw, str):
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:  # pragma: no cover - defensive
+            return raw
+    return raw
 
 
 @app.command()
@@ -316,6 +349,37 @@ def graph_command(
         console.print("[yellow]No relationships found.[/yellow]")
         return
     _print_table(["Source", "Relation", "Target"], rows, ["source", "relation", "target"])
+
+
+@app.command(name="artifacts")
+def artifacts_command(
+    store: Path = typer.Option(Path("world_model/state.sqlite"), "--store"),
+    artifact_type: Optional[str] = typer.Option(None, "--type", help="Filter by artifact type."),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """List stored artifacts (quiz bank, course outline, etc.)."""
+
+    rows = query_artifacts(store, artifact_type)
+    if as_json:
+        typer.echo(json.dumps(rows, indent=2, ensure_ascii=False))
+        return
+    if not rows:
+        console.print("[yellow]No artifacts found.[/yellow]")
+        return
+    table = Table("Type", "URI", "Details")
+    for row in rows:
+        metadata = row.get("metadata")
+        if isinstance(metadata, dict):
+            if "count" in metadata:
+                detail = f"count={metadata['count']}"
+            elif "weeks" in metadata:
+                detail = f"weeks={len(metadata['weeks'])}"
+            else:
+                detail = json.dumps(metadata, ensure_ascii=False)
+        else:
+            detail = str(metadata or "")
+        table.add_row(str(row.get("type")), str(row.get("uri")), detail)
+    console.print(table)
 
 
 if __name__ == "__main__":  # pragma: no cover

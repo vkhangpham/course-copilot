@@ -4,6 +4,7 @@ import pytest
 
 from scripts.ingest_handcrafted import ingest
 from scripts.query_world_model import (
+    query_artifacts,
     query_authors,
     query_claims,
     query_concepts,
@@ -86,3 +87,10 @@ def test_query_graph_edges_filters_on_concept(tmp_path: Path) -> None:
         row["source"] == "relational_model" or row["target"] == "relational_model"
         for row in rows
     )
+
+
+def test_query_artifacts_filters_by_type(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    rows = query_artifacts(store, artifact_type="quiz_bank")
+    assert rows
+    assert rows[0]["type"] == "quiz_bank"
