@@ -45,6 +45,11 @@ def run(
         "-s",
         help="Optional canonical source identifiers the grader should enforce.",
     ),
+    quiet: bool = typer.Option(
+        False,
+        "--quiet",
+        help="Suppress the final summary line (artifacts/evaluations are still written).",
+    ),
 ) -> None:
     """Evaluate generated lectures with the lightweight student grader."""
 
@@ -94,9 +99,10 @@ def run(
         for record in records:
             handle.write(json.dumps(record) + "\n")
 
-    typer.echo(
-        f"Evaluated {len(records)} artifact(s); {failing} did not meet rubric thresholds. Results → {output_path}"
-    )
+    if not quiet:
+        typer.echo(
+            f"Evaluated {len(records)} artifact(s); {failing} did not meet rubric thresholds. Results → {output_path}"
+        )
 
 
 if __name__ == "__main__":
