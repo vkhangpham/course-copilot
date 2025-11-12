@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from ccopilot.core.dspy_runtime import DSPyModelHandles
-
 from apps.codeact.programs import (
     build_draft_lecture_program,
     build_enforce_citations_program,
@@ -25,13 +23,9 @@ from apps.codeact.tools import (
 
 def build_default_registry(
     *,
-    dspy_handles: DSPyModelHandles | None = None,
+    dspy_handles=None,
 ) -> CodeActRegistry:
     """Register CodeAct tools/programs for the orchestrator."""
-
-    teacher_lm = dspy_handles.teacher if dspy_handles else None
-    ta_lm = dspy_handles.ta if dspy_handles else None
-    student_lm = dspy_handles.student if dspy_handles else None
 
     registry = CodeActRegistry()
     registry.register_tool(
@@ -110,7 +104,7 @@ def build_default_registry(
     registry.register_program(
         "PlanCourse",
         ["fetch_concepts", "load_dataset_asset", "search_events", "lookup_paper", "run_sql_query"],
-        factory=lambda lm=teacher_lm: build_plan_course_program(lm=lm),
+        factory=lambda: build_plan_course_program(),
     )
     registry.register_program(
         "DraftLectureSection",
@@ -124,12 +118,12 @@ def build_default_registry(
             "run_sql_query",
             "push_notebook_section",
         ],
-        factory=lambda lm=ta_lm: build_draft_lecture_program(lm=lm),
+        factory=lambda: build_draft_lecture_program(),
     )
     registry.register_program(
         "EnforceCitations",
         ["load_dataset_asset", "lookup_paper"],
-        factory=lambda lm=student_lm or ta_lm or teacher_lm: build_enforce_citations_program(lm=lm),
+        factory=lambda: build_enforce_citations_program(),
     )
 
     return registry

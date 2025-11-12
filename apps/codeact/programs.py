@@ -25,7 +25,6 @@ DEFAULT_ENFORCE_ITERS = 3
 def build_plan_course_program(
     *,
     max_iters: int = DEFAULT_PLAN_ITERS,
-    lm: object | None = None,
 ) -> dspy.Module:
     """Return a PlanCourse CodeAct program wired with safe tools."""
 
@@ -33,15 +32,12 @@ def build_plan_course_program(
         "tools": [fetch_concepts, load_dataset_asset, search_events, lookup_paper, run_sql_query],
         "max_iters": max_iters,
     }
-    if lm is not None:
-        kwargs["lm"] = lm
     return dspy.CodeAct(PlanCourse, **kwargs)
 
 
 def build_draft_lecture_program(
     *,
     max_iters: int = DEFAULT_LECTURE_ITERS,
-    lm: object | None = None,
 ) -> dspy.Module:
     """Return a DraftLectureSection CodeAct program."""
 
@@ -58,15 +54,12 @@ def build_draft_lecture_program(
         ],
         "max_iters": max_iters,
     }
-    if lm is not None:
-        kwargs["lm"] = lm
     return dspy.CodeAct(DraftLectureSection, **kwargs)
 
 
 def build_enforce_citations_program(
     *,
     max_iters: int = DEFAULT_ENFORCE_ITERS,
-    lm: object | None = None,
 ) -> dspy.Module:
     """Return an EnforceCitations CodeAct program."""
 
@@ -74,8 +67,6 @@ def build_enforce_citations_program(
         "tools": [load_dataset_asset, lookup_paper],
         "max_iters": max_iters,
     }
-    if lm is not None:
-        kwargs["lm"] = lm
     return dspy.CodeAct(EnforceCitations, **kwargs)
 
 
