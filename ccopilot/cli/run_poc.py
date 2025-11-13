@@ -50,6 +50,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override the SQLite world-model store path defined in config.world_model.sqlite_path",
     )
     parser.add_argument(
+        "--science-config",
+        default=None,
+        help=(
+            "Override the scientific evaluator config (defaults to config/scientific_config.yaml when present)."
+        ),
+    )
+    parser.add_argument(
         "--notebook",
         default=None,
         help="Override the notebook slug used for Open Notebook exports.",
@@ -109,6 +116,7 @@ def main(argv: list[str] | None = None) -> int:
         dataset_override = _resolve_optional(args.dataset_dir, base=repo_root) or concept_override
         output_dir_override = _resolve_optional(args.output_dir, base=repo_root)
         world_model_store_override = _resolve_optional(args.world_model_store, base=repo_root)
+        science_config_override = _resolve_optional(args.science_config, base=repo_root)
 
         ctx = bootstrap_pipeline(
             config_path=config_path,
@@ -121,6 +129,7 @@ def main(argv: list[str] | None = None) -> int:
             constraints_path=constraints_path,
             notebook_slug_override=args.notebook,
             notebook_auto_create_override=False if args.skip_notebook_create else None,
+            science_config_path=science_config_override,
         )
         artifacts = run_pipeline(ctx, dry_run=args.dry_run)
         _print_eval_summary(artifacts, quiet=args.quiet)

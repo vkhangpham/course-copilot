@@ -87,7 +87,7 @@ After every non-dry run the CLI also prints a short evaluation summary (overall 
 
 **Scientific evaluator configuration**
 
-- The evaluator reads `config/scientific_config.yaml` (or the path you set in `COURSEGEN_SCIENCE_CONFIG`) during bootstrap. Use this file to toggle the module entirely (`enabled: true/false`) or to disable individual metrics (e.g., `evaluation_metrics.blooms_taxonomy: false`). Disabled metrics no longer count toward the aggregate scores or prediction heuristics.
+- The evaluator reads `config/scientific_config.yaml` by default, but you can override it per run with either the `COURSEGEN_SCIENCE_CONFIG` env var **or** the new `--science-config /path/to/custom.yaml` flag on `coursegen-poc`. Use this file to toggle the module entirely (`enabled: true/false`) or to disable individual metrics (e.g., `evaluation_metrics.blooms_taxonomy: false`). Disabled metrics no longer count toward the aggregate scores or prediction heuristics.
 - The manifest embeds both a trimmed `scientific_metrics` block (used by the CLI/portal cards) and the full artifact path under `scientific_metrics_artifact`. The CLI’s `[artifacts]` hint now includes `science=/path/to/run-*-science.json`, making it easy to download the JSON in automation.
 - The portal API and frontend expose the same information. `/runs` and `/runs/{id}` responses carry `scientific_metrics` plus `scientific_metrics_artifact`, the trace file list includes a “Scientific evaluator” download, and the run detail page shows a “Download metrics JSON” button so reviewers can inspect the raw payload from the browser.
 

@@ -48,6 +48,8 @@ class RunPocEntrypointTests(unittest.TestCase):
                 "no_students",
                 "--output-dir",
                 "/tmp/outputs",
+                "--science-config",
+                "./configs/science.yaml",
                 "--dry-run",
                 "--quiet",
                 "--ingest-world-model",
@@ -66,6 +68,7 @@ class RunPocEntrypointTests(unittest.TestCase):
         self.assertIn("--quiet", forwarded)
         self.assertIn("--ingest-world-model", forwarded)
         self.assertIn("--skip-notebook-create", forwarded)
+        self.assertIn("--science-config", forwarded)
 
         def _value(flag: str) -> str:
             idx = forwarded.index(flag)
@@ -76,6 +79,7 @@ class RunPocEntrypointTests(unittest.TestCase):
         self.assertEqual(_value("--notebook"), "demo-notebook")
         self.assertEqual(_value("--ablations"), "no_students")
         self.assertEqual(Path(_value("--output-dir")), Path("/tmp/outputs").resolve())
+        self.assertEqual(Path(_value("--science-config")), Path("./configs/science.yaml").resolve())
 
     @mock.patch("apps.orchestrator.run_poc._cli_main", return_value=0)
     def test_repo_root_override_without_explicit_flags(self, mock_main: mock.Mock) -> None:
@@ -118,6 +122,8 @@ class RunPocEntrypointTests(unittest.TestCase):
                     "outputs/smoke",
                     "--config",
                     "config/pipeline-alt.yaml",
+                    "--science-config",
+                    "config/science-alt.yaml",
                 ]
             )
 
@@ -134,6 +140,7 @@ class RunPocEntrypointTests(unittest.TestCase):
         self.assertEqual(_path("--concept"), expected_root / "data" / "handcrafted" / "custom")
         self.assertEqual(_path("--output-dir"), expected_root / "outputs" / "smoke")
         self.assertEqual(_path("--config"), expected_root / "config" / "pipeline-alt.yaml")
+        self.assertEqual(_path("--science-config"), expected_root / "config" / "science-alt.yaml")
 
     @mock.patch("apps.orchestrator.run_poc._cli_main", return_value=0)
     def test_skips_constraints_flag_when_default_missing(self, mock_main: mock.Mock) -> None:

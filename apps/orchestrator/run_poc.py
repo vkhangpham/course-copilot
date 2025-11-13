@@ -86,6 +86,14 @@ def build_parser() -> argparse.ArgumentParser:
         help=argparse.SUPPRESS,
     )
     parser.add_argument(
+        "--science-config",
+        default=None,
+        help=(
+            "Scientific evaluator config file to pass through to the main CLI. "
+            "Defaults to config/scientific_config.yaml when present."
+        ),
+    )
+    parser.add_argument(
         "--repo-root",
         default=str(REPO_ROOT),
         help=argparse.SUPPRESS,
@@ -104,6 +112,12 @@ def _resolve_path(value: str | Path | None, default: Path, *, base: Path | None 
     return (base_path / candidate).resolve()
 
 
+def _resolve_optional_path(value: str | Path | None, *, base: Path | None = None) -> Path | None:
+    if value is None:
+        return None
+    return _resolve_path(value, Path(value), base=base)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -118,6 +132,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     output_dir = _resolve_path(args.output_dir, output_default, base=repo_root)
     constraints_path = _resolve_path(args.constraints, constraints_default, base=repo_root)
     concepts_path = _resolve_path(args.concepts, concepts_default, base=repo_root)
+    science_config_path = _resolve_optional_path(args.science_config, base=repo_root)
 
     user_supplied_constraints = args.constraints is not None
     user_supplied_concepts = args.concepts is not None
@@ -136,6 +151,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if user_supplied_concepts or concepts_path.exists():
         forwarded.extend(["--concept", str(concepts_path)])
     forwarded.extend(["--notebook", args.notebook])
+    if science_config_path is not None:
+        forwarded.extend(["--science-config", str(science_config_path)])
     if args.ablations:
         forwarded.extend(["--ablations", args.ablations])
     if args.dry_run:
