@@ -108,6 +108,12 @@ def _write_run(
     else:
         notebook_summary = None
 
+    scientific_metrics = {
+        "pedagogical": {"blooms_alignment": 0.82, "learning_path_coherence": 0.91},
+        "content_quality": {"citation_validity": 0.88, "citation_coverage": 0.75},
+        "learning_outcomes": {"predicted_retention": 0.73},
+    }
+
     manifest = {
         "course_plan": str(course_plan),
         "lecture": str(lecture_path),
@@ -133,6 +139,7 @@ def _write_run(
         "teacher_trace": str(teacher_trace_path),
         "highlight_source": highlight_source,
         "world_model_store_exists": world_model_store_exists,
+        "scientific_metrics": scientific_metrics,
     }
     if notebook_exports is not None:
         manifest["notebook_exports"] = notebook_exports
@@ -191,6 +198,8 @@ def test_list_runs_and_detail(portal_settings: PortalSettings) -> None:
     assert runs[0]["overall_score"] == pytest.approx(0.92)
     assert runs[0]["notebook_export_summary"]["success"] == 1
     assert runs[0]["highlight_source"] == "world_model"
+    assert runs[0]["world_model_store_exists"] is True
+    assert runs[0]["scientific_metrics"]["pedagogical"]["blooms_alignment"] == pytest.approx(0.82)
     assert runs[0]["manifest_path"] == expected_manifest_rel
 
     detail_resp = client.get(f"/runs/{run_id}")
@@ -201,9 +210,13 @@ def test_list_runs_and_detail(portal_settings: PortalSettings) -> None:
     assert detail["manifest"]["course_plan"] == "course_plan.md"
     assert detail["manifest"]["lecture"] == "lectures/module_01.md"
     assert detail["manifest"].get("world_model_store") == "world_model/state.sqlite"
+    assert detail["manifest"].get("world_model_store_exists") is True
+    assert detail["world_model_store_exists"] is True
     assert "Course Plan" in detail["course_plan_excerpt"]
     assert detail["notebook_slug"] == "database-systems-poc"
     assert detail["highlight_source"] == "world_model"
+    assert detail["scientific_metrics"]["content_quality"]["citation_validity"] == pytest.approx(0.88)
+    assert detail["manifest"]["scientific_metrics"]["learning_outcomes"]["predicted_retention"] == pytest.approx(0.73)
     first_export = detail["notebook_exports"][0]
     expected_manifest_export = _first_actual_export(manifest)
     expected_relative = _relative_from_manifest(expected_manifest_export, portal_settings)
@@ -236,6 +249,7 @@ def test_runs_fallback_highlight_source_when_manifest_missing(portal_settings: P
     manifest_path = artifacts_dir / f"run-{run_id}-manifest.json"
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
     data.pop("highlight_source", None)
+    data.pop("world_model_store_exists", None)
     data.setdefault("ablations", {})["use_world_model"] = False
     manifest_path.write_text(json.dumps(data), encoding="utf-8")
 
@@ -244,12 +258,15 @@ def test_runs_fallback_highlight_source_when_manifest_missing(portal_settings: P
     assert runs_resp.status_code == 200
     runs = runs_resp.json()
     assert runs[0]["highlight_source"] == "dataset"
+    assert runs[0]["world_model_store_exists"] is False
 
     detail_resp = client.get(f"/runs/{run_id}")
     assert detail_resp.status_code == 200
     detail = detail_resp.json()
     assert detail["highlight_source"] == "dataset"
     assert detail["manifest"].get("highlight_source") == "dataset"
+    assert detail["world_model_store_exists"] is False
+    assert detail["manifest"].get("world_model_store_exists") is False
 
     trace_names = {trace["name"] for trace in detail["trace_files"]}
     assert "teacher_trace" in trace_names
@@ -257,6 +274,23 @@ def test_runs_fallback_highlight_source_when_manifest_missing(portal_settings: P
     assert highlights_trace["label"] == "Dataset highlights"
     assert not highlights_trace["path"].startswith("/")
 
+
+def test_runs_backfill_world_model_store_exists_when_missing(portal_settings: PortalSettings) -> None:
+    run_id = "20250303-020202"
+    manifest = _write_run(portal_settings.outputs_dir, run_id=run_id)
+    artifacts_dir = portal_settings.outputs_dir / "artifacts"
+    manifest_path = artifacts_dir / f"run-{run_id}-manifest.json"
+    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    data.pop("world_model_store_exists", None)
+    manifest_path.write_text(json.dumps(data), encoding="utf-8")
+
+    client = TestClient(app)
+    runs = client.get("/runs").json()
+    assert runs[0]["world_model_store_exists"] is True
+
+    detail = client.get(f"/runs/{run_id}").json()
+    assert detail["world_model_store_exists"] is True
+    assert detail["manifest"].get("world_model_store_exists") is True
     trace_resp = client.get(f"/runs/{run_id}/traces/teacher_trace")
     assert trace_resp.status_code == 200
     assert "Simulated teacher loop" in trace_resp.text

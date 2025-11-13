@@ -69,6 +69,8 @@ class RunListItem(BaseModel):
     overall_score: float | None = None
     notebook_export_summary: Dict[str, Any] | None = None
     highlight_source: str | None = None
+    world_model_store_exists: bool | None = None
+    scientific_metrics: Dict[str, Any] | None = None
 
 
 class TraceFile(BaseModel):
@@ -114,6 +116,7 @@ class RunDetail(BaseModel):
     dataset_summary: Dict[str, Any] | None = None
     ablations: Dict[str, Any] | None = None
     highlight_source: str | None = None
+    world_model_store_exists: bool | None = None
     evaluation: Dict[str, Any] | None = None
     course_plan_excerpt: str | None = None
     lecture_excerpt: str | None = None
@@ -122,6 +125,7 @@ class RunDetail(BaseModel):
     evaluation_attempts: List[EvaluationAttempt] = Field(default_factory=list)
     trace_files: List[TraceFile] = Field(default_factory=list)
     teacher_trace: TeacherTraceMeta | None = None
+    scientific_metrics: Dict[str, Any] | None = None
 
 
 class HealthResponse(BaseModel):
@@ -176,10 +180,13 @@ def get_run_detail(run_id: str, settings: PortalSettings = Depends(get_settings)
     evaluation_attempts = _parse_evaluation_attempts(manifest)
     notebook_slug = _infer_notebook_slug(manifest, notebook_exports, settings)
 
-    highlight_source = _derive_highlight_source(manifest)
+    store_exists = _derive_world_model_store_exists(manifest, settings)
+    highlight_source = _derive_highlight_source(manifest, settings, store_exists=store_exists)
     sanitized_manifest = _sanitize_manifest_paths(manifest, settings)
     if highlight_source and not sanitized_manifest.get("highlight_source"):
         sanitized_manifest["highlight_source"] = highlight_source
+    if store_exists is not None and "world_model_store_exists" not in sanitized_manifest:
+        sanitized_manifest["world_model_store_exists"] = store_exists
 
     return RunDetail(
         run_id=run_id,
@@ -189,6 +196,7 @@ def get_run_detail(run_id: str, settings: PortalSettings = Depends(get_settings)
         dataset_summary=manifest.get("dataset_summary"),
         ablations=manifest.get("ablations"),
         highlight_source=highlight_source,
+        world_model_store_exists=store_exists,
         evaluation=manifest.get("evaluation"),
         course_plan_excerpt=_read_excerpt(course_plan_path),
         lecture_excerpt=_read_excerpt(lecture_path),
@@ -197,6 +205,7 @@ def get_run_detail(run_id: str, settings: PortalSettings = Depends(get_settings)
         evaluation_attempts=evaluation_attempts,
         trace_files=trace_files,
         teacher_trace=teacher_trace,
+        scientific_metrics=manifest.get("scientific_metrics"),
     )
 
 
@@ -262,7 +271,8 @@ def _list_runs(settings: PortalSettings, *, limit: int | None = None, offset: in
         eval_report = _safe_resolve(settings, manifest.get("eval_report"))
         evaluation = manifest.get("evaluation") or {}
         notebook_summary = manifest.get("notebook_export_summary")
-        highlight_source = _derive_highlight_source(manifest)
+        store_exists = _derive_world_model_store_exists(manifest, settings)
+        highlight_source = _derive_highlight_source(manifest, settings, store_exists=store_exists)
 
         items.append(
             RunListItem(
@@ -275,6 +285,8 @@ def _list_runs(settings: PortalSettings, *, limit: int | None = None, offset: in
                 overall_score=evaluation.get("overall_score"),
                 notebook_export_summary=notebook_summary if isinstance(notebook_summary, dict) else None,
                 highlight_source=highlight_source,
+                world_model_store_exists=store_exists,
+                scientific_metrics=manifest.get("scientific_metrics"),
             )
         )
     return items
@@ -317,7 +329,9 @@ def _timestamp_for(path: Path) -> datetime:
 def collect_trace_files(run_id: str, manifest: Dict[str, Any], settings: PortalSettings) -> List[TraceFile]:
     """Aggregate available trace/provenance artifacts for a run."""
 
-    highlight_label = _highlight_label(_derive_highlight_source(manifest))
+    store_exists = _derive_world_model_store_exists(manifest, settings)
+    highlight = _derive_highlight_source(manifest, settings, store_exists=store_exists)
+    highlight_label = _highlight_label(highlight)
     candidates = [
         ("provenance", "Provenance log", manifest.get("provenance")),
         ("evaluation", "Evaluation report", manifest.get("eval_report")),
@@ -502,7 +516,40 @@ def _safe_str_list(value: Any) -> List[str]:
     return [str(item) for item in value if isinstance(item, (str, int, float))]
 
 
-def _derive_highlight_source(manifest: Dict[str, Any]) -> str | None:
+def _derive_world_model_store_exists(manifest: Dict[str, Any], settings: PortalSettings) -> bool | None:
+    existing = manifest.get("world_model_store_exists")
+    if isinstance(existing, bool):
+        return existing
+
+    ablations = manifest.get("ablations") if isinstance(manifest.get("ablations"), dict) else None
+    if isinstance(ablations, dict) and ablations.get("use_world_model") is False:
+        return False
+
+    source = manifest.get("highlight_source")
+    if isinstance(source, str):
+        trimmed = source.strip().lower()
+        if trimmed == "world_model":
+            return True
+        if trimmed == "dataset":
+            return False
+
+    wm_highlights = manifest.get("world_model_highlights")
+    if isinstance(wm_highlights, dict) and wm_highlights:
+        return True
+
+    store_path = _safe_resolve(settings, manifest.get("world_model_store"))
+    if store_path is not None:
+        return store_path.exists()
+
+    return None
+
+
+def _derive_highlight_source(
+    manifest: Dict[str, Any],
+    settings: PortalSettings,
+    *,
+    store_exists: bool | None = None,
+) -> str | None:
     source = manifest.get("highlight_source")
     if isinstance(source, str):
         trimmed = source.strip()
@@ -510,17 +557,16 @@ def _derive_highlight_source(manifest: Dict[str, Any]) -> str | None:
             return trimmed
 
     ablations = manifest.get("ablations") if isinstance(manifest.get("ablations"), dict) else None
-    use_world_model = None
-    if isinstance(ablations, dict):
-        use_world_model = ablations.get("use_world_model")
-        if use_world_model is False:
-            return "dataset"
+    if store_exists is None:
+        store_exists = _derive_world_model_store_exists(manifest, settings)
 
-    store_exists = manifest.get("world_model_store_exists")
-    if isinstance(store_exists, bool):
-        if store_exists:
-            return "world_model"
-        # Snapshot missing -> we fell back to dataset highlights regardless of ablation metadata.
+    if store_exists is True:
+        return "world_model"
+
+    if isinstance(ablations, dict) and ablations.get("use_world_model") is False:
+        return "dataset"
+
+    if store_exists is False:
         return "dataset"
 
     wm_highlights = manifest.get("world_model_highlights")
