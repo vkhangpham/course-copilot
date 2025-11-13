@@ -43,3 +43,59 @@ def test_concepts_command_honors_repo_root_env(tmp_path: Path, monkeypatch: pyte
         monkeypatch.delenv("COURSEGEN_REPO_ROOT", raising=False)
     assert result.exit_code == 0
     assert '"transaction_management"' in result.stdout
+
+
+def test_concepts_command_honors_store_env_after_import(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("COURSEGEN_REPO_ROOT", raising=False)
+    missing_store = tmp_path / "missing.sqlite"
+    monkeypatch.setenv("WORLD_MODEL_STORE", str(missing_store))
+    result = RUNNER.invoke(wm_cli.app, ["concepts", "--json"])
+    assert result.exit_code != 0
+    assert missing_store.name in result.output
+
+
+def test_timeline_command_filters_and_outputs_json(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    result = RUNNER.invoke(
+        wm_cli.app,
+        ["timeline", "--store", str(store), "--concept", "relational_model", "--json"],
+    )
+    assert result.exit_code == 0
+    output = result.stdout.lower()
+    assert "relational_model" in output
+    assert '"year":' in output
+
+
+def test_claims_command_returns_rows(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    result = RUNNER.invoke(
+        wm_cli.app,
+        ["claims", "relational_model", "--store", str(store), "--json"],
+    )
+    assert result.exit_code == 0
+    output = result.stdout.lower()
+    assert "relational_model" in output
+    assert "citation" in output
+
+
+def test_papers_command_filters_by_keyword(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    result = RUNNER.invoke(
+        wm_cli.app,
+        ["papers", "--store", str(store), "--keyword", "relational", "--json"],
+    )
+    assert result.exit_code == 0
+    output = result.stdout.lower()
+    assert "relational model" in output
+
+
+def test_authors_command_filters_by_keyword(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    result = RUNNER.invoke(
+        wm_cli.app,
+        ["authors", "--store", str(store), "--keyword", "stonebraker", "--json"],
+    )
+    assert result.exit_code == 0
+    output = result.stdout.lower()
+    assert "stonebraker" in output
+    assert "uc berkeley" in output

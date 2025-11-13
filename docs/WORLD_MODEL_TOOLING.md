@@ -24,7 +24,7 @@ All IDs are lowercase snake_case and must match across files (concepts ↔ taxon
 
 ## Common commands
 
-> **Note:** `wm-inspect` automatically targets `outputs/world_model/state.sqlite` from the repo root. When you run the CLI outside this checkout, export `COURSEGEN_REPO_ROOT=/abs/path/to/ccopilot` so auto-detection still lands inside your repo. Use the `--store` flag or `WORLD_MODEL_STORE` env var when pointing at an alternate snapshot.
+> **Note:** `wm-inspect` automatically targets `outputs/world_model/state.sqlite` from the repo root. When you run the CLI outside this checkout, export `COURSEGEN_REPO_ROOT=/abs/path/to/ccopilot` so auto-detection still lands inside your repo. Use the `--store` flag or `WORLD_MODEL_STORE` env var when pointing at an alternate snapshot—the CLI re-resolves those env vars every time a command executes, so you can set them immediately before invoking the tool even if it was imported earlier (e.g., inside tests).
 
 | Action | Command |
 | ------ | ------- |
@@ -38,6 +38,11 @@ All IDs are lowercase snake_case and must match across files (concepts ↔ taxon
 | Inspect graph edges | `wm-inspect graph --concept relational_model` |
 | Inspect stored artifacts | `wm-inspect artifacts --type quiz_bank` |
 | Run orchestrator with fresh ingest | `coursegen-poc --config config/pipeline.yaml --ingest-world-model` |
+
+> **CodeAct note:** the CodeAct world-model tools (`fetch_concepts`, `search_events`, etc.) now follow the same rules.
+> If `WORLD_MODEL_STORE` is unset, they fall back to `COURSEGEN_REPO_ROOT/outputs/world_model/state.sqlite`. This lookup happens at execution time, so library callers and tests can flip env vars between invocations without reloading the module.
+> means automation or REPL sessions running outside the repo only need to export `COURSEGEN_REPO_ROOT`, and every tool
+> (CLI + CodeAct) will resolve paths consistently.
 
 The `coursegen-poc` CLI also accepts `--dataset-dir` and `--world-model-store` if you need to point
 at alternate datasets or snapshots.
