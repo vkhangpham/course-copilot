@@ -24,3 +24,4 @@
 - 2025-11-13 11:12 PT – Reviewed inbox (coord with BlackMountain + FuchsiaMountain) and queued next audit slice: difficulty progression heuristics.
 - 2025-11-13 11:20 PT – Capped cognitive-load factors to [0,1], added density stress test, `pytest tests/test_scientific_evaluator.py` now runs 12 cases (pass).
 - 2025-11-13 11:32 PT – Reworked difficulty progression scoring (normalized lecture difficulty + gradient penalties) and expanded regression suite (`pytest tests/test_scientific_evaluator.py`, 16 cases).
+- 2025-11-13 11:38 PT – Fixed missing import in `apps/orchestrator/student_loop.py` (StudentQuizEvaluator type hints were unresolved) and re-ran `pytest tests/test_students.py` (pass).

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Sequence
 
 from .students import StudentGraderPool
+from .student_qa import StudentQuizEvaluator
 
 
 @dataclass(slots=True)
@@ -70,12 +71,13 @@ class StudentLoopRunner:
                 status = "passing"
                 break
 
+            attempt_record["triggered_mutation"] = decision.as_dict()
+
             if iteration > self.config.max_mutations:
                 status = "max_mutations_reached"
                 break
 
             mutation_count += 1
-            attempt_record["triggered_mutation"] = decision.as_dict()
             current_path = self.mutation_callback(current_path, iteration, decision)
 
         final_attempt = attempts[-1]
@@ -99,27 +101,41 @@ class StudentLoopRunner:
     def _should_continue(self, rubric_results: Dict[str, Any], quiz_results: Dict[str, Any]) -> MutationReason | None:
         overall_score = float(rubric_results.get("overall_score", 0.0) or 0.0)
         rubric_entries = rubric_results.get("rubrics", []) or []
+        has_rubrics = bool(rubric_entries)
         rubric_failures = [
             entry.get("name", "")
             for entry in rubric_entries
             if not entry.get("passed")
         ]
-        # Treat the rubric check as satisfied only if the aggregate score clears
-        # the configured threshold and every rubric entry passes individually.
         aggregate_pass = overall_score >= self.config.rubric_threshold
-        rubric_pass = aggregate_pass and not rubric_failures
+        rubric_pass = aggregate_pass and not rubric_failures if has_rubrics else True
 
+        questions = (quiz_results.get("questions") or [])
+        has_quiz = bool(questions)
         quiz_pass_rate = float(quiz_results.get("pass_rate", 0.0) or 0.0)
-        quiz_pass = quiz_pass_rate >= self.config.quiz_threshold
+        quiz_pass = quiz_pass_rate >= self.config.quiz_threshold if has_quiz else True
         failing_questions = [
             question.get("id", "")
-            for question in quiz_results.get("questions", [])
+            for question in questions
             if not question.get("passed")
         ]
 
-        grounding_pass = self._grounding_passed(rubric_results)
-        satisfied_checks = sum(1 for flag in (rubric_pass, quiz_pass, grounding_pass) if flag)
-        if satisfied_checks >= 2:
+        grounding_configured, grounding_pass = self._grounding_status(rubric_results)
+
+        checks: List[bool] = []
+        if has_rubrics:
+            checks.append(rubric_pass)
+        if has_quiz:
+            checks.append(quiz_pass)
+        if grounding_configured:
+            checks.append(grounding_pass)
+
+        if not checks:
+            return None
+
+        satisfied_checks = sum(1 for flag in checks if flag)
+        required = min(2, len(checks))
+        if satisfied_checks >= required:
             return None
 
         return MutationReason(
@@ -130,12 +146,13 @@ class StudentLoopRunner:
         )
 
     @staticmethod
-    def _grounding_passed(rubric_results: Dict[str, Any]) -> bool:
-        for entry in rubric_results.get("rubrics", []):
+    def _grounding_status(rubric_results: Dict[str, Any]) -> tuple[bool, bool]:
+        entries = rubric_results.get("rubrics", []) or []
+        for entry in entries:
             name = str(entry.get("name", "")).strip().lower()
             if name == "grounding":
-                return bool(entry.get("passed"))
-        return False
+                return True, bool(entry.get("passed"))
+        return False, True
 
 
 __all__ = ["StudentLoopRunner", "StudentLoopConfig", "MutationReason"]
