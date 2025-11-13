@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import re
 from collections import defaultdict, deque
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 from uuid import uuid4
@@ -186,14 +188,37 @@ class WorldModelAdapter:
         content: str,
         citation: str | None = None,
         created_by: str = "tool",
+        confidence: float | None = None,
+        asserted_at: datetime | None = None,
     ) -> dict[str, Any]:
-        sql = "INSERT INTO claims(subject_id, body, citation, created_by) VALUES (?, ?, ?, ?)"
-        claim_id = self.store.execute(sql, (subject, content, citation, created_by))
+        confidence_value = self._sanitize_confidence(confidence)
+        asserted_ts = asserted_at or datetime.now(timezone.utc)
+        contradictions = self._detect_contradictions(subject, content)
+        provenance_payload = {"contradicts": contradictions} if contradictions else None
+        sql = (
+            "INSERT INTO claims(subject_id, body, citation, created_by, provenance, confidence, asserted_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)"
+        )
+        claim_id = self.store.execute(
+            sql,
+            (
+                subject,
+                content,
+                citation,
+                created_by,
+                json.dumps(provenance_payload) if provenance_payload else None,
+                confidence_value,
+                asserted_ts.isoformat(),
+            ),
+        )
         return {
             "id": claim_id,
             "subject": subject,
             "body": content,
             "citation": citation,
+            "confidence": confidence_value,
+            "asserted_at": asserted_ts.isoformat(),
+            "contradicts": contradictions,
         }
 
     def list_claims(
@@ -202,7 +227,7 @@ class WorldModelAdapter:
         subject_id: str | None = None,
         limit: int = 25,
     ) -> list[dict[str, Any]]:
-        sql = "SELECT id, subject_id, body, citation, created_at FROM claims WHERE 1=1"
+        sql = "SELECT id, subject_id, body, citation, confidence, asserted_at, provenance, created_at FROM claims WHERE 1=1"
         params: List[Any] = []
         if subject_id:
             sql += " AND subject_id = ?"
@@ -210,16 +235,26 @@ class WorldModelAdapter:
         sql += " ORDER BY created_at DESC LIMIT ?"
         params.append(limit)
         rows = self.store.query(sql, tuple(params))
-        return [
-            {
-                "id": row[0],
-                "subject_id": row[1],
-                "body": row[2],
-                "citation": row[3],
-                "created_at": row[4],
-            }
-            for row in rows
-        ]
+        claims: List[dict[str, Any]] = []
+        for row in rows:
+            provenance = self._load_provenance(row[6])
+            contradictions = []
+            if isinstance(provenance, dict):
+                contradictions = provenance.get("contradicts") or []
+            claims.append(
+                {
+                    "id": row[0],
+                    "subject_id": row[1],
+                    "body": row[2],
+                    "citation": row[3],
+                    "confidence": row[4],
+                    "asserted_at": row[5],
+                    "provenance": provenance,
+                    "created_at": row[7],
+                    "contradicts": contradictions,
+                }
+            )
+        return claims
 
     def list_relationships(
         self,
@@ -349,3 +384,61 @@ class WorldModelAdapter:
         missing = sorted(set(ids) - found)
         if missing:
             raise ValueError(f"Unknown concept id(s): {', '.join(missing)}")
+
+    @staticmethod
+    def _load_provenance(raw: Any) -> Any:
+        if not raw:
+            return None
+        if isinstance(raw, dict):
+            return raw
+        try:
+            return json.loads(raw)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _sanitize_confidence(value: float | None) -> float:
+        if value is None:
+            return 0.5
+        try:
+            return max(0.0, min(1.0, float(value)))
+        except (TypeError, ValueError):
+            return 0.5
+
+    def _detect_contradictions(self, subject: str, content: str) -> List[int]:
+        normalized_new = self._normalize_tokens(content)
+        if not normalized_new:
+            return []
+        stripped_new = self._strip_negations(normalized_new)
+        if not stripped_new:
+            return []
+        has_negation_new = self._has_negation(normalized_new)
+        rows = self.store.query(
+            "SELECT id, body FROM claims WHERE subject_id = ?",
+            (subject,),
+        )
+        contradictions: List[int] = []
+        for claim_id, body in rows:
+            normalized_existing = self._normalize_tokens(body or "")
+            if not normalized_existing:
+                continue
+            stripped_existing = self._strip_negations(normalized_existing)
+            if stripped_existing != stripped_new:
+                continue
+            has_negation_existing = self._has_negation(normalized_existing)
+            if has_negation_existing != has_negation_new:
+                contradictions.append(int(claim_id))
+        return contradictions
+
+    @staticmethod
+    def _normalize_tokens(text: str) -> List[str]:
+        return [token for token in re.findall(r"[a-z0-9']+", (text or "").lower()) if token]
+
+    @staticmethod
+    def _strip_negations(tokens: List[str]) -> List[str]:
+        negations = {"not", "never", "no"}
+        return [token for token in tokens if token not in negations]
+
+    @staticmethod
+    def _has_negation(tokens: List[str]) -> bool:
+        return any(token in {"not", "never", "no"} for token in tokens)

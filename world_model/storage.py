@@ -22,6 +22,14 @@ class WorldModelStore:
         schema_sql = Path(__file__).with_name("schema.sql").read_text(encoding="utf-8")
         with self._connect() as con:
             con.executescript(schema_sql)
+            self._ensure_claim_columns(con)
+
+    def _ensure_claim_columns(self, con: sqlite3.Connection) -> None:
+        columns = {row[1] for row in con.execute("PRAGMA table_info(claims)")}
+        if "confidence" not in columns:
+            con.execute("ALTER TABLE claims ADD COLUMN confidence REAL DEFAULT 0.5")
+        if "asserted_at" not in columns:
+            con.execute("ALTER TABLE claims ADD COLUMN asserted_at TIMESTAMP")
 
     def execute(self, sql: str, params: tuple | None = None) -> int:
         """Execute a single SQL statement and return the last row id (if any)."""

@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
 from world_model.adapters import WorldModelAdapter
@@ -31,18 +32,43 @@ class WorldModelAdapterTests(unittest.TestCase):
         )
         self.assertEqual(result["subject"], "concept_seed")
         self.assertEqual(result["body"], "Seed concept summary")
+        self.assertAlmostEqual(result["confidence"], 0.5)
         rows = self.adapter.store.query(
-            "SELECT subject_id, body, citation FROM claims WHERE subject_id = ?",
+            "SELECT subject_id, body, citation, confidence FROM claims WHERE subject_id = ?",
             ("concept_seed",),
         )
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0][1], "Seed concept summary")
+        self.assertAlmostEqual(rows[0][3], 0.5)
+
+    def test_record_claim_accepts_custom_confidence_and_timestamp(self) -> None:
+        ts = datetime.now(timezone.utc)
+        result = self.adapter.record_claim(
+            subject="concept_seed",
+            content="Custom confidence",
+            confidence=0.9,
+            asserted_at=ts,
+        )
+        self.assertAlmostEqual(result["confidence"], 0.9)
+        self.assertEqual(result["asserted_at"], ts.isoformat())
+        rows = self.adapter.store.query(
+            "SELECT confidence, asserted_at FROM claims WHERE id = ?",
+            (result["id"],),
+        )
+        self.assertAlmostEqual(rows[0][0], 0.9)
+        self.assertEqual(rows[0][1], ts.isoformat())
+
+    def test_record_claim_detects_contradictions(self) -> None:
+        self.adapter.record_claim(subject="concept_seed", content="ACID is safe")
+        result = self.adapter.record_claim(subject="concept_seed", content="ACID is not safe")
+        self.assertTrue(result["contradicts"])
 
     def test_list_claims_filters_by_subject(self) -> None:
         self.adapter.record_claim(subject="concept_seed", content="Claim A", citation=None)
         claims = self.adapter.list_claims(subject_id="concept_seed")
         self.assertTrue(claims)
         self.assertEqual(claims[0]["subject_id"], "concept_seed")
+        self.assertIn("confidence", claims[0])
 
     def test_list_relationships_returns_rows(self) -> None:
         self.adapter.store.execute_many(

@@ -51,6 +51,8 @@ CREATE TABLE IF NOT EXISTS claims (
     citation TEXT,
     created_by TEXT,
     provenance TEXT,
+    confidence REAL DEFAULT 0.5,
+    asserted_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (subject_id) REFERENCES concepts(id)
 );

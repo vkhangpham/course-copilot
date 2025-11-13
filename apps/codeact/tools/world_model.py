@@ -1,6 +1,7 @@
 """Wrapper functions that expose the world-model store to CodeAct."""
 from __future__ import annotations
 
+from datetime import datetime
 import os
 from pathlib import Path
 from typing import Any, Dict, List
@@ -83,9 +84,23 @@ def record_claim(
     subject: str,
     content: str,
     citation: str | None = None,
+    confidence: float | None = None,
+    asserted_at: str | None = None,
     store_path: Path | None = None,
 ) -> dict[str, Any]:
-    return _adapter(store_path).record_claim(subject=subject, content=content, citation=citation)
+    parsed_ts = None
+    if asserted_at:
+        try:
+            parsed_ts = datetime.fromisoformat(asserted_at)
+        except ValueError:
+            parsed_ts = None
+    return _adapter(store_path).record_claim(
+        subject=subject,
+        content=content,
+        citation=citation,
+        confidence=confidence,
+        asserted_at=parsed_ts,
+    )
 
 
 def list_claims(

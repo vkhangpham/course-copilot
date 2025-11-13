@@ -112,12 +112,16 @@ def test_record_claim_persists(tmp_path: Path) -> None:
         subject="relational_model",
         content="Test claim",
         citation="codd-1970",
+        confidence=0.85,
         store_path=store,
     )
     assert payload["subject"] == "relational_model"
+    assert abs(payload["confidence"] - 0.85) < 1e-6
+    assert payload["asserted_at"], "Expected asserted_at to be populated"
     db = WorldModelStore(store)
-    rows = db.query("SELECT subject_id, body FROM claims WHERE body = ?", ("Test claim",))
+    rows = db.query("SELECT subject_id, body, confidence FROM claims WHERE body = ?", ("Test claim",))
     assert rows and rows[0][0] == "relational_model"
+    assert abs(rows[0][2] - 0.85) < 1e-6
 
 
 def test_list_claims_returns_records(tmp_path: Path) -> None:
@@ -125,6 +129,7 @@ def test_list_claims_returns_records(tmp_path: Path) -> None:
     record_claim(subject="relational_model", content="Claim", citation=None, store_path=store)
     claims = list_claims(subject_id="relational_model", store_path=store)
     assert any(claim["subject_id"] == "relational_model" for claim in claims)
+    assert "confidence" in claims[0]
 
 
 def test_list_relationships_filters(tmp_path: Path) -> None:
