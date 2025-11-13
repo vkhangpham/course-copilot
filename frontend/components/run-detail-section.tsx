@@ -75,6 +75,14 @@ export function RunDetailSection({ detail }: { detail: RunDetail | null }) {
   ).length;
   const coursePlanUrl = detail ? `${PORTAL_API_BASE}/runs/${detail.run_id}/course-plan` : null;
   const lectureUrl = detail ? `${PORTAL_API_BASE}/runs/${detail.run_id}/lecture` : null;
+  const scienceArtifactPath =
+    (typeof detail?.scientific_metrics_artifact === "string" && detail.scientific_metrics_artifact) ||
+    (typeof manifest?.["scientific_metrics_artifact"] === "string"
+      ? (manifest?.["scientific_metrics_artifact"] as string)
+      : undefined);
+  const scienceDownloadUrl = scienceArtifactPath
+    ? `${PORTAL_API_BASE}/${scienceArtifactPath.replace(/^\//, "")}`
+    : null;
   const portalScientificMetrics =
     (detail?.scientific_metrics as ScientificMetrics | undefined) ??
     (manifest?.["scientific_metrics"] as ScientificMetrics | undefined);
@@ -254,6 +262,13 @@ export function RunDetailSection({ detail }: { detail: RunDetail | null }) {
                   ))}
                 </div>
               )}
+              {scienceDownloadUrl && (
+                <Button variant="secondary" className="w-full" asChild>
+                  <Link href={scienceDownloadUrl} target="_blank" className="flex items-center justify-center gap-2">
+                    <Download className="h-4 w-4" /> Download metrics JSON
+                  </Link>
+                </Button>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -317,6 +332,7 @@ export function RunDetailSection({ detail }: { detail: RunDetail | null }) {
               <div className="space-y-2">
                 <ArtifactLink label="Course plan" href={coursePlanUrl} />
                 <ArtifactLink label="Lecture" href={lectureUrl} />
+                <ArtifactLink label="Scientific metrics (JSON)" href={scienceDownloadUrl} />
               </div>
             )}
           </CardContent>

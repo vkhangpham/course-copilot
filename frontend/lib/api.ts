@@ -18,6 +18,7 @@ export type RunListItem = {
   highlight_source?: string | null;
   world_model_store_exists?: boolean | null;
   scientific_metrics?: ScientificMetrics | null;
+  scientific_metrics_artifact?: string | null;
   notebook_export_summary?: {
     total?: number;
     success?: number;
@@ -61,6 +62,7 @@ export type RunDetail = {
   highlight_source?: string | null;
   world_model_store_exists?: boolean | null;
   scientific_metrics?: ScientificMetrics | null;
+  scientific_metrics_artifact?: string | null;
   evaluation?: {
     overall_score?: number | null;
     rubrics?: { name: string; passed: boolean; score?: number | null }[];
