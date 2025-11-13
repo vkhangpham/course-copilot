@@ -71,6 +71,7 @@ class RunListItem(BaseModel):
     highlight_source: str | None = None
     world_model_store_exists: bool | None = None
     scientific_metrics: Dict[str, Any] | None = None
+    scientific_metrics_artifact: str | None = None
 
 
 class TraceFile(BaseModel):
@@ -276,6 +277,7 @@ def _list_runs(settings: PortalSettings, *, limit: int | None = None, offset: in
         notebook_summary = manifest.get("notebook_export_summary")
         store_exists = _derive_world_model_store_exists(manifest, settings)
         highlight_source = _derive_highlight_source(manifest, settings, store_exists=store_exists)
+        science_artifact = _relative_manifest_path(settings, manifest.get("scientific_metrics_artifact"))
 
         items.append(
             RunListItem(
@@ -290,6 +292,7 @@ def _list_runs(settings: PortalSettings, *, limit: int | None = None, offset: in
                 highlight_source=highlight_source,
                 world_model_store_exists=store_exists,
                 scientific_metrics=manifest.get("scientific_metrics"),
+                scientific_metrics_artifact=science_artifact,
             )
         )
     return items

@@ -115,7 +115,7 @@ def _write_run(
     }
 
     science_artifact = artifacts_dir / f"run-{run_id}-science.json"
-    science_artifact.write_text("{\"metrics\": {}}", encoding="utf-8")
+    science_artifact.write_text(json.dumps({"agent": "scientific_evaluator", "metrics": scientific_metrics}), encoding="utf-8")
 
     manifest = {
         "course_plan": str(course_plan),
@@ -204,6 +204,7 @@ def test_list_runs_and_detail(portal_settings: PortalSettings) -> None:
     assert runs[0]["highlight_source"] == "world_model"
     assert runs[0]["world_model_store_exists"] is True
     assert runs[0]["scientific_metrics"]["pedagogical"]["blooms_alignment"] == pytest.approx(0.82)
+    assert runs[0]["scientific_metrics_artifact"] == "artifacts/run-20250101-000000-science.json"
     assert runs[0]["manifest_path"] == expected_manifest_rel
     assert runs[0]["scientific_metrics"]["pedagogical"]["blooms_alignment"] == pytest.approx(0.82)
 
@@ -223,6 +224,7 @@ def test_list_runs_and_detail(portal_settings: PortalSettings) -> None:
     assert detail["highlight_source"] == "world_model"
     assert detail["scientific_metrics"]["content_quality"]["citation_validity"] == pytest.approx(0.88)
     assert detail["manifest"]["scientific_metrics"]["learning_outcomes"]["predicted_retention"] == pytest.approx(0.73)
+    assert detail["scientific_metrics_artifact"] == "artifacts/run-20250101-000000-science.json"
     first_export = detail["notebook_exports"][0]
     expected_manifest_export = _first_actual_export(manifest)
     expected_relative = _relative_from_manifest(expected_manifest_export, portal_settings)
