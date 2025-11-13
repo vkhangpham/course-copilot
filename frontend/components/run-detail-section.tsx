@@ -83,6 +83,11 @@ export function RunDetailSection({ detail }: { detail: RunDetail | null }) {
   const scienceDownloadUrl = scienceArtifactPath
     ? `${PORTAL_API_BASE}/${scienceArtifactPath.replace(/^\//, "")}`
     : null;
+  const scienceConfigPath =
+    (typeof detail?.science_config_path === "string" && detail.science_config_path) ||
+    (typeof manifest?.["science_config_path"] === "string"
+      ? (manifest?.["science_config_path"] as string)
+      : undefined);
   const portalScientificMetrics =
     (detail?.scientific_metrics as ScientificMetrics | undefined) ??
     (manifest?.["scientific_metrics"] as ScientificMetrics | undefined);
@@ -333,6 +338,11 @@ export function RunDetailSection({ detail }: { detail: RunDetail | null }) {
                 <ArtifactLink label="Course plan" href={coursePlanUrl} />
                 <ArtifactLink label="Lecture" href={lectureUrl} />
                 <ArtifactLink label="Scientific metrics (JSON)" href={scienceDownloadUrl} />
+                {scienceConfigPath && (
+                  <p className="break-all text-xs text-muted-foreground">
+                    science config: <span className="font-mono">{scienceConfigPath}</span>
+                  </p>
+                )}
               </div>
             )}
           </CardContent>
