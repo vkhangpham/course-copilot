@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -54,5 +54,6 @@ class PipelineContext(BaseModel):
     env: Dict[str, str] = Field(default_factory=dict)
     provenance: ProvenanceLogger
     dspy_handles: DSPyModelHandles | None = None
+    science_config: Dict[str, Any] | None = None
 
     model_config = ConfigDict(arbitrary_types_allowed=True)

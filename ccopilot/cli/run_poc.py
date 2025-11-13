@@ -317,15 +317,20 @@ def _print_artifact_summary(artifacts: PipelineRunArtifacts | None, *, quiet: bo
     if artifacts is None or quiet:
         return
 
+    science_candidate = getattr(artifacts, "scientific_metrics_path", None)
+    if not science_candidate:
+        science_candidate = _read_science_path_from_manifest(getattr(artifacts, "manifest", None))
+
     entries: list[str] = []
-    for label, attr in (
-        ("course_plan", "course_plan"),
-        ("lecture", "lecture"),
-        ("manifest", "manifest"),
-        ("eval_report", "eval_report"),
-        ("provenance", "provenance"),
+    for label, value in (
+        ("course_plan", getattr(artifacts, "course_plan", None)),
+        ("lecture", getattr(artifacts, "lecture", None)),
+        ("manifest", getattr(artifacts, "manifest", None)),
+        ("eval_report", getattr(artifacts, "eval_report", None)),
+        ("provenance", getattr(artifacts, "provenance", None)),
+        ("science", science_candidate),
     ):
-        formatted = _stringify_path(getattr(artifacts, attr, None))
+        formatted = _stringify_path(value)
         if formatted:
             entries.append(f"{label}={formatted}")
 
@@ -341,6 +346,20 @@ def _stringify_path(path_value: Path | str | None) -> str | None:
     if not path_value:
         return None
     return str(Path(path_value).expanduser().resolve())
+
+
+def _read_science_path_from_manifest(manifest_path: Path | str | None) -> Path | None:
+    if not manifest_path:
+        return None
+    path = Path(manifest_path)
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:  # pragma: no cover - defensive
+        return None
+    science_entry = payload.get("scientific_metrics_artifact")
+    return Path(science_entry) if isinstance(science_entry, str) else None
 
 
 if __name__ == "__main__":

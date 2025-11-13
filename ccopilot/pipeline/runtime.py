@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List
 
 from apps.orchestrator.codeact_registry import build_default_registry
+from apps.orchestrator.scientific_evaluator import ScientificEvaluator
 from ccopilot.core.provenance import ProvenanceEvent
 
 from .context import PipelineContext
@@ -28,6 +30,8 @@ class PipelineRunArtifacts:
     teacher_trace: Path | None = None
     notebook_exports: List[Dict[str, Any]] | None = None
     notebook_export_summary: Dict[str, Any] | None = None
+    scientific_metrics: Dict[str, Any] | None = None
+    scientific_metrics_path: Path | None = None
 
 
 def run_pipeline(ctx: PipelineContext, *, dry_run: bool = False) -> PipelineRunArtifacts | None:
@@ -104,6 +108,21 @@ def run_pipeline(ctx: PipelineContext, *, dry_run: bool = False) -> PipelineRunA
         )
     )
 
+    scientific_metrics = _evaluate_scientific_metrics(ctx, orch_artifacts)
+    scientific_metrics_path: Path | None = None
+    if scientific_metrics:
+        scientific_metrics_path = _emit_scientific_metrics_artifact(
+            orch_artifacts.manifest,
+            scientific_metrics,
+            ctx,
+        )
+        _embed_scientific_metrics(
+            orch_artifacts.manifest,
+            scientific_metrics,
+            scientific_metrics_path,
+            ctx,
+        )
+
     return PipelineRunArtifacts(
         course_plan=orch_artifacts.course_plan,
         lecture=orch_artifacts.lecture,
@@ -116,6 +135,8 @@ def run_pipeline(ctx: PipelineContext, *, dry_run: bool = False) -> PipelineRunA
         teacher_trace=orch_artifacts.teacher_trace,
         notebook_exports=orch_artifacts.notebook_exports,
         notebook_export_summary=orch_artifacts.notebook_export_summary,
+        scientific_metrics=scientific_metrics,
+        scientific_metrics_path=scientific_metrics_path,
     )
 
 
@@ -153,3 +174,117 @@ def _summarize_dataset(dataset) -> Dict[str, Any]:
         "quiz_count": len(getattr(dataset, "quiz_bank", [])),
         "top_domains": domains,
     }
+
+
+def _evaluate_scientific_metrics(ctx: PipelineContext, artifacts: Any) -> Dict[str, Any] | None:
+    """Run the scientific evaluator against the latest artifacts."""
+
+    course_plan = getattr(artifacts, "course_plan", None)
+    lecture = getattr(artifacts, "lecture", None)
+    if course_plan is None or lecture is None:
+        return None
+
+    science_cfg = ctx.science_config
+    if not _science_module_enabled(science_cfg):
+        return None
+
+    evaluator = ScientificEvaluator(config=science_cfg)
+    objectives = list(getattr(ctx.config.course, "learning_objectives", []) or [])
+
+    try:
+        metrics = evaluator.evaluate_course(
+            course_plan_path=course_plan,
+            lecture_paths=[lecture],
+            learning_objectives=objectives,
+        )
+    except FileNotFoundError:
+        return None
+    except Exception as exc:  # pragma: no cover - defensive logging
+        ctx.provenance.log(
+            ProvenanceEvent(
+                stage="warning",
+                message="Scientific evaluator failed; metrics omitted",
+                agent="ccopilot.pipeline",
+                payload={"error": str(exc), "course_plan": str(course_plan), "lecture": str(lecture)},
+            )
+        )
+        return None
+
+    return metrics.to_dict() if metrics else None
+
+
+def _emit_scientific_metrics_artifact(
+    manifest_path: Path,
+    metrics: Dict[str, Any],
+    ctx: PipelineContext,
+) -> Path | None:
+    """Write scientific metrics to a standalone artifact file."""
+
+    if not manifest_path.parent.exists():
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+
+    base_name = manifest_path.name
+    if base_name.endswith("-manifest.json"):
+        target_name = base_name[: -len("-manifest.json")] + "-science.json"
+    else:
+        target_name = manifest_path.stem + "-science.json"
+    artifact_path = manifest_path.with_name(target_name)
+
+    payload = {
+        "agent": "scientific_evaluator",
+        "metrics": metrics,
+    }
+    artifact_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    ctx.provenance.log(
+        ProvenanceEvent(
+            stage="science_metrics",
+            message="Scientific evaluator metrics saved",
+            agent="ccopilot.pipeline",
+            payload={"artifact": str(artifact_path)},
+        )
+    )
+    return artifact_path
+
+
+def _embed_scientific_metrics(
+    manifest_path: Path,
+    metrics: Dict[str, Any],
+    artifact_path: Path | None,
+    ctx: PipelineContext,
+) -> None:
+    """Persist scientific metrics alongside the manifest for downstream tooling."""
+
+    if not manifest_path.exists():
+        return
+
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:  # pragma: no cover - defensive
+        ctx.provenance.log(
+            ProvenanceEvent(
+                stage="warning",
+                message="Unable to inject scientific metrics; manifest unreadable",
+                agent="ccopilot.pipeline",
+                payload={"manifest": str(manifest_path), "error": str(exc)},
+            )
+        )
+        return
+
+    manifest["scientific_metrics"] = metrics
+    if artifact_path is not None:
+        manifest["scientific_metrics_artifact"] = str(artifact_path)
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+
+
+def _science_module_enabled(config: Dict[str, Any] | None) -> bool:
+    if not config:
+        return True
+    enabled = config.get("enabled")
+    if isinstance(enabled, bool):
+        return enabled
+    eval_block = config.get("evaluation_metrics")
+    if isinstance(eval_block, dict):
+        eval_enabled = eval_block.get("enabled")
+        if isinstance(eval_enabled, bool):
+            return eval_enabled
+    return True

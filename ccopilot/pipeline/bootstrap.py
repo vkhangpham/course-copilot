@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 from typing import Dict
 
+import yaml
+
 from dotenv import load_dotenv
 
 from ccopilot.core.ablation import AblationConfig, parse_ablation_flag
@@ -46,6 +48,7 @@ def bootstrap_pipeline(
     constraints_path: Path | None = None,
     notebook_slug_override: str | None = None,
     notebook_auto_create_override: bool | None = None,
+    science_config_path: Path | None = None,
 ) -> PipelineContext:
     """
     Load configuration, environment variables, and construct the pipeline context.
@@ -68,13 +71,25 @@ def bootstrap_pipeline(
         Optional notebook slug override for Notebook exports.
     notebook_auto_create_override:
         Force-enable/disable automatic notebook creation before exports.
+    science_config_path:
+        Optional path to the scientific evaluation config (defaults to
+        ``config/scientific_config.yaml`` when present).
     """
 
-    load_dotenv()  # make .env values available
-
     repo_root = (repo_root or Path.cwd()).resolve()
-    os.environ.setdefault("COURSEGEN_REPO_ROOT", str(repo_root))
+    dotenv_path = repo_root / ".env"
+    load_dotenv(dotenv_path)  # make repo-scoped .env values available even when running elsewhere
+    # Always export the resolved repo root so downstream tools (CodeAct, wm-inspect,
+    # portal hooks) stay aligned with the CLI argument even when the env var was
+    # previously set for a different checkout.
+    os.environ["COURSEGEN_REPO_ROOT"] = str(repo_root)
     config_path = (config_path or DEFAULT_CONFIG_PATH).resolve()
+    env_science_override = os.getenv("COURSEGEN_SCIENCE_CONFIG")
+    if env_science_override and not science_config_path:
+        science_config_path = Path(env_science_override)
+    default_science_path = repo_root / "config" / "scientific_config.yaml"
+    if science_config_path is None:
+        science_config_path = default_science_path if default_science_path.exists() else None
     output_dir = (output_dir or (repo_root / DEFAULT_OUTPUT_DIR)).resolve()
 
     config: PipelineConfig = load_pipeline_config(config_path, base_dir=repo_root)
@@ -112,6 +127,7 @@ def bootstrap_pipeline(
     )
     provenance = ProvenanceLogger(paths.logs_dir / "provenance.jsonl")
     env_snapshot = _capture_env(env_keys)
+    science_config = _load_scientific_config(science_config_path)
 
     ctx = PipelineContext(
         config=config,
@@ -119,7 +135,21 @@ def bootstrap_pipeline(
         paths=paths,
         env=env_snapshot,
         provenance=provenance,
+        science_config=science_config,
     )
+
+    if science_config is not None and science_config_path is not None:
+        ctx.provenance.log(
+            ProvenanceEvent(
+                stage="science_config",
+                message="Scientific evaluation config loaded",
+                agent="ccopilot.pipeline",
+                payload={
+                    "path": str(Path(science_config_path).expanduser().resolve()),
+                    "enabled": _science_config_enabled(science_config),
+                },
+            )
+        )
 
     try:
         ctx.dspy_handles = configure_dspy_models(config.models)
@@ -140,6 +170,7 @@ def bootstrap_pipeline(
     )
 
     _ensure_dataset_exists(config.world_model.dataset_dir)
+    _ensure_notebook_export_dir(ctx.paths.output_dir)
     if ctx.ablations.use_world_model:
         _refresh_world_model_if_needed(ctx, ingest_before_run)
     else:
@@ -147,6 +178,37 @@ def bootstrap_pipeline(
     _apply_notebook_env(ctx)
 
     return ctx
+
+
+def _load_scientific_config(path: Path | None) -> Dict[str, object] | None:
+    if path is None:
+        return None
+    resolved = Path(path).expanduser().resolve()
+    if not resolved.exists():
+        LOGGER.debug("Scientific config not found at %s; skipping", resolved)
+        return None
+    try:
+        with resolved.open("r", encoding="utf-8") as handle:
+            payload = yaml.safe_load(handle) or {}
+    except yaml.YAMLError as exc:  # pragma: no cover - defensive
+        raise RuntimeError(f"Invalid scientific config at {resolved}: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"Scientific config at {resolved} must be a mapping")
+    return payload
+
+
+def _science_config_enabled(config: Dict[str, object] | None) -> bool:
+    if not config:
+        return True
+    enabled = config.get("enabled")
+    if isinstance(enabled, bool):
+        return enabled
+    eval_cfg = config.get("evaluation_metrics")
+    if isinstance(eval_cfg, dict):
+        eval_enabled = eval_cfg.get("enabled")
+        if isinstance(eval_enabled, bool):
+            return eval_enabled
+    return True
 
 
 def _ensure_dataset_exists(dataset_dir: Path) -> None:
@@ -157,6 +219,13 @@ def _ensure_dataset_exists(dataset_dir: Path) -> None:
             "Run scripts/ingest_handcrafted.py or pass --dataset-dir with a valid path."
         )
     os.environ["COURSEGEN_DATASET_DIR"] = str(resolved)
+
+
+def _ensure_notebook_export_dir(output_dir: Path) -> None:
+    default_export_dir = (output_dir / "notebook_exports").expanduser().resolve()
+    if "OPEN_NOTEBOOK_EXPORT_DIR" not in os.environ:
+        os.environ["OPEN_NOTEBOOK_EXPORT_DIR"] = str(default_export_dir)
+    default_export_dir.mkdir(parents=True, exist_ok=True)
 
 
 def _refresh_world_model_if_needed(ctx: PipelineContext, ingest_requested: bool) -> None:

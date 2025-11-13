@@ -314,25 +314,6 @@ def _print_summary(summary: Dict[str, Any]) -> None:
         console.print(f"[dim]Last artifact created at {last_artifact}[/dim]")
 
 
-@app.command()
-def summary(
-    store: Path | None = typer.Option(
-        None,
-        "--store",
-        show_default=False,
-        help="SQLite world model path (defaults to WORLD_MODEL_STORE or repo outputs).",
-    ),
-    as_json: bool = typer.Option(False, "--json", help="Emit JSON instead of a table."),
-) -> None:
-    """Show aggregate counts for the current world-model snapshot."""
-
-    info = query_summary(store)
-    if as_json:
-        typer.echo(json.dumps(info, indent=2, ensure_ascii=False))
-        return
-    _print_summary(info)
-
-
 def _extract_excerpt(raw: object) -> str | None:
     if not raw:
         return None

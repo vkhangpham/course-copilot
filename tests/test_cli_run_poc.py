@@ -347,6 +347,17 @@ evaluation:
             _print_highlight_hint(artifacts)
         self.assertIn("[highlights] (dataset) not generated", buffer.getvalue())
 
+    def test_cli_science_config_can_disable_metrics(self) -> None:
+        science_cfg = self.repo_root / "config" / "scientific_config.yaml"
+        science_cfg.write_text("enabled: false\n", encoding="utf-8")
+        exit_code, output, output_dir = self._run_cli()
+        self.assertEqual(exit_code, 0)
+        self.assertNotIn("[science]", output)
+        manifest_path = next((output_dir / "artifacts").glob("run-*-manifest.json"))
+        manifest = json.loads(manifest_path.read_text())
+        self.assertNotIn("scientific_metrics", manifest)
+        self.assertNotIn("scientific_metrics_artifact", manifest)
+
     def test_cli_scientific_summary_formats_metrics(self) -> None:
         metrics = {
             "pedagogical": {"blooms_alignment": 0.75, "learning_path_coherence": 0.5},

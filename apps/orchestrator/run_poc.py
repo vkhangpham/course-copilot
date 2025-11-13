@@ -12,10 +12,11 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from ccopilot.cli.run_poc import main as _cli_main
-DEFAULT_CONFIG_PATH = REPO_ROOT / "config" / "pipeline.yaml"
-DEFAULT_CONSTRAINTS_PATH = REPO_ROOT / "config" / "course_config.yaml"
-DEFAULT_CONCEPTS_DIR = REPO_ROOT / "data" / "handcrafted" / "database_systems"
-DEFAULT_OUTPUT_DIR = REPO_ROOT / "outputs"
+
+DEFAULT_CONFIG_REL = Path("config") / "pipeline.yaml"
+DEFAULT_CONSTRAINTS_REL = Path("config") / "course_config.yaml"
+DEFAULT_CONCEPTS_REL = Path("data") / "handcrafted" / "database_systems"
+DEFAULT_OUTPUT_REL = Path("outputs")
 ABLATION_CHOICES = ("no_world_model", "no_students", "no_recursion")
 
 __all__ = ["build_parser", "main"]
@@ -29,13 +30,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--constraints",
-        default=str(DEFAULT_CONSTRAINTS_PATH),
-        help="Course constraints YAML (defaults to config/course_config.yaml).",
+        default=None,
+        help=f"Course constraints YAML (defaults to {DEFAULT_CONSTRAINTS_REL}).",
     )
     parser.add_argument(
         "--concepts",
-        default=str(DEFAULT_CONCEPTS_DIR),
-        help="Path to the handcrafted concept/world-model dataset (defaults to data/handcrafted/database_systems).",
+        default=None,
+        help=(
+            "Path to the handcrafted concept/world-model dataset "
+            f"(defaults to {DEFAULT_CONCEPTS_REL})."
+        ),
     )
     parser.add_argument(
         "--notebook",
@@ -52,7 +56,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--output-dir",
-        default=str(DEFAULT_OUTPUT_DIR),
+        default=None,
         help="Directory for generated artifacts (defaults to <repo>/outputs).",
     )
     parser.add_argument(
@@ -78,7 +82,7 @@ def build_parser() -> argparse.ArgumentParser:
     # Advanced overrides stay hidden so the help output matches the “minimal CLI” promise.
     parser.add_argument(
         "--config",
-        default=str(DEFAULT_CONFIG_PATH),
+        default=None,
         help=argparse.SUPPRESS,
     )
     parser.add_argument(
@@ -105,8 +109,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     repo_root = _resolve_path(args.repo_root, REPO_ROOT)
-    config_path = _resolve_path(args.config, DEFAULT_CONFIG_PATH, base=repo_root)
-    output_dir = _resolve_path(args.output_dir, DEFAULT_OUTPUT_DIR, base=repo_root)
+    config_default = (repo_root / DEFAULT_CONFIG_REL).resolve()
+    constraints_default = (repo_root / DEFAULT_CONSTRAINTS_REL).resolve()
+    concepts_default = (repo_root / DEFAULT_CONCEPTS_REL).resolve()
+    output_default = (repo_root / DEFAULT_OUTPUT_REL).resolve()
+
+    config_path = _resolve_path(args.config, config_default, base=repo_root)
+    output_dir = _resolve_path(args.output_dir, output_default, base=repo_root)
+    constraints_path = _resolve_path(args.constraints, constraints_default, base=repo_root)
+    concepts_path = _resolve_path(args.concepts, concepts_default, base=repo_root)
+
+    user_supplied_constraints = args.constraints is not None
+    user_supplied_concepts = args.concepts is not None
 
     forwarded: list[str] = [
         "--config",
@@ -117,10 +131,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         str(output_dir),
     ]
 
-    forwarded.extend(
-        ["--constraints", str(_resolve_path(args.constraints, DEFAULT_CONSTRAINTS_PATH, base=repo_root))]
-    )
-    forwarded.extend(["--concept", str(_resolve_path(args.concepts, DEFAULT_CONCEPTS_DIR, base=repo_root))])
+    if user_supplied_constraints or constraints_path.exists():
+        forwarded.extend(["--constraints", str(constraints_path)])
+    if user_supplied_concepts or concepts_path.exists():
+        forwarded.extend(["--concept", str(concepts_path)])
     forwarded.extend(["--notebook", args.notebook])
     if args.ablations:
         forwarded.extend(["--ablations", args.ablations])

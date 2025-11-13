@@ -31,6 +31,7 @@ class PipelineRuntimeTests(unittest.TestCase):
                 "OPEN_NOTEBOOK_SLUG",
                 "OPEN_NOTEBOOK_EXPORT_DIR",
                 "OPEN_NOTEBOOK_EXPORT_MIRROR",
+                "COURSEGEN_REPO_ROOT",
             )
         }
         self._tmp = tempfile.TemporaryDirectory()
@@ -220,6 +221,22 @@ evaluation:
         self.assertFalse((self.output_dir / "course_plan.md").exists())
         self.mock_build_registry.assert_not_called()
 
+    def test_repo_root_overrides_existing_env(self) -> None:
+        original_root = os.environ.get("COURSEGEN_REPO_ROOT")
+        os.environ["COURSEGEN_REPO_ROOT"] = "/tmp/previous-repo"
+        try:
+            bootstrap_pipeline(
+                config_path=self.config_path,
+                repo_root=self.repo_root,
+                output_dir=self.output_dir,
+            )
+            self.assertEqual(Path(os.environ["COURSEGEN_REPO_ROOT"]).resolve(), self.repo_root.resolve())
+        finally:
+            if original_root is None:
+                os.environ.pop("COURSEGEN_REPO_ROOT", None)
+            else:
+                os.environ["COURSEGEN_REPO_ROOT"] = original_root
+
     def test_full_run_emits_stub_artifacts(self) -> None:
         ctx = bootstrap_pipeline(
             config_path=self.config_path,
@@ -244,6 +261,13 @@ evaluation:
         self.assertIsNotNone(artifacts.notebook_exports)
         self.assertIsNotNone(artifacts.notebook_export_summary)
         self.assertIsNotNone(artifacts.notebook_export_summary)
+        self.assertIsNotNone(artifacts.scientific_metrics)
+        self.assertIsNotNone(artifacts.scientific_metrics_path)
+        assert artifacts.scientific_metrics_path is not None
+        self.assertTrue(artifacts.scientific_metrics_path.exists())
+        science_payload = json.loads(artifacts.scientific_metrics_path.read_text(encoding="utf-8"))
+        self.assertIn("metrics", science_payload)
+        self.assertIn("pedagogical", science_payload["metrics"])
 
         plan_text = artifacts.course_plan.read_text(encoding="utf-8")
         self.assertIn("Test Course", plan_text)
@@ -294,6 +318,11 @@ evaluation:
         self.assertIsNotNone(export_summary)
         assert export_summary is not None
         self.assertGreater(export_summary["success"], 0)
+        self.assertEqual(
+            manifest.get("scientific_metrics_artifact"),
+            str(artifacts.scientific_metrics_path),
+        )
+        self.assertIn("scientific_metrics", manifest)
 
         eval_record = json.loads(artifacts.eval_report.read_text(encoding="utf-8").splitlines()[0])
         self.assertTrue(eval_record["use_students"])
@@ -370,7 +399,7 @@ evaluation:
             provenance_path.read_text(encoding="utf-8"),
         )
 
-    def test_recursion_ablation_skips_notebook_exports(self) -> None:
+    def test_recursion_ablation_still_exports_notebook(self) -> None:
         ctx = bootstrap_pipeline(
             config_path=self.config_path,
             repo_root=self.repo_root,
@@ -381,13 +410,33 @@ evaluation:
             artifacts = run_pipeline(ctx, dry_run=False)
 
         assert artifacts is not None
-        self.assertFalse(self.notebook_api.notes, "Notebook API should not be called when recursion is disabled")
+        self.assertTrue(self.notebook_api.notes, "Notebook API should still publish when recursion is disabled")
         manifest = json.loads(artifacts.manifest.read_text(encoding="utf-8"))
         exports = manifest.get("notebook_exports") or []
-        self.assertTrue(exports, "Manifest should contain a placeholder notebook export entry")
-        reason = (exports[0].get("response") or {}).get("reason")
-        self.assertEqual(reason, "recursion_disabled")
-        self.assertIsNone(manifest.get("teacher_trace"))
+        self.assertTrue(exports, "Manifest should include notebook export entries")
+        reasons = [entry.get("response", {}).get("reason") for entry in exports if isinstance(entry, dict)]
+        self.assertNotIn("recursion_disabled", reasons)
+
+    def test_science_config_disable_skips_metrics(self) -> None:
+        config_dir = self.repo_root / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
+        science_cfg = config_dir / "scientific_config.yaml"
+        science_cfg.write_text("enabled: false\n", encoding="utf-8")
+
+        ctx = bootstrap_pipeline(
+            config_path=self.config_path,
+            repo_root=self.repo_root,
+            output_dir=self.output_dir,
+        )
+        with self.notebook_api.patch_open_notebook_client():
+            artifacts = run_pipeline(ctx, dry_run=False)
+
+        assert artifacts is not None
+        self.assertIsNone(artifacts.scientific_metrics)
+        self.assertIsNone(artifacts.scientific_metrics_path)
+        manifest = json.loads(artifacts.manifest.read_text(encoding="utf-8"))
+        self.assertNotIn("scientific_metrics", manifest)
+        self.assertIsNone(manifest.get("scientific_metrics_artifact"))
 
     def test_missing_dataset_dir_raises(self) -> None:
         dataset_dir = self.repo_root / "data"
