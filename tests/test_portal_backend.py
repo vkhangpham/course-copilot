@@ -529,8 +529,8 @@ def test_relative_manifest_paths_use_repo_root_for_external_files(
 
     manifest_path = _first_manifest_path(portal_settings.outputs_dir)
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-    payload["science_config_path"] = "../config/scientific_config.yaml"
-    payload["scientific_metrics_artifact"] = "../config/external-science.json"
+    payload["science_config_path"] = str(repo_config)
+    payload["scientific_metrics_artifact"] = str(external_science)
     manifest_path.write_text(json.dumps(payload), encoding="utf-8")
 
     external_runner = portal_settings.repo_root.parent / "external-runner-xbpv"
