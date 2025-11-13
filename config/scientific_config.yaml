@@ -1,0 +1,250 @@
+# Scientific Evaluation and Hypothesis Testing Configuration
+# This config enables hypothesis-driven development and rigorous evaluation
+
+hypothesis_testing:
+  enabled: true
+  method: hypogenic  # hypogenic | hyporefine | union
+  num_hypotheses: 20
+  refinement_iterations: 3
+  confidence_threshold: 0.7
+
+  # Hypothesis categories to focus on
+  categories:
+    - content_ordering
+    - difficulty_progression
+    - engagement
+    - assessment
+    - cognitive_load
+
+evaluation_metrics:
+  # Pedagogical metrics
+  blooms_taxonomy: true
+  learning_path_coherence: true
+  concept_coverage: true
+  prerequisite_satisfaction: true
+
+  # Content quality metrics
+  citation_validity: true
+  citation_coverage: true
+  readability: true
+  information_density: true
+  factual_accuracy: false  # Requires external validation
+
+  # Learning outcome predictions
+  retention_prediction: true
+  engagement_prediction: true
+  difficulty_analysis: true
+  cognitive_load_estimation: true
+
+  # Threshold values
+  thresholds:
+    blooms_alignment_min: 0.7
+    prerequisite_satisfaction_min: 0.9
+    citation_coverage_min: 0.8
+    readability_target_min: 0.6
+    readability_target_max: 0.8
+
+reproducibility:
+  # Random seed tracking
+  track_seeds: true
+  default_seed: 42
+
+  # Model configuration tracking
+  log_temperatures: true
+  log_model_versions: true
+  log_token_counts: true
+
+  # Deterministic mode for testing
+  deterministic_mode: false
+
+  # Cache LLM responses
+  enable_caching: true
+  cache_backend: redis  # redis | filesystem
+  cache_ttl_seconds: 86400  # 24 hours
+
+  # Provenance tracking
+  track_git_commits: true
+  track_config_versions: true
+  track_data_versions: true
+
+world_model:
+  # Confidence scoring
+  enable_confidence_scores: true
+  default_confidence: 0.5
+  confidence_decay_rate: 0.95  # Per day
+
+  # Contradiction detection
+  enable_contradiction_detection: true
+  contradiction_threshold: 0.8  # Similarity threshold
+
+  # Bayesian belief updating
+  enable_belief_updates: true
+  prior_weight: 0.3
+  evidence_weight: 0.7
+
+  # Knowledge evolution
+  enable_knowledge_evolution: true
+  evolution_strategy: reinforcement  # reinforcement | supervised
+
+  # Versioning
+  enable_versioning: true
+  version_control_backend: git
+
+experimental_design:
+  # A/B testing framework
+  enable_ab_testing: false
+  control_group_size: 50
+  treatment_group_size: 50
+  statistical_power: 0.8
+  significance_level: 0.05
+
+  # Ablation studies
+  systematic_ablations: true
+  ablation_combinations:
+    - [no_world_model]
+    - [no_students]
+    - [no_recursion]
+    - [no_world_model, no_students]
+    - [no_world_model, no_recursion]
+
+  # Baseline comparisons
+  enable_baselines: false
+  baseline_methods:
+    - manual_curriculum
+    - gpt4_zero_shot
+    - template_based
+
+literature_integration:
+  # HypoRefine settings
+  literature_path: literature/education/
+  num_papers_to_analyze: 10
+  paper_processing_method: grobid
+
+  # Literature sources
+  preferred_venues:
+    - "Journal of Educational Psychology"
+    - "Learning and Instruction"
+    - "Educational Research Review"
+    - "Instructional Science"
+
+  # Citation extraction
+  extract_citations: true
+  validate_citations: true
+  citation_database: world_model
+
+# Prompt templates for hypogenic integration
+prompt_templates:
+  pedagogical_observation: |
+    Course Structure: ${course_structure}
+    Module Order: ${module_order}
+    Student Performance: ${student_metrics}
+    Learning Objectives: ${objectives}
+
+    Observation: Students ${performance_verb} ${performance_level} when ${condition}
+
+  hypothesis_generation: |
+    Based on educational research and observed patterns in course generation,
+    generate ${num_hypotheses} testable hypotheses about effective pedagogical strategies.
+
+    Focus areas:
+    1. Content ordering and prerequisite management
+    2. Difficulty progression and scaffolding techniques
+    3. Engagement strategies and motivation
+    4. Assessment design and alignment
+    5. Cognitive load management
+
+    For each hypothesis, use the format:
+    "If [condition], then [expected outcome] because [theoretical rationale]"
+
+    Ensure hypotheses are:
+    - Testable through course metrics
+    - Grounded in learning science
+    - Actionable for course generation
+
+  hypothesis_inference: |
+    Hypothesis: ${hypothesis}
+
+    Course Data:
+    - Structure: ${course_structure}
+    - Modules: ${module_count}
+    - Concepts: ${concept_list}
+    - Prerequisites: ${prerequisite_graph}
+
+    Student Outcomes:
+    - Overall Score: ${overall_score}
+    - Comprehension: ${comprehension_score}
+    - Retention: ${retention_rate}
+    - Engagement: ${engagement_score}
+
+    Task: Evaluate whether this hypothesis is supported by the data.
+    Provide:
+    1. Support verdict (supported | not_supported | inconclusive)
+    2. Confidence score (0.0 to 1.0)
+    3. Key evidence points
+    4. Recommendations for refinement
+
+  hypothesis_refinement: |
+    Original Hypothesis: ${original_hypothesis}
+    Test Results: ${test_results}
+    Confidence: ${confidence}
+
+    Task: Refine this hypothesis based on the test results.
+    Consider:
+    - What evidence supports or contradicts it?
+    - How can we make it more precise?
+    - Are there boundary conditions to add?
+    - Should we split it into sub-hypotheses?
+
+    Provide refined hypothesis in the same format:
+    "If [refined condition], then [refined outcome] because [refined rationale]"
+
+# Logging and output
+logging:
+  level: INFO
+  log_llm_calls: true
+  log_evaluations: true
+  log_hypotheses: true
+
+  output_dir: outputs/scientific/
+  evaluation_dir: outputs/scientific/evaluations/
+  hypothesis_dir: outputs/scientific/hypotheses/
+  provenance_dir: outputs/scientific/provenance/
+
+  # Detailed traces
+  save_evaluation_traces: true
+  save_hypothesis_traces: true
+  save_belief_updates: true
+
+# Integration with existing CourseGen components
+integration:
+  # Teacher orchestrator
+  inject_into_teacher: true
+  teacher_hook_points:
+    - pre_plan
+    - post_plan
+    - pre_lecture
+    - post_lecture
+    - post_evaluation
+
+  # Student evaluation
+  inject_into_students: true
+  student_metrics_to_track:
+    - rubric_scores
+    - quiz_results
+    - comprehension_assessments
+    - retention_tests
+
+  # World model
+  inject_into_world_model: true
+  world_model_integration:
+    - confidence_scores
+    - contradiction_detection
+    - belief_updates
+
+  # Provenance
+  inject_into_provenance: true
+  provenance_events:
+    - hypothesis_generated
+    - hypothesis_tested
+    - belief_updated
+    - evaluation_completed
