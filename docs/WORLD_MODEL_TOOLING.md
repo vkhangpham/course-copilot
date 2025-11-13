@@ -37,6 +37,7 @@ All IDs are lowercase snake_case and must match across files (concepts ↔ taxon
 | Show definitions | `wm-inspect definitions --concept transaction_management` |
 | Inspect graph edges | `wm-inspect graph --concept relational_model` |
 | Inspect stored artifacts | `wm-inspect artifacts --type quiz_bank` |
+| Summarize snapshot counts | `wm-inspect summary --json` |
 | Run orchestrator with fresh ingest | `coursegen-poc --config config/pipeline.yaml --ingest-world-model` |
 
 > **CodeAct note:** the CodeAct world-model tools (`fetch_concepts`, `search_events`, etc.) now follow the same rules.
@@ -67,6 +68,10 @@ at alternate datasets or snapshots.
 - **Need a quick sample** – `wm-inspect timeline --year 2012`
   (or combine with `--concept relational_model`) prints JSON rows filtered by the
   provided arguments.
+
+### Snapshot summaries
+
+When you just need to confirm ingest health (for example after refreshing the dataset in CI), run `wm-inspect summary`. The command loads the snapshot once and reports aggregate counts for concepts, relationships, authors, papers, timeline events, claims/definitions, and artifacts (with a per-type breakdown). Add `--json` to capture the output in scripts, e.g. `wm-inspect summary --json | jq '.counts'`.
 
 Ping `ccopilot-o78` owners in Agent Mail if the schema needs to evolve; remember to rerun the
 validation + ingestion commands before committing.
