@@ -55,5 +55,13 @@ class PipelineContext(BaseModel):
     provenance: ProvenanceLogger
     dspy_handles: DSPyModelHandles | None = None
     science_config: Dict[str, Any] | None = None
+    science_config_path: Path | None = None
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    @field_validator("science_config_path", mode="before")
+    @classmethod
+    def _expand_science_path(cls, value: Path | str | None) -> Path | None:
+        if value is None:
+            return None
+        return Path(value).expanduser().resolve()

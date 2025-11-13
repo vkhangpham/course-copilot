@@ -121,6 +121,11 @@ class PipelineRuntimeTests(unittest.TestCase):
         quiz_bank = self.repo_root / "quiz_bank.json"
         quiz_bank.write_text("[]\n", encoding="utf-8")
 
+        science_cfg_dir = self.repo_root / "config"
+        science_cfg_dir.mkdir(parents=True, exist_ok=True)
+        science_cfg_path = science_cfg_dir / "scientific_config.yaml"
+        science_cfg_path.write_text("enabled: true\n", encoding="utf-8")
+
         config_text = f"""
 course:
   title: "Test Course"
@@ -263,6 +268,9 @@ evaluation:
         self.assertIsNotNone(artifacts.notebook_export_summary)
         self.assertIsNotNone(artifacts.scientific_metrics)
         self.assertIsNotNone(artifacts.scientific_metrics_path)
+        self.assertIsNotNone(artifacts.science_config_path)
+        assert artifacts.science_config_path is not None
+        self.assertTrue(artifacts.science_config_path.exists())
         assert artifacts.scientific_metrics_path is not None
         self.assertTrue(artifacts.scientific_metrics_path.exists())
         science_payload = json.loads(artifacts.scientific_metrics_path.read_text(encoding="utf-8"))
@@ -323,6 +331,10 @@ evaluation:
             str(artifacts.scientific_metrics_path),
         )
         self.assertIn("scientific_metrics", manifest)
+        self.assertEqual(
+            manifest.get("science_config_path"),
+            str(artifacts.science_config_path),
+        )
 
         eval_record = json.loads(artifacts.eval_report.read_text(encoding="utf-8").splitlines()[0])
         self.assertTrue(eval_record["use_students"])
@@ -434,9 +446,14 @@ evaluation:
         assert artifacts is not None
         self.assertIsNone(artifacts.scientific_metrics)
         self.assertIsNone(artifacts.scientific_metrics_path)
+        self.assertEqual(
+            str(artifacts.science_config_path),
+            str(science_cfg.resolve()),
+        )
         manifest = json.loads(artifacts.manifest.read_text(encoding="utf-8"))
         self.assertNotIn("scientific_metrics", manifest)
         self.assertIsNone(manifest.get("scientific_metrics_artifact"))
+        self.assertEqual(manifest.get("science_config_path"), str(science_cfg.resolve()))
 
     def test_missing_dataset_dir_raises(self) -> None:
         dataset_dir = self.repo_root / "data"

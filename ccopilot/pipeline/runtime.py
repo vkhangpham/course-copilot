@@ -32,6 +32,7 @@ class PipelineRunArtifacts:
     notebook_export_summary: Dict[str, Any] | None = None
     scientific_metrics: Dict[str, Any] | None = None
     scientific_metrics_path: Path | None = None
+    science_config_path: Path | None = None
 
 
 def run_pipeline(ctx: PipelineContext, *, dry_run: bool = False) -> PipelineRunArtifacts | None:
@@ -137,6 +138,7 @@ def run_pipeline(ctx: PipelineContext, *, dry_run: bool = False) -> PipelineRunA
         notebook_export_summary=orch_artifacts.notebook_export_summary,
         scientific_metrics=scientific_metrics,
         scientific_metrics_path=scientific_metrics_path,
+        science_config_path=ctx.science_config_path,
     )
 
 

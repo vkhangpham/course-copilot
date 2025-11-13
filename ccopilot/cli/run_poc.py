@@ -330,6 +330,10 @@ def _print_artifact_summary(artifacts: PipelineRunArtifacts | None, *, quiet: bo
     if not science_candidate:
         science_candidate = _read_science_path_from_manifest(getattr(artifacts, "manifest", None))
 
+    science_config_candidate = getattr(artifacts, "science_config_path", None)
+    if not science_config_candidate:
+        science_config_candidate = _read_science_config_from_manifest(getattr(artifacts, "manifest", None))
+
     entries: list[str] = []
     for label, value in (
         ("course_plan", getattr(artifacts, "course_plan", None)),
@@ -338,6 +342,7 @@ def _print_artifact_summary(artifacts: PipelineRunArtifacts | None, *, quiet: bo
         ("eval_report", getattr(artifacts, "eval_report", None)),
         ("provenance", getattr(artifacts, "provenance", None)),
         ("science", science_candidate),
+        ("science_config", science_config_candidate),
     ):
         formatted = _stringify_path(value)
         if formatted:
@@ -357,7 +362,7 @@ def _stringify_path(path_value: Path | str | None) -> str | None:
     return str(Path(path_value).expanduser().resolve())
 
 
-def _read_science_path_from_manifest(manifest_path: Path | str | None) -> Path | None:
+def _read_manifest_path(manifest_path: Path | str | None, field: str) -> Path | None:
     if not manifest_path:
         return None
     path = Path(manifest_path)
@@ -367,8 +372,16 @@ def _read_science_path_from_manifest(manifest_path: Path | str | None) -> Path |
         payload = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError:  # pragma: no cover - defensive
         return None
-    science_entry = payload.get("scientific_metrics_artifact")
-    return Path(science_entry) if isinstance(science_entry, str) else None
+    entry = payload.get(field)
+    return Path(entry) if isinstance(entry, str) else None
+
+
+def _read_science_path_from_manifest(manifest_path: Path | str | None) -> Path | None:
+    return _read_manifest_path(manifest_path, "scientific_metrics_artifact")
+
+
+def _read_science_config_from_manifest(manifest_path: Path | str | None) -> Path | None:
+    return _read_manifest_path(manifest_path, "science_config_path")
 
 
 if __name__ == "__main__":

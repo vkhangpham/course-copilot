@@ -124,6 +124,9 @@ evaluation:
 """
         (self.repo_root / "config" / "pipeline.yaml").write_text(pipeline_yaml.strip(), encoding="utf-8")
         self._seed_dataset(dataset_dir, quiz_bank)
+        science_cfg = self.repo_root / "config" / "scientific_config.yaml"
+        science_cfg.write_text("enabled: true\n", encoding="utf-8")
+        self.science_config_path = science_cfg
         self.constraints_path = self.repo_root / "constraints_override.yaml"
         self.constraints_path.write_text(
             yaml_dump(
@@ -259,6 +262,11 @@ evaluation:
         self.assertIn("[science]", output)
         self.assertIn("[artifacts]", output)
         self.assertIn("science=", output)
+        self.assertIn("science_config=", output)
+        self.assertEqual(
+            manifest.get("science_config_path"),
+            str(self.science_config_path.resolve()),
+        )
 
     def test_cli_reports_artifact_locations(self) -> None:
         exit_code, output, output_dir = self._run_cli()
@@ -268,6 +276,7 @@ evaluation:
         self.assertIn(str(manifest_path.resolve()), output)
         self.assertIn(str(lecture_path.resolve()), output)
         self.assertIn("science=", output)
+        self.assertIn("science_config=", output)
 
     def test_cli_no_recursion_skips_teacher_trace_hint(self) -> None:
         exit_code, output, _ = self._run_cli(["--ablations", "no_recursion"])
@@ -357,6 +366,7 @@ evaluation:
         manifest = json.loads(manifest_path.read_text())
         self.assertNotIn("scientific_metrics", manifest)
         self.assertNotIn("scientific_metrics_artifact", manifest)
+        self.assertEqual(manifest.get("science_config_path"), str(science_cfg.resolve()))
 
     def test_cli_science_flag_overrides_path(self) -> None:
         custom_cfg = self.repo_root / "config" / "science-custom.yaml"
@@ -368,6 +378,8 @@ evaluation:
         manifest = json.loads(manifest_path.read_text())
         self.assertNotIn("scientific_metrics", manifest)
         self.assertNotIn("scientific_metrics_artifact", manifest)
+        self.assertEqual(manifest.get("science_config_path"), str(custom_cfg.resolve()))
+        self.assertIn(str(custom_cfg.resolve()), output)
 
     def test_cli_scientific_summary_formats_metrics(self) -> None:
         metrics = {

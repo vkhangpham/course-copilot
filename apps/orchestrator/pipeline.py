@@ -30,6 +30,9 @@ class PipelineArtifacts:
     provenance: Path
     manifest: Path
     highlights: Path | None = None
+    highlight_source: str | None = None
+    notebook_exports: List[Dict[str, Any]] | None = None
+    notebook_export_summary: Dict[str, Any] | None = None
 
 
 class Orchestrator:
@@ -69,7 +72,9 @@ class Orchestrator:
         for path in (output_dir, lecture_dir, eval_dir, prov_dir, manifest_dir):
             path.mkdir(parents=True, exist_ok=True)
 
-        world_model_highlights = self._collect_world_model_highlights(world_model_store)
+        world_model_highlights, highlight_source = self._collect_world_model_highlights(world_model_store)
+        if not self.ctx.ablations.use_world_model:
+            highlight_source = highlight_source or "dataset"
         highlight_artifact = self._emit_world_model_highlights_artifact(
             manifest_dir,
             ts,
@@ -131,12 +136,17 @@ class Orchestrator:
                 "overall_score": evaluation_payload.get("overall_score"),
             },
         )
+        notebook_exports = [self._notebook_placeholder(reason="notebook_stubbed")]
+        notebook_summary = self._summarize_notebook_exports(notebook_exports)
         provenance = self._emit_provenance_record(
             prov_dir / f"run-{ts}.jsonl",
             course_plan,
             lecture,
             dataset_summary,
+            highlight_source,
             world_model_highlights,
+            notebook_exports,
+            notebook_summary,
         )
         manifest = self._emit_manifest(
             manifest_dir / f"run-{ts}-manifest.json",
@@ -150,6 +160,9 @@ class Orchestrator:
             evaluation_payload,
             world_model_highlights,
             highlight_artifact,
+            highlight_source=highlight_source,
+            notebook_exports=notebook_exports,
+            notebook_export_summary=notebook_summary,
         )
 
         self.ctx.provenance.log(
@@ -163,6 +176,7 @@ class Orchestrator:
                     "eval_report": str(eval_report),
                     "evaluation": evaluation_payload,
                     "world_model_highlights": world_model_highlights or {},
+                    "highlight_source": highlight_source,
                     "highlight_artifact": str(highlight_artifact) if highlight_artifact else None,
                 },
             )
@@ -175,6 +189,9 @@ class Orchestrator:
             provenance=provenance,
             manifest=manifest,
             highlights=highlight_artifact,
+            highlight_source=highlight_source,
+            notebook_exports=notebook_exports,
+            notebook_export_summary=notebook_summary,
         )
 
     def _log_stage(self, stage_name: str, payload: Dict[str, Any]) -> None:
@@ -404,7 +421,10 @@ class Orchestrator:
         course_plan: Path,
         lecture: Path,
         dataset_summary: Dict[str, Any],
+        highlight_source: str | None,
         world_model_highlights: Dict[str, Any] | None = None,
+        notebook_exports: List[Dict[str, Any]] | None = None,
+        notebook_export_summary: Dict[str, Any] | None = None,
     ) -> Path:
         record = {
             "stage": "placeholder",
@@ -417,6 +437,9 @@ class Orchestrator:
                 "students_enabled": self.ctx.ablations.use_students,
                 "dataset_summary": dataset_summary,
                 "world_model_highlights": world_model_highlights or {},
+                "highlight_source": highlight_source,
+                "notebook_exports": notebook_exports,
+                "notebook_export_summary": notebook_export_summary,
             },
         }
         with path.open("w", encoding="utf-8") as handle:
@@ -436,6 +459,10 @@ class Orchestrator:
         evaluation_payload: Dict[str, Any],
         world_model_highlights: Dict[str, Any] | None = None,
         highlight_artifact: Path | None = None,
+        *,
+        highlight_source: str | None = None,
+        notebook_exports: List[Dict[str, Any]] | None = None,
+        notebook_export_summary: Dict[str, Any] | None = None,
     ) -> Path:
         manifest: Dict[str, Any] = {
             "course_plan": str(course_plan),
@@ -453,6 +480,12 @@ class Orchestrator:
             "evaluation": evaluation_payload,
             "world_model_highlights": world_model_highlights or {},
             "world_model_highlight_artifact": str(highlight_artifact) if highlight_artifact else None,
+            "highlight_source": highlight_source,
+            "notebook_exports": notebook_exports,
+            "notebook_export_summary": notebook_export_summary,
+            "science_config_path": (
+                str(self.ctx.science_config_path) if self.ctx.science_config_path else None
+            ),
         }
         with path.open("w", encoding="utf-8") as handle:
             json.dump(manifest, handle, indent=2)
@@ -566,13 +599,18 @@ class Orchestrator:
         *,
         concept_limit: int = 3,
         timeline_limit: int = 3,
-    ) -> Dict[str, Any]:
+    ) -> tuple[Dict[str, Any], str | None]:
         """Return a trimmed slice of the world model for placeholder artifacts."""
 
         highlights = self._collect_dataset_highlights()
+        # Even when the dataset highlight slice is empty we still want the manifest
+        # to record that the world-model data was unavailable and we fell back to
+        # handcrafted assets. This keeps ablation provenance visible in the portal
+        # and CLI summaries.
+        fallback_label = "dataset"
 
         if not self.ctx.ablations.use_world_model or not store_path.exists():
-            return highlights
+            return highlights, fallback_label
 
         try:
             concept_rows = fetch_concepts(depth=1, limit=concept_limit, store_path=store_path)
@@ -602,20 +640,69 @@ class Orchestrator:
                 else:
                     break
 
+            sourced_from_world_model = False
             if concept_highlights:
                 highlights["concepts"] = concept_highlights
+                sourced_from_world_model = True
             if timeline_highlights:
                 highlights["timeline"] = timeline_highlights
+                sourced_from_world_model = True
             if spotlight_paper:
                 highlights["spotlight_paper"] = spotlight_paper
-            return highlights
+                sourced_from_world_model = True
+            return highlights, ("world_model" if sourced_from_world_model else fallback_label)
         except Exception as exc:  # pragma: no cover - defensive guardrail
             self.logger.warning(
                 "World-model highlights unavailable: %s",
                 exc,
                 extra={"store_path": str(store_path)},
             )
-            return highlights
+            return highlights, fallback_label
+
+    @staticmethod
+    def _notebook_placeholder(*, reason: str) -> Dict[str, Any]:
+        return {
+            "title": "notebook_export",
+            "path": None,
+            "citations": [],
+            "response": {
+                "status": "skipped",
+                "reason": reason,
+            },
+        }
+
+    @staticmethod
+    def _summarize_notebook_exports(exports: List[Dict[str, Any]] | None) -> Dict[str, Any] | None:
+        if not exports:
+            return None
+        summary = {
+            "total": 0,
+            "success": 0,
+            "skipped": 0,
+            "errors": 0,
+            "note_ids": [],
+            "queued_exports": [],
+        }
+        success_status = {"ok", "queued", "created", "exists"}
+        for entry in exports:
+            response = entry.get("response") if isinstance(entry, dict) else None
+            if isinstance(entry, dict) and entry.get("kind") == "preflight":
+                continue
+            summary["total"] += 1
+            status = str((response or {}).get("status") or "unknown").lower()
+            if status in success_status:
+                summary["success"] += 1
+            elif status == "skipped":
+                summary["skipped"] += 1
+            else:
+                summary["errors"] += 1
+            if isinstance(response, dict):
+                note_id = response.get("note_id") or response.get("id")
+                if note_id:
+                    summary["note_ids"].append(note_id)
+                if status == "queued" and response.get("export_path"):
+                    summary["queued_exports"].append(response["export_path"])
+        return summary
 
     def _collect_dataset_highlights(
         self,

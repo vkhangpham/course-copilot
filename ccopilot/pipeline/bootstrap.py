@@ -127,7 +127,7 @@ def bootstrap_pipeline(
     )
     provenance = ProvenanceLogger(paths.logs_dir / "provenance.jsonl")
     env_snapshot = _capture_env(env_keys)
-    science_config = _load_scientific_config(science_config_path)
+    science_config, science_config_resolved = _load_scientific_config(science_config_path)
 
     ctx = PipelineContext(
         config=config,
@@ -136,16 +136,17 @@ def bootstrap_pipeline(
         env=env_snapshot,
         provenance=provenance,
         science_config=science_config,
+        science_config_path=science_config_resolved,
     )
 
-    if science_config is not None and science_config_path is not None:
+    if science_config is not None and science_config_resolved is not None:
         ctx.provenance.log(
             ProvenanceEvent(
                 stage="science_config",
                 message="Scientific evaluation config loaded",
                 agent="ccopilot.pipeline",
                 payload={
-                    "path": str(Path(science_config_path).expanduser().resolve()),
+                    "path": str(science_config_resolved),
                     "enabled": _science_config_enabled(science_config),
                 },
             )
@@ -180,13 +181,13 @@ def bootstrap_pipeline(
     return ctx
 
 
-def _load_scientific_config(path: Path | None) -> Dict[str, object] | None:
+def _load_scientific_config(path: Path | None) -> tuple[Dict[str, object] | None, Path | None]:
     if path is None:
-        return None
+        return None, None
     resolved = Path(path).expanduser().resolve()
     if not resolved.exists():
         LOGGER.debug("Scientific config not found at %s; skipping", resolved)
-        return None
+        return None, None
     try:
         with resolved.open("r", encoding="utf-8") as handle:
             payload = yaml.safe_load(handle) or {}
@@ -194,7 +195,7 @@ def _load_scientific_config(path: Path | None) -> Dict[str, object] | None:
         raise RuntimeError(f"Invalid scientific config at {resolved}: {exc}") from exc
     if not isinstance(payload, dict):
         raise RuntimeError(f"Scientific config at {resolved} must be a mapping")
-    return payload
+    return payload, resolved
 
 
 def _science_config_enabled(config: Dict[str, object] | None) -> bool:

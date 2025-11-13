@@ -117,14 +117,13 @@ class TeacherOrchestrator:
         else:
             world_model_highlights = self._collect_dataset_highlights()
             manifest_world_model_highlights = world_model_highlights
+            highlight_source = "dataset"
             highlight_artifact = self._emit_world_model_highlights_artifact(
                 manifest_dir,
                 ts,
                 world_model_highlights,
                 dataset_summary,
             )
-            if world_model_highlights:
-                highlight_source = "dataset"
             self.logger.info("World-model ablation enabled; using dataset highlight fallback only.")
 
         teacher_trace: Path | None = None
@@ -706,6 +705,9 @@ class TeacherOrchestrator:
             "teacher_trace": str(teacher_trace) if teacher_trace else None,
             "notebook_exports": notebook_exports,
             "notebook_export_summary": notebook_export_summary,
+            "science_config_path": (
+                str(self.ctx.science_config_path) if self.ctx.science_config_path else None
+            ),
         }
         with path.open("w", encoding="utf-8") as handle:
             json.dump(manifest, handle, indent=2)
@@ -735,9 +737,6 @@ class TeacherOrchestrator:
         return artifact_path
 
     def _generate_codeact_plan_outline(self) -> str | None:
-        if not self.ctx.ablations.allow_recursion:
-            self.logger.debug("Recursion disabled; skipping CodeAct plan outline.")
-            return None
         if not self.ctx.ablations.use_world_model:
             self.logger.debug("World-model ablation enabled; skipping CodeAct plan outline.")
             return None
@@ -767,9 +766,6 @@ class TeacherOrchestrator:
         *,
         use_cache: bool = True,
     ) -> str | None:
-        if not self.ctx.ablations.allow_recursion:
-            self.logger.debug("Recursion disabled; skipping CodeAct lecture author.")
-            return None
         if not self.ctx.ablations.use_world_model:
             self.logger.debug("World-model ablation enabled; skipping CodeAct lecture author.")
             return None
@@ -819,12 +815,6 @@ class TeacherOrchestrator:
         allowed = self._allowed_tools_for_role(role)
         lm_handle = self._lm_handle_for_role(lm_role)
         build_kwargs: Dict[str, Any] = {}
-
-        if not self.ctx.ablations.allow_recursion:
-            self.logger.info(
-                "Recursion disabled; skipping CodeAct program %s", name
-            )
-            return None
 
         if allowed is not None:
             build_kwargs["allowed_tools"] = allowed
@@ -907,11 +897,15 @@ class TeacherOrchestrator:
         notebook_cfg = getattr(self.ctx.config, "notebook", None)
         if not notebook_cfg or not getattr(notebook_cfg, "notebook_slug", None):
             return False
-        return self.ctx.ablations.allow_recursion
+        return True
 
     def _notebook_skip_reason(self) -> str:
-        if not self.ctx.ablations.allow_recursion:
-            return "recursion_disabled"
+        notebook_cfg = getattr(self.ctx.config, "notebook", None)
+        if not notebook_cfg:
+            return "notebook_config_missing"
+        slug = getattr(notebook_cfg, "notebook_slug", None)
+        if not slug:
+            return "missing_notebook_slug"
         return "notebook_disabled"
 
     def _collect_world_model_highlights(
@@ -924,7 +918,9 @@ class TeacherOrchestrator:
         """Return a trimmed slice of the world model and the data source used."""
 
         highlights = self._collect_dataset_highlights()
-        fallback_label = "dataset" if highlights else None
+        # Always record that we fell back to the dataset when the world model is
+        # unavailable so downstream artifacts can explain missing WM context.
+        fallback_label = "dataset"
 
         if not self.ctx.ablations.use_world_model or not store_path.exists():
             return highlights, fallback_label
