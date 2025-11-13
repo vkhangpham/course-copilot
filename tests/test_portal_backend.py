@@ -114,6 +114,9 @@ def _write_run(
         "learning_outcomes": {"predicted_retention": 0.73},
     }
 
+    science_artifact = artifacts_dir / f"run-{run_id}-science.json"
+    science_artifact.write_text("{\"metrics\": {}}", encoding="utf-8")
+
     manifest = {
         "course_plan": str(course_plan),
         "lecture": str(lecture_path),
@@ -140,6 +143,7 @@ def _write_run(
         "highlight_source": highlight_source,
         "world_model_store_exists": world_model_store_exists,
         "scientific_metrics": scientific_metrics,
+        "scientific_metrics_artifact": str(science_artifact),
     }
     if notebook_exports is not None:
         manifest["notebook_exports"] = notebook_exports
@@ -201,6 +205,7 @@ def test_list_runs_and_detail(portal_settings: PortalSettings) -> None:
     assert runs[0]["world_model_store_exists"] is True
     assert runs[0]["scientific_metrics"]["pedagogical"]["blooms_alignment"] == pytest.approx(0.82)
     assert runs[0]["manifest_path"] == expected_manifest_rel
+    assert runs[0]["scientific_metrics"]["pedagogical"]["blooms_alignment"] == pytest.approx(0.82)
 
     detail_resp = client.get(f"/runs/{run_id}")
     assert detail_resp.status_code == 200
@@ -211,6 +216,7 @@ def test_list_runs_and_detail(portal_settings: PortalSettings) -> None:
     assert detail["manifest"]["lecture"] == "lectures/module_01.md"
     assert detail["manifest"].get("world_model_store") == "world_model/state.sqlite"
     assert detail["manifest"].get("world_model_store_exists") is True
+    assert detail["manifest"].get("scientific_metrics_artifact") == "artifacts/run-20250101-000000-science.json"
     assert detail["world_model_store_exists"] is True
     assert "Course Plan" in detail["course_plan_excerpt"]
     assert detail["notebook_slug"] == "database-systems-poc"
@@ -230,6 +236,7 @@ def test_list_runs_and_detail(portal_settings: PortalSettings) -> None:
     assert detail["evaluation_attempts"][0]["iteration"] == 1
     assert detail["evaluation_attempts"][0]["overall_score"] == 0.5
     assert any(trace["name"] == "provenance" for trace in detail["trace_files"])
+    assert any(trace["name"] == "science_metrics" for trace in detail["trace_files"])
 
     teacher_meta = detail["teacher_trace"]
     assert teacher_meta["action_count"] == 1

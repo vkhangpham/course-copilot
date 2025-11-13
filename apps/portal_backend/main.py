@@ -126,6 +126,7 @@ class RunDetail(BaseModel):
     trace_files: List[TraceFile] = Field(default_factory=list)
     teacher_trace: TeacherTraceMeta | None = None
     scientific_metrics: Dict[str, Any] | None = None
+    scientific_metrics_artifact: str | None = None
 
 
 class HealthResponse(BaseModel):
@@ -187,6 +188,7 @@ def get_run_detail(run_id: str, settings: PortalSettings = Depends(get_settings)
         sanitized_manifest["highlight_source"] = highlight_source
     if store_exists is not None and "world_model_store_exists" not in sanitized_manifest:
         sanitized_manifest["world_model_store_exists"] = store_exists
+    science_artifact_rel = sanitized_manifest.get("scientific_metrics_artifact")
 
     return RunDetail(
         run_id=run_id,
@@ -206,6 +208,7 @@ def get_run_detail(run_id: str, settings: PortalSettings = Depends(get_settings)
         trace_files=trace_files,
         teacher_trace=teacher_trace,
         scientific_metrics=manifest.get("scientific_metrics"),
+        scientific_metrics_artifact=science_artifact_rel,
     )
 
 
@@ -341,6 +344,11 @@ def collect_trace_files(run_id: str, manifest: Dict[str, Any], settings: PortalS
             manifest.get("world_model_highlight_artifact") or manifest.get("world_model_highlights_artifact"),
         ),
         ("teacher_trace", "Teacher trace", manifest.get("teacher_trace")),
+        (
+            "science_metrics",
+            "Scientific evaluator",
+            manifest.get("scientific_metrics_artifact"),
+        ),
     ]
     seen: Dict[str, TraceFile] = {}
 
@@ -383,6 +391,7 @@ def _sanitize_manifest_paths(manifest: Dict[str, Any], settings: PortalSettings)
         "world_model_highlights_artifact",
         "teacher_trace",
         "highlights",
+        "scientific_metrics_artifact",
     ]
     for key in path_keys:
         if key in sanitized:
