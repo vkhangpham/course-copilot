@@ -16,6 +16,7 @@ from ccopilot.cli.run_poc import main as _cli_main
 DEFAULT_CONFIG_REL = Path("config") / "pipeline.yaml"
 DEFAULT_CONSTRAINTS_REL = Path("config") / "course_config.yaml"
 DEFAULT_CONCEPTS_REL = Path("data") / "handcrafted" / "database_systems"
+DEFAULT_SCIENCE_CONFIG_REL = Path("config") / "scientific_config.yaml"
 DEFAULT_OUTPUT_REL = Path("outputs")
 ABLATION_CHOICES = ("no_world_model", "no_students", "no_recursion")
 
@@ -126,13 +127,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     config_default = (repo_root / DEFAULT_CONFIG_REL).resolve()
     constraints_default = (repo_root / DEFAULT_CONSTRAINTS_REL).resolve()
     concepts_default = (repo_root / DEFAULT_CONCEPTS_REL).resolve()
+    science_default = (repo_root / DEFAULT_SCIENCE_CONFIG_REL).resolve()
     output_default = (repo_root / DEFAULT_OUTPUT_REL).resolve()
 
     config_path = _resolve_path(args.config, config_default, base=repo_root)
     output_dir = _resolve_path(args.output_dir, output_default, base=repo_root)
     constraints_path = _resolve_path(args.constraints, constraints_default, base=repo_root)
     concepts_path = _resolve_path(args.concepts, concepts_default, base=repo_root)
-    science_config_path = _resolve_optional_path(args.science_config, base=repo_root)
+    science_config_path = (
+        _resolve_optional_path(args.science_config, base=repo_root)
+        if args.science_config is not None
+        else (science_default if science_default.exists() else None)
+    )
 
     user_supplied_constraints = args.constraints is not None
     user_supplied_concepts = args.concepts is not None
