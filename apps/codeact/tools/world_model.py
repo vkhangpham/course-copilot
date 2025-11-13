@@ -7,13 +7,33 @@ from typing import Any, Dict, List
 
 from world_model.adapters import WorldModelAdapter
 
+ENV_REPO_ROOT = "COURSEGEN_REPO_ROOT"
+STORE_ENV_VAR = "WORLD_MODEL_STORE"
+
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_STORE = (PROJECT_ROOT / "outputs" / "world_model" / "state.sqlite").resolve()
-STORE_ENV_VAR = "WORLD_MODEL_STORE"
+
+
+def _current_repo_root() -> Path:
+    override = os.environ.get(ENV_REPO_ROOT)
+    if override:
+        return Path(override).expanduser().resolve()
+    return PROJECT_ROOT
+
+
+def _default_store_path(store_path: Path | str | None = None) -> Path:
+    if store_path is not None:
+        return Path(store_path).expanduser().resolve()
+    env_store = os.environ.get(STORE_ENV_VAR)
+    if env_store:
+        return Path(env_store).expanduser().resolve()
+    return (_current_repo_root() / "outputs" / "world_model" / "state.sqlite").resolve()
 
 
 def _adapter(store_path: Path | str | None = None) -> WorldModelAdapter:
-    resolved = Path(store_path or os.environ.get(STORE_ENV_VAR, DEFAULT_STORE))
+    resolved = _default_store_path(store_path)
+    if not resolved.exists():
+        raise FileNotFoundError(f"World model store not found at {resolved}")
     return WorldModelAdapter(resolved)
 
 

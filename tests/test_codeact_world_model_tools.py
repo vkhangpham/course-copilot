@@ -1,9 +1,10 @@
-import tempfile
+import importlib
 from pathlib import Path
+
+import pytest
 
 from scripts.ingest_handcrafted import ingest
 from apps.codeact.tools.world_model import (
-    DEFAULT_STORE,
     append_timeline_event,
     fetch_concepts,
     link_concepts,
@@ -14,6 +15,7 @@ from apps.codeact.tools.world_model import (
     record_claim,
     search_events,
 )
+import apps.codeact.tools.world_model as codeact_world_model
 from world_model.storage import WorldModelStore
 
 # The tests expect the world-model SQLite to exist in a temp dir, so we ingest a
@@ -22,9 +24,24 @@ from world_model.storage import WorldModelStore
 DATASET = Path("data/handcrafted/database_systems")
 
 
-def test_world_model_default_store_is_repo_relative() -> None:
+def test_world_model_default_store_is_repo_relative(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("COURSEGEN_REPO_ROOT", raising=False)
+    module = importlib.reload(codeact_world_model)
     expected = (Path(__file__).resolve().parents[1] / "outputs" / "world_model" / "state.sqlite").resolve()
-    assert DEFAULT_STORE == expected
+    assert module.DEFAULT_STORE == expected
+
+
+def test_world_model_store_honors_repo_override(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    override_root = (tmp_path / "repo_override").resolve()
+    override_root.mkdir()
+    monkeypatch.setenv("COURSEGEN_REPO_ROOT", str(override_root))
+    module = importlib.reload(codeact_world_model)
+    try:
+        expected = (override_root / "outputs" / "world_model" / "state.sqlite").resolve()
+        assert module.DEFAULT_STORE == expected
+    finally:
+        monkeypatch.delenv("COURSEGEN_REPO_ROOT", raising=False)
+        importlib.reload(codeact_world_model)
 
 
 def _build_store(tmp_path: Path) -> Path:
@@ -33,11 +50,31 @@ def _build_store(tmp_path: Path) -> Path:
     return store_path
 
 
+def test_fetch_concepts_missing_store_raises(tmp_path: Path) -> None:
+    missing = tmp_path / "missing.sqlite"
+    with pytest.raises(FileNotFoundError):
+        fetch_concepts(store_path=missing)
+
+
 def test_fetch_concepts_returns_tree(tmp_path: Path) -> None:
     store = _build_store(tmp_path)
     concepts = fetch_concepts(topic="transaction", depth=2, store_path=store)
     assert concepts, "Expected concept tree results"
     assert any("transaction" in c["name"].lower() for c in concepts)
+
+
+def test_fetch_concepts_uses_coursegen_repo_root_when_set(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    repo_root = tmp_path / "repo"
+    store = repo_root / "outputs" / "world_model" / "state.sqlite"
+    store.parent.mkdir(parents=True, exist_ok=True)
+    ingest(DATASET, store)
+    monkeypatch.setenv("COURSEGEN_REPO_ROOT", str(repo_root))
+    monkeypatch.delenv("WORLD_MODEL_STORE", raising=False)
+    try:
+        concepts = fetch_concepts(topic="transaction")
+    finally:
+        monkeypatch.delenv("COURSEGEN_REPO_ROOT", raising=False)
+    assert concepts
 
 
 def test_search_events_filters_by_concept(tmp_path: Path) -> None:
