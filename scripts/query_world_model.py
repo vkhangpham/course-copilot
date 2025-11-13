@@ -15,13 +15,40 @@ from world_model.storage import WorldModelStore
 
 ENV_REPO_ROOT = "COURSEGEN_REPO_ROOT"
 STORE_ENV_VAR = "WORLD_MODEL_STORE"
+DEFAULT_STORE_RELATIVE = Path("outputs") / "world_model" / "state.sqlite"
+REPO_SENTINELS = ("pyproject.toml", "config/pipeline.yaml")
+
+
+def _default_store_help(prefix: str = "SQLite world model path") -> str:
+    relative = DEFAULT_STORE_RELATIVE.as_posix()
+    return f"{prefix} (defaults to {STORE_ENV_VAR} or {ENV_REPO_ROOT}/{relative})."
+
+
+def _looks_like_repo_root(path: Path) -> bool:
+    return all((path / marker).exists() for marker in REPO_SENTINELS)
+
+
+def _search_repo_root(start: Path) -> Optional[Path]:
+    for candidate in (start, *start.parents):
+        if _looks_like_repo_root(candidate):
+            return candidate
+    return None
 
 
 def _resolve_repo_root() -> Path:
     override = os.environ.get(ENV_REPO_ROOT)
     if override:
         return Path(override).expanduser().resolve()
-    return Path(__file__).resolve().parents[1]
+
+    module_root = Path(__file__).resolve().parents[1]
+    if _looks_like_repo_root(module_root):
+        return module_root
+
+    cwd_root = _search_repo_root(Path.cwd())
+    if cwd_root is not None:
+        return cwd_root
+
+    return module_root
 
 
 def _resolve_default_store(repo_root: Path | None = None) -> Path:
@@ -29,7 +56,7 @@ def _resolve_default_store(repo_root: Path | None = None) -> Path:
     if env_store:
         return Path(env_store).expanduser().resolve()
     base_root = repo_root or _resolve_repo_root()
-    return (base_root / "outputs" / "world_model" / "state.sqlite").resolve()
+    return (base_root / DEFAULT_STORE_RELATIVE).resolve()
 
 
 REPO_ROOT = _resolve_repo_root()
@@ -381,7 +408,7 @@ def summary(
         None,
         "--store",
         show_default=False,
-        help=f"SQLite world model path (defaults to WORLD_MODEL_STORE or {DEFAULT_STORE}).",
+        help=_default_store_help(),
     ),
     as_json: bool = typer.Option(False, "--json", help="Emit JSON instead of a table."),
 ) -> None:
@@ -400,7 +427,7 @@ def concepts(
         None,
         "--store",
         show_default=False,
-        help=f"SQLite world model path (defaults to WORLD_MODEL_STORE or {DEFAULT_STORE}).",
+        help=_default_store_help(),
     ),
     topic: Optional[str] = typer.Option(None, help="Case-insensitive substring to filter names/summaries."),
     as_json: bool = typer.Option(False, "--json", help="Emit JSON instead of a table."),
@@ -420,7 +447,7 @@ def timeline(
         None,
         "--store",
         show_default=False,
-        help="Override the SQLite world model path (defaults to WORLD_MODEL_STORE or the repo outputs snapshot).",
+        help=_default_store_help("Override the SQLite world model path"),
     ),
     concept: Optional[str] = typer.Option(None, help="Filter by related concept id."),
     year: Optional[int] = typer.Option(None, help="Filter by event year."),
@@ -445,7 +472,7 @@ def claims(
         None,
         "--store",
         show_default=False,
-        help="Override the SQLite world model path (defaults to WORLD_MODEL_STORE or the repo outputs snapshot).",
+        help=_default_store_help("Override the SQLite world model path"),
     ),
     limit: int = typer.Option(25, min=1, help="Maximum number of rows to display."),
     as_json: bool = typer.Option(False, "--json"),
@@ -471,7 +498,7 @@ def papers(
         None,
         "--store",
         show_default=False,
-        help="Override the SQLite world model path (defaults to WORLD_MODEL_STORE or the repo outputs snapshot).",
+        help=_default_store_help("Override the SQLite world model path"),
     ),
     keyword: Optional[str] = typer.Option(None, help="Case-insensitive match on title or venue."),
     year: Optional[int] = typer.Option(None, help="Filter by publication year."),
@@ -495,7 +522,7 @@ def authors(
         None,
         "--store",
         show_default=False,
-        help="Override the SQLite world model path (defaults to WORLD_MODEL_STORE or the repo outputs snapshot).",
+        help=_default_store_help("Override the SQLite world model path"),
     ),
     keyword: Optional[str] = typer.Option(None, help="Case-insensitive substring match."),
     as_json: bool = typer.Option(False, "--json"),
@@ -518,7 +545,7 @@ def definitions_command(
         None,
         "--store",
         show_default=False,
-        help="Override the SQLite world model path (defaults to WORLD_MODEL_STORE or the repo outputs snapshot).",
+        help=_default_store_help("Override the SQLite world model path"),
     ),
     concept: Optional[str] = typer.Option(None, help="Filter by concept id."),
     as_json: bool = typer.Option(False, "--json"),
@@ -541,7 +568,7 @@ def graph_command(
         None,
         "--store",
         show_default=False,
-        help="Override the SQLite world model path (defaults to WORLD_MODEL_STORE or the repo outputs snapshot).",
+        help=_default_store_help("Override the SQLite world model path"),
     ),
     concept: Optional[str] = typer.Option(None, help="Filter edges touching this concept."),
     as_json: bool = typer.Option(False, "--json"),
@@ -564,7 +591,7 @@ def artifacts_command(
         None,
         "--store",
         show_default=False,
-        help="Override the SQLite world model path (defaults to WORLD_MODEL_STORE or the repo outputs snapshot).",
+        help=_default_store_help("Override the SQLite world model path"),
     ),
     artifact_type: Optional[str] = typer.Option(None, "--type", help="Filter by artifact type."),
     as_json: bool = typer.Option(False, "--json"),

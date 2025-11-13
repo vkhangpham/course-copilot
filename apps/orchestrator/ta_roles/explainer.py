@@ -10,6 +10,8 @@ from typing import Dict, Iterable, List, Sequence
 
 import yaml
 
+from .dataset_paths import resolve_dataset_root
+
 
 @dataclass
 class ExplanationChunk:
@@ -18,14 +20,11 @@ class ExplanationChunk:
     citations: List[str]
 
 
-DEFAULT_DATASET_ROOT = Path("data/handcrafted/database_systems")
-
-
 class Explainer:
     """Generate lightweight explanation chunks grounded in the handcrafted dataset."""
 
     def __init__(self, dataset_root: Path | None = None) -> None:
-        self.dataset_root = (dataset_root or DEFAULT_DATASET_ROOT).expanduser().resolve()
+        self.dataset_root = resolve_dataset_root(dataset_root)
         self._concepts = self._load_concepts()
         self._definitions = self._load_definitions()
         self._timeline_by_concept = self._load_timeline()

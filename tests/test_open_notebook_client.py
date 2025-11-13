@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import httpx
 import pytest
@@ -150,16 +151,22 @@ def test_push_notebook_section_uses_env_defaults(monkeypatch) -> None:
     assert calls.get("closed") is True
 
 
-def test_push_notebook_section_requires_api_base(monkeypatch) -> None:
+def test_push_notebook_section_offline_export_without_api(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.delenv("OPEN_NOTEBOOK_API_BASE", raising=False)
     monkeypatch.delenv("OPEN_NOTEBOOK_API_KEY", raising=False)
+    monkeypatch.delenv("OPEN_NOTEBOOK_EXPORT_DIR", raising=False)
+    monkeypatch.setenv("COURSEGEN_REPO_ROOT", str(tmp_path))
 
-    with pytest.raises(ValueError):
-        push_notebook_section(
-            notebook_slug="nb",
-            title="Sec",
-            content_md="Body",
-        )
+    response = push_notebook_section(
+        notebook_slug="nb",
+        title="Sec",
+        content_md="Body",
+    )
+
+    assert response["status"] == "queued"
+    export_path = Path(response["export_path"])
+    assert export_path.exists()
+    assert export_path.parent == tmp_path / "outputs" / "notebook_exports"
 
 
 def test_push_notebook_section_reuses_auto_create_cache(monkeypatch) -> None:

@@ -18,7 +18,7 @@ logger = logging.getLogger("coursegen.codeact.open_notebook")
 
 EXPORT_DIR_ENV = "OPEN_NOTEBOOK_EXPORT_DIR"
 EXPORT_MIRROR_ENV = "OPEN_NOTEBOOK_EXPORT_MIRROR"
-DEFAULT_EXPORT_DIR = Path("outputs/notebook_exports")
+DEFAULT_EXPORT_SUBPATH = Path("outputs/notebook_exports")
 AUTO_CREATE_ENV = "OPEN_NOTEBOOK_AUTO_CREATE"
 
 
@@ -46,7 +46,10 @@ def _client_class_supports_ensure() -> bool:
 
 def _export_dir_configured() -> bool:
     raw = os.getenv(EXPORT_DIR_ENV)
-    return bool(raw and raw.strip())
+    if raw and raw.strip():
+        return True
+    # Fallbacks (COURSEGEN_REPO_ROOT or the default subpath) are always available.
+    return True
 
 
 def _cache_key(base_url: str, slug: str) -> tuple[str, str]:
@@ -213,6 +216,7 @@ def _persist_stub_export(
         "notebook": notebook_slug,
         "export_path": str(export_path),
         "entry": record,
+        "reason": "offline_export",
     }
 
 
@@ -220,7 +224,10 @@ def _resolve_export_dir() -> Path:
     raw = os.getenv(EXPORT_DIR_ENV)
     if raw:
         return Path(raw).expanduser().resolve()
-    return DEFAULT_EXPORT_DIR.expanduser().resolve()
+    repo_root = os.getenv("COURSEGEN_REPO_ROOT")
+    if repo_root:
+        return (Path(repo_root).expanduser().resolve() / DEFAULT_EXPORT_SUBPATH).resolve()
+    return DEFAULT_EXPORT_SUBPATH.expanduser().resolve()
 
 
 def _sanitize_slug(value: str | None) -> str:

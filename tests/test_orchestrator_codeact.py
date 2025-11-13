@@ -135,16 +135,23 @@ def test_emit_lecture_prefers_codeact_section(tmp_path: Path, dataset_summary: d
     assert enforce_call["lm_handle"] is ctx.dspy_handles.ta
 
 
-def test_recursion_ablation_skips_codeact(tmp_path: Path, dataset_summary: dict[str, object]) -> None:
+def test_recursion_ablation_still_runs_codeact(tmp_path: Path, dataset_summary: dict[str, object]) -> None:
     ctx = _make_context(tmp_path)
     ctx.ablations = AblationConfig(use_world_model=True, use_students=True, allow_recursion=False)
-    registry = StubRegistry({"PlanCourse": {"outline": "Should not run"}})
+    registry = StubRegistry({"PlanCourse": {"outline": "Week 1"}})
     orch = TeacherOrchestrator(ctx, codeact_registry=registry)
     ctx.paths.output_dir.mkdir(parents=True, exist_ok=True)
 
     orch._emit_course_plan(ctx.paths.output_dir, dataset_summary, world_model_highlights={})
 
-    assert not registry.calls, "CodeAct programs should be skipped when recursion is disabled"
+    assert registry.calls, "CodeAct programs should still run when recursion is disabled"
+
+
+def test_recursion_ablation_keeps_notebook_exports_enabled(tmp_path: Path) -> None:
+    ctx = _make_context(tmp_path)
+    ctx.ablations = AblationConfig(use_world_model=True, use_students=True, allow_recursion=False)
+    orch = TeacherOrchestrator(ctx)
+    assert orch._notebook_exports_enabled() is True
 
 
 def test_mutation_loop_requests_fresh_lecture_sections(tmp_path: Path) -> None:
@@ -211,6 +218,47 @@ def test_world_model_highlights_source_falls_back(monkeypatch: pytest.MonkeyPatc
     assert highlights.get("syllabus_modules")
 
 
+def test_world_model_highlights_empty_dataset_fallback_marks_source(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    ctx = _make_context(tmp_path)
+    orch = TeacherOrchestrator(ctx)
+
+    monkeypatch.setattr(TeacherOrchestrator, "_collect_dataset_highlights", lambda self: {})
+
+    store_path = tmp_path / "world_model.sqlite"
+    if store_path.exists():
+        store_path.unlink()
+
+    highlights, source = orch._collect_world_model_highlights(store_path)
+    assert highlights == {}
+    assert source == "dataset"
+
+
+def test_notebook_placeholder_reason_explains_missing_slug(
+    tmp_path: Path, dataset_summary: dict[str, object]
+) -> None:
+    ctx = _make_context(tmp_path)
+    ctx.ablations = AblationConfig(use_world_model=False, use_students=False, allow_recursion=False)
+    notebook_cfg = ctx.config.notebook.model_copy(update={"notebook_slug": ""})
+    ctx.config = ctx.config.model_copy(update={"notebook": notebook_cfg})
+
+    orch = TeacherOrchestrator(ctx)
+    assert orch._notebook_exports_enabled() is False
+    assert orch._notebook_skip_reason() == "missing_notebook_slug"
+
+    artifacts = orch.run_coursegen(
+        dataset_summary=dataset_summary,
+        world_model_store=tmp_path / "store.sqlite",
+        snapshot_exists=False,
+    )
+
+    manifest = json.loads(artifacts.manifest.read_text(encoding="utf-8"))
+    exports = manifest.get("notebook_exports") or []
+    assert exports, "Expected placeholder notebook export"
+    assert exports[0]["response"].get("reason") == "missing_notebook_slug"
+
+
 def test_world_model_highlights_source_reports_world_model(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     ctx = _make_context(tmp_path)
     orch = TeacherOrchestrator(ctx)
@@ -238,3 +286,28 @@ def test_world_model_highlights_source_reports_world_model(monkeypatch: pytest.M
     highlights, source = orch._collect_world_model_highlights(store_path)
     assert source == "world_model"
     assert "concepts" in highlights
+
+
+def test_no_world_model_ablation_marks_dataset_source_without_highlights(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, dataset_summary: dict[str, object]
+) -> None:
+    ctx = _make_context(tmp_path)
+    ctx.ablations = AblationConfig(use_world_model=False, use_students=False, allow_recursion=False)
+    ctx.config = ctx.config.model_copy(update={"notebook": None})
+
+    class _Stub:
+        pass
+
+    orch = TeacherOrchestrator(ctx, teacher_rlm=_Stub())
+
+    monkeypatch.setattr(TeacherOrchestrator, "_collect_dataset_highlights", lambda self: {})
+
+    artifacts = orch.run_coursegen(
+        dataset_summary=dataset_summary,
+        world_model_store=tmp_path / "store.sqlite",
+        snapshot_exists=False,
+    )
+
+    manifest = json.loads(artifacts.manifest.read_text(encoding="utf-8"))
+    assert manifest.get("highlight_source") == "dataset"
+    assert artifacts.highlight_source == "dataset"

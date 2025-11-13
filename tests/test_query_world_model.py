@@ -49,6 +49,57 @@ def test_query_world_model_store_env_override(monkeypatch: pytest.MonkeyPatch, t
     importlib.reload(query_world_model)
 
 
+def test_query_world_model_detects_repo_from_cwd(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    module = importlib.reload(query_world_model)
+    marker = ".repo-marker"
+    fake_repo = tmp_path / "fake_repo"
+    (fake_repo / "outputs" / "world_model").mkdir(parents=True)
+    (fake_repo / marker).write_text("repo")
+    monkeypatch.setattr(module, "REPO_SENTINELS", (marker,), raising=False)
+    monkeypatch.delenv("COURSEGEN_REPO_ROOT", raising=False)
+    monkeypatch.delenv("WORLD_MODEL_STORE", raising=False)
+    monkeypatch.chdir(fake_repo)
+    try:
+        repo_root = module._resolve_repo_root()
+        assert repo_root == fake_repo.resolve()
+        default_store = module._resolve_default_store()
+        assert default_store == (fake_repo / "outputs" / "world_model" / "state.sqlite").resolve()
+    finally:
+        importlib.reload(query_world_model)
+
+
+def test_summary_help_uses_generic_default_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("COURSEGEN_REPO_ROOT", raising=False)
+    monkeypatch.delenv("WORLD_MODEL_STORE", raising=False)
+    module = importlib.reload(query_world_model)
+    result = CliRunner().invoke(module.app, ["summary", "--help"])
+    assert result.exit_code == 0
+    output = result.output
+    assert module.STORE_ENV_VAR in output
+    assert module.ENV_REPO_ROOT in output
+    assert module.DEFAULT_STORE_RELATIVE.as_posix() in output
+    assert str(module.DEFAULT_STORE) not in output
+
+
+def test_search_repo_root_skips_unrelated_pyproject(tmp_path: Path) -> None:
+    module = importlib.reload(query_world_model)
+    unrelated = tmp_path / "unrelated_project"
+    unrelated.mkdir()
+    (unrelated / "pyproject.toml").write_text("[tool.poetry]\nname='other'\n", encoding="utf-8")
+    assert module._search_repo_root(unrelated) is None
+
+
+def test_search_repo_root_accepts_coursegen_like_structure(tmp_path: Path) -> None:
+    module = importlib.reload(query_world_model)
+    candidate = tmp_path / "coursegen_clone"
+    config_dir = candidate / "config"
+    config_dir.mkdir(parents=True)
+    (candidate / "pyproject.toml").write_text("[tool.poetry]\nname='course-copilot'\n", encoding="utf-8")
+    (config_dir / "pipeline.yaml").write_text("# pipeline\n", encoding="utf-8")
+    found = module._search_repo_root(candidate)
+    assert found == candidate.resolve()
+
+
 def test_query_concepts_filters_by_topic(tmp_path: Path) -> None:
     store = _build_store(tmp_path)
     rows = query_world_model.query_concepts(store, topic="transaction")

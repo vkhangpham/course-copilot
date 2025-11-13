@@ -10,6 +10,8 @@ from typing import Dict, Iterable, List, Sequence
 
 import yaml
 
+from .dataset_paths import resolve_dataset_root
+
 
 @dataclass
 class Exercise:
@@ -23,7 +25,7 @@ class ExerciseAuthor:
     """Generate exercises grounded in the handcrafted quiz bank + concepts."""
 
     def __init__(self, dataset_root: Path | None = None):
-        self.dataset_root = (dataset_root or Path("data/handcrafted/database_systems")).expanduser().resolve()
+        self.dataset_root = resolve_dataset_root(dataset_root)
 
     def draft(
         self,
