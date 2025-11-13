@@ -697,6 +697,10 @@ class ScientificEvaluator:
         flag = self._metric_flags.get(name)
         if isinstance(flag, bool):
             return flag
+        if isinstance(flag, dict):
+            nested = flag.get("enabled")
+            if isinstance(nested, bool):
+                return nested
         return default
 
     def _weighted_average(self, components: List[Tuple[str, Optional[float], float]]) -> float:

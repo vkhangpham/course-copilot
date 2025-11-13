@@ -71,3 +71,27 @@ class ScientificEvaluatorTests(unittest.TestCase):
             self.assertIsNone(payload["pedagogical"].get("blooms_alignment"))
             self.assertIsNone(payload["content_quality"].get("citation_validity"))
             self.assertIsNone(payload["learning_outcomes"].get("predicted_retention"))
+
+    def test_metric_toggles_support_dict_enabled_flags(self) -> None:
+        config = {
+            "evaluation_metrics": {
+                "enabled": True,
+                "blooms_taxonomy": {"enabled": False},
+                "learning_path_coherence": {"enabled": True},
+            }
+        }
+        evaluator = ScientificEvaluator(config=config)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_path = Path(tmp_dir)
+            plan_path = tmp_path / "plan.md"
+            lecture_path = tmp_path / "lecture.md"
+            plan_path.write_text("# Week 1\nExplain joins", encoding="utf-8")
+            lecture_path.write_text("We explain joins.", encoding="utf-8")
+            metrics = evaluator.evaluate_course(
+                course_plan_path=plan_path,
+                lecture_paths=[lecture_path],
+                learning_objectives=["Explain joins"],
+            )
+            payload = metrics.to_dict()
+            self.assertIsNone(payload["pedagogical"].get("blooms_alignment"))
+            self.assertIsNotNone(payload["pedagogical"].get("learning_path_coherence"))

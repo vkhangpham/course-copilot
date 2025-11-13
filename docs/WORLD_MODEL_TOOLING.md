@@ -75,3 +75,10 @@ When you just need to confirm ingest health (for example after refreshing the da
 
 Ping `ccopilot-o78` owners in Agent Mail if the schema needs to evolve; remember to rerun the
 validation + ingestion commands before committing.
+
+## Scientific evaluator quickstart
+
+- **Config file:** `config/scientific_config.yaml` controls the evaluator module. Set `enabled: false` to turn it off globally, or flip individual toggles under `evaluation_metrics` (e.g., `blooms_taxonomy: false`). Point `COURSEGEN_SCIENCE_CONFIG=/abs/path/to/custom.yaml` when you need a different profile per run/CI job.
+- **CLI hints:** After each run the CLI prints `[science] blooms=… | coherence=… | citations=… | cite_cov=… | retention=…`. Use these numbers for quick smoke checks; full JSON lives in `outputs/artifacts/run-<ts>-science.json`.
+- **Artifacts:** The manifest stores both `scientific_metrics` (trimmed) and `scientific_metrics_artifact` (relative path). The portal API/Next.js UI expose the same fields and now include a “Scientific evaluator” download entry, so ops reviewers can inspect the JSON without digging through `outputs/`.
+- **Disabling metrics:** When a metric is disabled via the config, it no longer appears in the `[science]` line and doesn’t affect the aggregate scores. Use this when testing rolling upgrades or when certain checks (e.g., citation validity) aren’t meaningful for a dataset.
