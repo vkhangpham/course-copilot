@@ -31,6 +31,7 @@ export function RunHistory({ runs, activeRunId }: { runs: RunListItem[]; activeR
                   <p className="text-sm font-semibold text-slate-900">{run.run_id}</p>
                   <p className="text-xs text-muted-foreground">{new Date(run.created_at).toLocaleString()}</p>
                   <ScientificMetricBadges metrics={run.scientific_metrics} />
+                  <AblationBadges ablations={run.ablations} />
                 </div>
                 <div className="flex items-center gap-3">
                   {typeof run.highlight_source === "string" && run.highlight_source.length > 0 && (
@@ -105,4 +106,30 @@ function formatPercent(value: number): string {
     return `${Math.round(value * 100)}%`;
   }
   return "n/a";
+}
+
+function AblationBadges({ ablations }: { ablations?: Record<string, boolean> | null }) {
+  if (!ablations) {
+    return null;
+  }
+
+  const flags = [
+    { label: "World model", enabled: ablations.use_world_model ?? true },
+    { label: "Students", enabled: ablations.use_students ?? true },
+    { label: "Recursion", enabled: ablations.allow_recursion ?? true },
+  ];
+  const disabled = flags.filter((flag) => flag.enabled === false);
+  if (disabled.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="mt-1 flex flex-wrap gap-2">
+      {disabled.map((flag) => (
+        <Badge key={flag.label} variant="destructive" className="text-[11px]">
+          {flag.label} off
+        </Badge>
+      ))}
+    </div>
+  );
 }

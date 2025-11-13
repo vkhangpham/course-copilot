@@ -19,6 +19,7 @@ export type RunListItem = {
   world_model_store_exists?: boolean | null;
   scientific_metrics?: ScientificMetrics | null;
   scientific_metrics_artifact?: string | null;
+  ablations?: Record<string, boolean> | null;
   notebook_export_summary?: {
     total?: number;
     success?: number;

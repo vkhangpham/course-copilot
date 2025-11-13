@@ -72,6 +72,8 @@ class RunListItem(BaseModel):
     world_model_store_exists: bool | None = None
     scientific_metrics: Dict[str, Any] | None = None
     scientific_metrics_artifact: str | None = None
+    ablations: Dict[str, Any] | None = None
+    scientific_metrics_artifact: str | None = None
 
 
 class TraceFile(BaseModel):
@@ -293,6 +295,7 @@ def _list_runs(settings: PortalSettings, *, limit: int | None = None, offset: in
                 world_model_store_exists=store_exists,
                 scientific_metrics=manifest.get("scientific_metrics"),
                 scientific_metrics_artifact=science_artifact,
+                ablations=manifest.get("ablations") if isinstance(manifest.get("ablations"), dict) else None,
             )
         )
     return items
