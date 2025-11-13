@@ -110,3 +110,63 @@ def test_summary_command_outputs_counts(tmp_path: Path) -> None:
     assert payload["counts"]["concepts"] > 0
     assert payload["artifacts_by_type"]
     assert payload["artifact_details"]["quiz_bank"]["questions"] > 0
+
+
+def test_graph_command_outputs_json(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    result = RUNNER.invoke(wm_cli.app, ["graph", "--store", str(store), "--json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert isinstance(payload, list)
+    if payload:
+        edge = payload[0]
+        assert "source" in edge
+        assert "target" in edge
+        assert "relation" in edge
+
+
+def test_graph_command_filters_by_concept(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    result = RUNNER.invoke(wm_cli.app, ["graph", "--store", str(store), "--concept", "transaction_management", "--json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert isinstance(payload, list)
+    if payload:
+        for edge in payload:
+            assert "transaction_management" in (edge.get("source", ""), edge.get("target", ""))
+
+
+def test_graph_command_table_output(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    result = RUNNER.invoke(wm_cli.app, ["graph", "--store", str(store)])
+    assert result.exit_code == 0
+    assert "source" in result.stdout.lower() or "Source" in result.stdout
+
+
+def test_artifacts_command_outputs_json(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    result = RUNNER.invoke(wm_cli.app, ["artifacts", "--store", str(store), "--json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert isinstance(payload, list)
+    if payload:
+        artifact = payload[0]
+        assert "type" in artifact
+        assert "metadata" in artifact
+
+
+def test_artifacts_command_filters_by_type(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    result = RUNNER.invoke(wm_cli.app, ["artifacts", "--store", str(store), "--type", "quiz_bank", "--json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert isinstance(payload, list)
+    for artifact in payload:
+        assert artifact["type"] == "quiz_bank"
+
+
+def test_artifacts_command_table_output(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    result = RUNNER.invoke(wm_cli.app, ["artifacts", "--store", str(store)])
+    assert result.exit_code == 0
+    assert "type" in result.stdout.lower() or "Type" in result.stdout
