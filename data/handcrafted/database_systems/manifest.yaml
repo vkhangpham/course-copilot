@@ -16,4 +16,4 @@ checks:
   - ensure citations referenced by concepts appear in papers.csv
   - ensure quiz items reference valid concept_ids
 commands:
-  ingest: "python scripts/ingest_handcrafted.py data/handcrafted/database_systems world_model/state.sqlite --jsonl outputs/world_model/snapshot.jsonl"
+  ingest: "python scripts/ingest_handcrafted.py data/handcrafted/database_systems outputs/world_model/state.sqlite --jsonl outputs/world_model/snapshot.jsonl"

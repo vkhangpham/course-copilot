@@ -230,6 +230,7 @@ evaluation:
         self.assertIsNotNone(highlights)
         assert highlights is not None
         self.assertIn("concepts", highlights)
+        self.assertEqual(manifest.get("highlight_source"), "world_model")
         plan_text = (output_dir / "course_plan.md").read_text(encoding="utf-8")
         self.assertIn("Concept Highlights", plan_text)
         self.assertTrue(manifest["evaluation"].get("use_students"))
@@ -296,6 +297,7 @@ evaluation:
         manifest = json.loads(manifest_path.read_text())
         highlight_path = manifest.get("world_model_highlight_artifact")
         self.assertIsInstance(highlight_path, str)
+        self.assertEqual(manifest.get("highlight_source"), "dataset")
 
         highlight_payload = json.loads(Path(highlight_path).read_text())
         highlight_data = highlight_payload["world_model_highlights"]
@@ -326,6 +328,39 @@ evaluation:
         self.assertEqual(exit_code, 0)
         self.assertEqual(os.environ.get("OPEN_NOTEBOOK_AUTO_CREATE"), "0")
 
+    def test_cli_run_outside_repo_uses_dataset_env(self) -> None:
+        outside_output = self.repo_root / "outputs" / "outside-full-run"
+        if outside_output.exists():
+            shutil.rmtree(outside_output)
+
+        args = [
+            "--repo-root",
+            str(self.repo_root),
+            "--config",
+            "config/pipeline.yaml",
+            "--output-dir",
+            str(outside_output),
+            "--ablations",
+            "no_students",
+        ]
+
+        cwd_before = Path.cwd()
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            os.chdir(tmp_dir)
+            try:
+                buffer = io.StringIO()
+                with redirect_stdout(buffer):
+                    exit_code = cli_main(args)
+            finally:
+                os.chdir(cwd_before)
+
+        try:
+            self.assertEqual(exit_code, 0)
+            self.assertTrue((outside_output / "course_plan.md").exists())
+        finally:
+            if outside_output.exists():
+                shutil.rmtree(outside_output)
+
     def test_cli_resolves_relative_paths_against_repo_root(self) -> None:
         cwd_before = Path.cwd()
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -343,7 +378,7 @@ evaluation:
                 "--concept",
                 "data/handcrafted/database_systems",
                 "--world-model-store",
-                "world_model/state.sqlite",
+                "outputs/world_model/state.sqlite",
                 "--dry-run",
             ]
             try:
@@ -364,7 +399,7 @@ evaluation:
             assert isinstance(data, dict)
             data["world_model"]["schema_path"] = "world_model/schema.sql"
             data["world_model"]["dataset_dir"] = "data/handcrafted/database_systems"
-            data["world_model"]["sqlite_path"] = "world_model/state.sqlite"
+            data["world_model"]["sqlite_path"] = "outputs/world_model/state.sqlite"
             data["evaluation"]["rubrics_path"] = "evals/rubrics.yaml"
             data["evaluation"]["quiz_bank_path"] = "data/handcrafted/database_systems/quiz_bank.json"
             config_path.write_text(yaml_dump(data), encoding="utf-8")

@@ -54,6 +54,18 @@ Content goes here
     assert derived == "Week 1 — Relational Thinking"
 
 
+def test_derive_title_handles_short_setext_heading() -> None:
+    markdown = """
+Week 2 — Transactions
+-
+
+Body
+    """
+
+    derived = NotebookPublisher._derive_title(markdown, fallback="Fallback Title")
+    assert derived == "Week 2 — Transactions"
+
+
 def test_publish_invokes_push_notebook_section(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     calls: List[dict] = []
 
@@ -199,6 +211,12 @@ def test_chunk_markdown_sections_handles_setext_headings() -> None:
     assert len(chunks) == 2
     assert chunks[0] == ("Introduction", "Body")
     assert chunks[1] == ("Week 1", "more")
+
+
+def test_chunk_markdown_sections_handles_short_setext_heading() -> None:
+    markdown = """Intro\n=\nBody"""
+    chunks = chunk_markdown_sections(markdown, "Fallback")
+    assert chunks == [("Intro", "Body")]
 
 
 def test_build_sections_from_markdown_limits_sections(tmp_path: Path) -> None:

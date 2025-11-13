@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -10,7 +11,12 @@ import duckdb
 import yaml
 
 logger = logging.getLogger("coursegen.codeact.data")
-DATA_ROOT = Path("data/handcrafted/database_systems")
+
+DATASET_ENV_VAR = "COURSEGEN_DATASET_DIR"
+REPO_ENV_VAR = "COURSEGEN_REPO_ROOT"
+_DATASET_SUBPATH = Path("data/handcrafted/database_systems")
+_FALLBACK_DATA_ROOT = Path(__file__).resolve().parents[3] / _DATASET_SUBPATH
+DATA_ROOT = _FALLBACK_DATA_ROOT  # preserved for backward compatibility
 _READ_ONLY_PREFIXES = {
     "insert",
     "update",
@@ -31,10 +37,26 @@ _TABLE_SOURCES: Dict[str, Tuple[str, str]] = {
 }
 
 
+def _default_dataset_dir() -> Path:
+    env_override = os.getenv(DATASET_ENV_VAR)
+    if env_override:
+        return Path(env_override)
+    repo_root = os.getenv(REPO_ENV_VAR)
+    if repo_root:
+        return Path(repo_root).expanduser().resolve() / _DATASET_SUBPATH
+    return _FALLBACK_DATA_ROOT
+
+
+def get_dataset_root() -> Path:
+    """Return the currently configured dataset root."""
+
+    return _default_dataset_dir().expanduser().resolve()
+
+
 def load_dataset_asset(name: str, base_dir: Path | None = None) -> dict[str, Any]:
     """Return the contents of a JSON/YAML dataset asset."""
 
-    base = (base_dir or DATA_ROOT).expanduser().resolve()
+    base = _resolve_dataset_dir(base_dir)
     asset_path = base / name
     if not asset_path.exists():
         logger.warning("Dataset asset %s not found, returning stub payload", asset_path)
@@ -94,7 +116,12 @@ def run_sql_query(query: str, *, dataset_dir: Path | None = None) -> list[dict[s
 
 
 def _resolve_dataset_dir(dataset_dir: Path | None) -> Path:
-    base = (dataset_dir or DATA_ROOT).expanduser().resolve()
+    base_candidate: Path
+    if dataset_dir is None:
+        base_candidate = _default_dataset_dir()
+    else:
+        base_candidate = Path(dataset_dir)
+    base = base_candidate.expanduser().resolve()
     if not base.exists():
         raise FileNotFoundError(f"Dataset directory not found: {base}")
     return base

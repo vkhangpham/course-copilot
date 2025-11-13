@@ -9,11 +9,14 @@ from apps.codeact.programs import (
 )
 from apps.codeact.registry import CodeActRegistry, ToolBinding
 from apps.codeact.tools import (
+    append_timeline_event,
     fetch_concepts,
+    link_concepts,
     list_claims,
     list_relationships,
     load_dataset_asset,
     lookup_paper,
+    persist_outline,
     push_notebook_section,
     record_claim,
     run_sql_query,
@@ -21,13 +24,10 @@ from apps.codeact.tools import (
 )
 
 
-def build_default_registry(
-    *,
-    dspy_handles=None,
-) -> CodeActRegistry:
+def build_default_registry(*, dspy_handles=None) -> CodeActRegistry:
     """Register CodeAct tools/programs for the orchestrator."""
 
-    registry = CodeActRegistry()
+    registry = CodeActRegistry(dspy_handles=dspy_handles)
     registry.register_tool(
         ToolBinding(
             name="fetch_concepts",
@@ -62,6 +62,14 @@ def build_default_registry(
     )
     registry.register_tool(
         ToolBinding(
+            name="link_concepts",
+            signature="source, target, relation -> relationship",
+            handler=link_concepts,
+            description="Create or reinforce edges between concept nodes.",
+        )
+    )
+    registry.register_tool(
+        ToolBinding(
             name="run_sql_query",
             signature="sql -> rows",
             handler=run_sql_query,
@@ -86,6 +94,14 @@ def build_default_registry(
     )
     registry.register_tool(
         ToolBinding(
+            name="append_timeline_event",
+            signature="event -> timeline_event",
+            handler=append_timeline_event,
+            description="Append a grounded milestone to the observations table.",
+        )
+    )
+    registry.register_tool(
+        ToolBinding(
             name="lookup_paper",
             signature="paper_id -> paper",
             handler=lookup_paper,
@@ -100,11 +116,23 @@ def build_default_registry(
             description="Send markdown sections to the Open Notebook API (placeholder).",
         )
     )
+    registry.register_tool(
+        ToolBinding(
+            name="persist_outline",
+            signature="outline -> artifact",
+            handler=persist_outline,
+            description="Store course outline artifacts in the world-model for reuse.",
+        )
+    )
 
     registry.register_program(
         "PlanCourse",
-        ["fetch_concepts", "load_dataset_asset", "search_events", "lookup_paper", "run_sql_query"],
-        factory=lambda: build_plan_course_program(),
+        ["fetch_concepts", "load_dataset_asset", "search_events", "lookup_paper", "run_sql_query", "persist_outline"],
+        factory=lambda tools=None, lm=None: build_plan_course_program(
+            tools=tools,
+            lm=lm,
+        ),
+        default_lm_role="ta",
     )
     registry.register_program(
         "DraftLectureSection",
@@ -116,14 +144,25 @@ def build_default_registry(
             "list_relationships",
             "list_claims",
             "run_sql_query",
+            "link_concepts",
+            "append_timeline_event",
+            "persist_outline",
             "push_notebook_section",
         ],
-        factory=lambda: build_draft_lecture_program(),
+        factory=lambda tools=None, lm=None: build_draft_lecture_program(
+            tools=tools,
+            lm=lm,
+        ),
+        default_lm_role="ta",
     )
     registry.register_program(
         "EnforceCitations",
         ["load_dataset_asset", "lookup_paper"],
-        factory=lambda: build_enforce_citations_program(),
+        factory=lambda tools=None, lm=None: build_enforce_citations_program(
+            tools=tools,
+            lm=lm,
+        ),
+        default_lm_role="ta",
     )
 
     return registry

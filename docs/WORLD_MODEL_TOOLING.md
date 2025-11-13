@@ -24,7 +24,7 @@ All IDs are lowercase snake_case and must match across files (concepts ↔ taxon
 
 ## Common commands
 
-> **Note:** `wm-inspect` automatically targets `outputs/world_model/state.sqlite` from the repo root. Use the `--store` flag or `WORLD_MODEL_STORE` env var only when pointing at an alternate snapshot.
+> **Note:** `wm-inspect` automatically targets `outputs/world_model/state.sqlite` from the repo root. When you run the CLI outside this checkout, export `COURSEGEN_REPO_ROOT=/abs/path/to/ccopilot` so auto-detection still lands inside your repo. Use the `--store` flag or `WORLD_MODEL_STORE` env var when pointing at an alternate snapshot.
 
 | Action | Command |
 | ------ | ------- |

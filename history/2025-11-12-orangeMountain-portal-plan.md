@@ -35,3 +35,9 @@
 - Hook backend endpoints to real orchestrator provenance once DSPy wiring lands.
 - Add auth & streaming later if needed.
 - Flesh out FE pages (run detail view, per-module breakdown, evaluation history).
+
+## 2025-11-12 @ LilacStone progress
+- 23:15 UTC – Extended FastAPI `/runs/{run_id}` response (`RunDetail`) to include the orchestrator’s `notebook_export_summary`, updated `tests/test_portal_backend.py` to assert the field, and refreshed the shadcn dashboard with a Notebook exports card that visualizes success/skipped/error counts, note IDs, queued paths, and preflight status badges. Frontend types under `frontend/lib/api.ts` were updated accordingly.
+- 23:32 UTC – Added `notebook_export_summary` to the `/runs` list response + `RunHistory` UI so operators can see per-run Notebook health (success/total badge) without opening each manifest. Portal backend + frontend types/tests updated to reflect the new field.
+- Next – Expose evaluation attempt summaries via the backend and render them as a timeline card so student-loop iterations are visible without manually inspecting manifests.
+- 23:48 UTC – Parsed evaluation attempts from the manifest, exposed them via `RunDetail`/`/runs/latest`, updated tests, and added a “Evaluation attempts” card in the shadcn dashboard so student-loop mutations (scores, quiz pass rates, failing rubrics) are visible at a glance.

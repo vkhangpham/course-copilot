@@ -267,6 +267,8 @@ evaluation:
             manifest.get("world_model_highlight_artifact"),
             str(artifacts.highlights),
         )
+        self.assertEqual(manifest.get("highlight_source"), "world_model")
+        self.assertEqual(artifacts.highlight_source, "world_model")
         self.assertTrue(manifest.get("teacher_trace") is None)
         notebook_exports = manifest.get("notebook_exports")
         self.assertIsNotNone(notebook_exports)
@@ -338,7 +340,7 @@ evaluation:
         self.assertFalse(eval_record["use_students"])
         self.assertEqual(eval_record["status"], "students_disabled")
 
-    def test_world_model_ablation_skips_highlights(self) -> None:
+    def test_world_model_ablation_uses_dataset_highlights_only(self) -> None:
         ctx = bootstrap_pipeline(
             config_path=self.config_path,
             repo_root=self.repo_root,
@@ -349,13 +351,23 @@ evaluation:
             artifacts = run_pipeline(ctx, dry_run=False)
 
         assert artifacts is not None
-        self.assertIsNone(artifacts.highlights)
+        self.assertIsNotNone(artifacts.highlights)
         manifest = json.loads(artifacts.manifest.read_text(encoding="utf-8"))
-        self.assertEqual(manifest["world_model_highlights"], {})
-        self.assertIsNone(manifest["world_model_highlight_artifact"])
+        highlights = manifest["world_model_highlights"]
+        self.assertIsInstance(highlights, dict)
+        self.assertIn("syllabus_modules", highlights)
+        self.assertNotIn("concepts", highlights)
+        self.assertEqual(manifest.get("highlight_source"), "dataset")
+        self.assertEqual(artifacts.highlight_source, "dataset")
         self.assertTrue(
             self.notebook_api.notes,
             "Notebook export should still occur when only the world model is disabled",
+        )
+        provenance_path = ctx.paths.logs_dir / "provenance.jsonl"
+        self.assertTrue(provenance_path.exists())
+        self.assertNotIn(
+            "World-model snapshot missing",
+            provenance_path.read_text(encoding="utf-8"),
         )
 
     def test_recursion_ablation_skips_notebook_exports(self) -> None:
@@ -411,47 +423,46 @@ evaluation:
         if expected_key:
             self.assertEqual(os.environ.get("OPEN_NOTEBOOK_API_KEY"), expected_key)
 
-    def test_dataset_highlights_present_when_world_model_disabled(self) -> None:
+    def test_world_model_ablation_skips_codeact(self) -> None:
         ctx = bootstrap_pipeline(
             config_path=self.config_path,
             repo_root=self.repo_root,
             output_dir=self.output_dir,
             ablations="no_world_model",
         )
-        with self.notebook_api.patch_open_notebook_client():
-            artifacts = run_pipeline(ctx, dry_run=False)
+        with mock.patch(
+            "apps.orchestrator.teacher.TeacherOrchestrator._run_codeact_program",
+            side_effect=AssertionError("CodeAct programs should not run when world model is disabled"),
+        ):
+            with self.notebook_api.patch_open_notebook_client():
+                artifacts = run_pipeline(ctx, dry_run=False)
 
-        self.assertIsNotNone(artifacts)
         assert artifacts is not None
         self.assertIsNotNone(artifacts.highlights)
-        self.assertIsNone(artifacts.teacher_trace)
-        self.assertIsNotNone(artifacts.notebook_exports)
-
         manifest = json.loads(artifacts.manifest.read_text(encoding="utf-8"))
-        highlights = manifest.get("world_model_highlights")
-        self.assertIsNotNone(highlights)
-        assert highlights is not None
-        self.assertIn("syllabus_modules", highlights)
-        self.assertNotIn("concepts", highlights)
-        self.assertIn("explanations", highlights)
-        self.assertEqual(
-            manifest.get("world_model_highlight_artifact"),
-            str(artifacts.highlights),
-        )
-        self.assertTrue(manifest.get("teacher_trace") is None)
-        notebook_exports = manifest.get("notebook_exports")
-        self.assertIsNotNone(notebook_exports)
-        assert notebook_exports is not None
-        sections = self._section_exports(notebook_exports)
-        self.assertTrue(sections)
-        self.assertIn("note_id", sections[0]["response"])
-        self.assertIn("attempts", manifest["evaluation"])
+        self.assertIsInstance(manifest.get("world_model_highlights"), dict)
         self.assertFalse(manifest.get("world_model_store_exists"))
+        self.assertEqual(manifest.get("highlight_source"), "dataset")
+        self.assertEqual(artifacts.highlight_source, "dataset")
 
-        export_summary = manifest.get("notebook_export_summary")
-        self.assertIsNotNone(export_summary)
-        assert export_summary is not None
-        self.assertGreaterEqual(export_summary["success"], 1)
+    def test_recursion_ablation_skips_teacher_rlm(self) -> None:
+        ctx = bootstrap_pipeline(
+            config_path=self.config_path,
+            repo_root=self.repo_root,
+            output_dir=self.output_dir,
+            ablations="no_recursion",
+        )
+        with mock.patch(
+            "agents.teacher_rlm.TeacherRLM.run",
+            side_effect=AssertionError("Teacher RLM should not run when recursion is disabled"),
+        ):
+            with self.notebook_api.patch_open_notebook_client():
+                artifacts = run_pipeline(ctx, dry_run=False)
+
+        assert artifacts is not None
+        self.assertIsNone(artifacts.teacher_trace)
+        manifest = json.loads(artifacts.manifest.read_text(encoding="utf-8"))
+        self.assertIsNone(manifest.get("teacher_trace"))
 
     def test_notebook_export_offline_queue_written(self) -> None:
         offline_config = self._write_pipeline_config(api_base="", filename="pipeline-offline.yaml")

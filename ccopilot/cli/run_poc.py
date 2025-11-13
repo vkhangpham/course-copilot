@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, List
 
 from ccopilot.pipeline import PipelineRunArtifacts, bootstrap_pipeline, run_pipeline
 
@@ -54,6 +55,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override the notebook slug used for Open Notebook exports.",
     )
     parser.add_argument(
+        "--skip-notebook-create",
+        action="store_true",
+        help="Do not auto-create the Open Notebook slug before publishing.",
+    )
+    parser.add_argument(
         "--ablations",
         default=None,
         help="Comma-separated list of ablations (no_world_model,no_students,no_recursion)",
@@ -76,31 +82,50 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _resolve_path(value: str | Path, *, base: Path | None = None) -> Path:
+    candidate = Path(value).expanduser()
+    if candidate.is_absolute():
+        return candidate.resolve()
+    anchor = Path(base).expanduser().resolve() if base is not None else Path.cwd()
+    return (anchor / candidate).resolve()
+
+
+def _resolve_optional(value: str | Path | None, *, base: Path | None = None) -> Path | None:
+    if value is None:
+        return None
+    return _resolve_path(value, base=base)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
     try:
-        constraints_path = Path(args.constraints).resolve() if args.constraints else None
-        concept_override = Path(args.concept).resolve() if args.concept else None
-        dataset_override = Path(args.dataset_dir).resolve() if args.dataset_dir else concept_override
+        repo_root = _resolve_path(args.repo_root)
+        os.environ.setdefault("COURSEGEN_REPO_ROOT", str(repo_root))
+        config_path = _resolve_path(args.config, base=repo_root)
+        constraints_path = _resolve_optional(args.constraints, base=repo_root)
+        concept_override = _resolve_optional(args.concept, base=repo_root)
+        dataset_override = _resolve_optional(args.dataset_dir, base=repo_root) or concept_override
+        output_dir_override = _resolve_optional(args.output_dir, base=repo_root)
+        world_model_store_override = _resolve_optional(args.world_model_store, base=repo_root)
 
         ctx = bootstrap_pipeline(
-            config_path=Path(args.config),
-            repo_root=Path(args.repo_root),
-            output_dir=Path(args.output_dir).resolve() if args.output_dir else None,
+            config_path=config_path,
+            repo_root=repo_root,
+            output_dir=output_dir_override,
             ablations=args.ablations,
             dataset_dir_override=dataset_override,
-            world_model_store_override=Path(args.world_model_store).resolve()
-            if args.world_model_store
-            else None,
+            world_model_store_override=world_model_store_override,
             ingest_before_run=args.ingest_world_model,
             constraints_path=constraints_path,
             notebook_slug_override=args.notebook,
+            notebook_auto_create_override=False if args.skip_notebook_create else None,
         )
         artifacts = run_pipeline(ctx, dry_run=args.dry_run)
         _print_eval_summary(artifacts, quiet=args.quiet)
         _print_highlight_hint(artifacts, quiet=args.quiet)
+        _print_notebook_hint(artifacts, quiet=args.quiet)
     except FileNotFoundError as exc:
         parser.error(str(exc))
     except Exception as exc:  # noqa: BLE001 - bubble up to CLI for now
@@ -170,19 +195,85 @@ def _print_highlight_hint(artifacts: PipelineRunArtifacts | None, *, quiet: bool
     if artifacts is None or quiet:
         return
 
-    # When the world model is disabled via ablations we still emit placeholder
-    # artifacts, but we should not imply that a WM-derived highlight exists.
-    if not getattr(artifacts, "use_world_model", True):
-        return
-
     highlight_path = getattr(artifacts, "highlights", None)
     if not highlight_path:
         return
 
     if highlight_path.exists():
-        print(f"[highlights] saved to {highlight_path}")
+        source = getattr(artifacts, "highlight_source", None)
+        if source == "dataset":
+            label = "[highlights] (dataset)"
+        elif source and source != "world_model":
+            label = f"[highlights] ({source})"
+        else:
+            label = "[highlights]"
+        print(f"{label} saved to {highlight_path}")
     else:  # pragma: no cover - defensive logging
         print(f"[highlights] expected at {highlight_path} (missing)")
+
+
+def _print_notebook_hint(artifacts: PipelineRunArtifacts | None, *, quiet: bool = False) -> None:
+    if artifacts is None or quiet:
+        return
+
+    exports: List[dict[str, Any]] | None = getattr(artifacts, "notebook_exports", None)
+    if not exports:
+        return
+
+    summary = getattr(artifacts, "notebook_export_summary", None)
+
+    responses: List[dict[str, Any]] = []
+    for entry in exports:
+        if isinstance(entry, dict):
+            if entry.get("kind") == "preflight":
+                continue
+            response = entry.get("response")
+            if isinstance(response, dict):
+                responses.append(response)
+                continue
+            responses.append(entry)
+        else:
+            responses.append({})
+
+    if not responses:
+        return
+
+    successes = [resp for resp in responses if resp.get("status") not in {"error", "skipped"}]
+    failures = [resp for resp in responses if resp.get("status") in {"error", "skipped"}]
+    target = next(
+        (resp.get("notebook") or resp.get("notebook_slug") for resp in responses if resp),
+        None,
+    )
+    total = summary.get("total") if summary else len(responses)
+    success_count = summary.get("success") if summary else len(successes)
+    if successes:
+        slug_display = target or "notebook"
+        note_ids = summary.get("note_ids", []) if summary else [
+            resp.get("note_id") or resp.get("id") for resp in successes if resp.get("note_id") or resp.get("id")
+        ]
+        queued_paths = summary.get("queued_exports", []) if summary else sorted(
+            {resp.get("export_path") for resp in successes if resp.get("status") == "queued" and resp.get("export_path")}
+        )
+        detail = ""
+        if note_ids:
+            preview = ", ".join(note_ids[:3])
+            if len(note_ids) > 3:
+                preview += ", …"
+            detail = f" (notes: {preview})"
+        elif queued_paths:
+            detail = f" (queued at {', '.join(queued_paths)})"
+        elif failures:
+            detail = f" ({len(failures)} skipped; see manifest)"
+        print(f"[notebook] exported {success_count or len(successes)}/{total} sections -> {slug_display}{detail}")
+    else:
+        status = responses[0].get("status", "error")
+        error = responses[0].get("error")
+        reason = responses[0].get("reason")
+        error_fragment = f", error={error}" if error else ""
+        reason_fragment = f", reason={reason}" if reason else ""
+        print(
+            f"[notebook] export unavailable (status={status}{error_fragment}{reason_fragment}); see manifest for details"
+        )
 
 
 if __name__ == "__main__":

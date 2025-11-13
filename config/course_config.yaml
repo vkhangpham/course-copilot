@@ -1,20 +1,28 @@
-course_name: "Database Systems"
-level: "upper-undergrad"
-audience_prereqs:
-  - "Discrete mathematics"
-  - "Intro to Programming"
-format: "10-week studio"
-constraints:
-  tone: "supportive"
-  project_load: "medium"
+title: "Database Systems"
+description: "Sample constraints for the CourseGen PoC upper-undergrad database systems course."
+duration_weeks: 10
+tone: mentor
+focus_areas:
+  - "relational model"
+  - "transactions and concurrency control"
+  - "distributed database design"
+audience:
+  persona: "upper-undergrad"
+  prior_knowledge:
+    - "Discrete mathematics"
+    - "Intro to programming"
+    - "Basic SQL"
+  goals:
+    - "Build production-ready data projects"
+    - "Understand trade-offs in modern database architectures"
+required_sources:
+  - "codd-1970"
+  - "system-r-1976"
+  - "aries-1992"
+banned_sources:
+  - "Wikipedia"
+  - "random-blog"
 learning_objectives:
-  - id: LO1
-    text: "Explain the relational model, relational algebra, and SQL basics."
-  - id: LO2
-    text: "Design normalized schemas with functional dependencies and normal forms."
-  - id: LO3
-    text: "Analyze transaction processing, concurrency control, and recovery strategies."
-assessment_emphasis:
-  projects: true
-  quizzes: true
-  reflections: false
+  - "Explain the relational model, relational algebra, and SQL basics."
+  - "Design normalized schemas with functional dependencies and normal forms."
+  - "Analyze transaction processing, concurrency control, and recovery strategies."

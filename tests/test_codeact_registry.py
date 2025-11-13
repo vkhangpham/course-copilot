@@ -1,7 +1,7 @@
+from types import SimpleNamespace
 from unittest import mock
 
 import pytest
-from types import SimpleNamespace
 
 from apps.codeact.registry import CodeActRegistry, ToolBinding
 from apps.orchestrator.codeact_registry import build_default_registry
@@ -60,26 +60,44 @@ def test_default_registry_builds_programs(
     assert registry.build_program("DraftLectureSection") is mock_lecture.return_value
     assert registry.build_program("EnforceCitations") is mock_enforce.return_value
 
-    mock_plan.assert_called_once()
-    mock_lecture.assert_called_once()
-    mock_enforce.assert_called_once()
+    mock_plan.assert_called_once_with(tools=mock.ANY, lm=None)
+    mock_lecture.assert_called_once_with(tools=mock.ANY, lm=None)
+    mock_enforce.assert_called_once_with(tools=mock.ANY, lm=None)
+
+
+def test_registry_applies_allowed_tools() -> None:
+    registry = build_default_registry()
+    program = registry.build_program("PlanCourse", allowed_tools=["fetch_concepts", "run_sql_query"])
+    assert program is not None
+
+
+def test_registry_rejects_missing_allowed_tools() -> None:
+    registry = build_default_registry()
+    with pytest.raises(ValueError):
+        registry.build_program("PlanCourse", allowed_tools=["unknown_tool"])
 
 
 @mock.patch("apps.orchestrator.codeact_registry.build_plan_course_program")
-@mock.patch("apps.orchestrator.codeact_registry.build_draft_lecture_program")
-@mock.patch("apps.orchestrator.codeact_registry.build_enforce_citations_program")
-def test_registry_passes_lm_handles(
-    mock_enforce: mock.MagicMock,
-    mock_lecture: mock.MagicMock,
-    mock_plan: mock.MagicMock,
-) -> None:
+def test_registry_forwards_lm_handle(mock_plan: mock.MagicMock) -> None:
+    mock_plan.return_value = object()
+    registry = build_default_registry()
+    registry.build_program("PlanCourse", lm_handle="custom_lm")
+    mock_plan.assert_called_with(tools=mock.ANY, lm="custom_lm")
+
+
+@mock.patch("apps.orchestrator.codeact_registry.build_plan_course_program")
+def test_registry_resolves_lm_role(mock_plan: mock.MagicMock) -> None:
+    mock_plan.return_value = object()
     handles = SimpleNamespace(teacher=object(), ta=object(), student=object())
-
     registry = build_default_registry(dspy_handles=handles)
-    registry.build_program("PlanCourse")
-    registry.build_program("DraftLectureSection")
-    registry.build_program("EnforceCitations")
+    registry.build_program("PlanCourse", lm_role="teacher")
+    mock_plan.assert_called_with(tools=mock.ANY, lm=handles.teacher)
 
-    mock_plan.assert_called_with()
-    mock_lecture.assert_called_with()
-    mock_enforce.assert_called_with()
+
+@mock.patch("apps.orchestrator.codeact_registry.build_draft_lecture_program")
+def test_registry_uses_default_role_when_not_provided(mock_program: mock.MagicMock) -> None:
+    mock_program.return_value = object()
+    handles = SimpleNamespace(teacher=object(), ta=object(), student=object())
+    registry = build_default_registry(dspy_handles=handles)
+    registry.build_program("DraftLectureSection")
+    mock_program.assert_called_with(tools=mock.ANY, lm=handles.ta)

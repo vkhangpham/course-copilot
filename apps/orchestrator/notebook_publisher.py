@@ -25,7 +25,7 @@ def _is_setext_underline(line: str) -> bool:
     if not stripped:
         return False
     unique_chars = set(stripped)
-    return unique_chars.issubset({"=", "-"}) and len(stripped.replace(" ", "")) >= 3
+    return unique_chars.issubset({"=", "-"}) and len(stripped.replace(" ", "")) >= 1
 
 
 def _extract_setext_heading(lines: List[str], underline: str) -> str | None:

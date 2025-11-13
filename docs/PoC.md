@@ -23,7 +23,8 @@
 
 - **Outputs:**
   1. `course_plan.md` (weeks/modules, outcomes, readings, projects)
-  2. `lectures/…` (weekly study‑guides with explanations, examples, exercises, citations), optionally pushed to Open Notebook as sources/notes.
+  2. `lectures/…` (weekly study-guides with explanations, examples, exercises, citations), optionally pushed to Open Notebook as sources/notes.
+  3. `artifacts/run-*-highlights.json` + `highlight_source` manifest flag so reviewers can tell whether highlight slices came from the world model (`world_model`) or the handcrafted dataset fallback (`dataset`, emitted when `no_world_model` ablation is active).
 
 ---
 

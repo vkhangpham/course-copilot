@@ -174,7 +174,8 @@ class StudentGraderPool:
     ) -> Tuple[bool, str | None]:
         if "learning objective" in normalized_item or "primary source" in normalized_item:
             return self._check_required_sources(lowered_text)
-        if "cite" in normalized_item or "papers" in normalized_item:
+        citation_tokens = ("cite", "citation", "citations", "reference", "references", "papers")
+        if any(token in normalized_item for token in citation_tokens):
             return self._detect_citations(raw_text)
         return self._default_keyword_check(normalized_item, lowered_text)
 

@@ -45,6 +45,7 @@ def bootstrap_pipeline(
     ingest_before_run: bool = False,
     constraints_path: Path | None = None,
     notebook_slug_override: str | None = None,
+    notebook_auto_create_override: bool | None = None,
 ) -> PipelineContext:
     """
     Load configuration, environment variables, and construct the pipeline context.
@@ -65,15 +66,18 @@ def bootstrap_pipeline(
         Optional path to a course constraints YAML that overrides config.course.
     notebook_slug_override:
         Optional notebook slug override for Notebook exports.
+    notebook_auto_create_override:
+        Force-enable/disable automatic notebook creation before exports.
     """
 
     load_dotenv()  # make .env values available
 
     repo_root = (repo_root or Path.cwd()).resolve()
+    os.environ.setdefault("COURSEGEN_REPO_ROOT", str(repo_root))
     config_path = (config_path or DEFAULT_CONFIG_PATH).resolve()
     output_dir = (output_dir or (repo_root / DEFAULT_OUTPUT_DIR)).resolve()
 
-    config: PipelineConfig = load_pipeline_config(config_path)
+    config: PipelineConfig = load_pipeline_config(config_path, base_dir=repo_root)
 
     if constraints_path is not None:
         constraints = load_course_constraints(constraints_path.resolve())
@@ -88,8 +92,13 @@ def bootstrap_pipeline(
             update_payload["sqlite_path"] = world_model_store_override.resolve()
         world_model_cfg = world_model_cfg.model_copy(update=update_payload)
         config = config.model_copy(update={"world_model": world_model_cfg})
-    if notebook_slug_override:
-        notebook_cfg = config.notebook.model_copy(update={"notebook_slug": notebook_slug_override})
+    if notebook_slug_override or notebook_auto_create_override is not None:
+        notebook_updates = {}
+        if notebook_slug_override:
+            notebook_updates["notebook_slug"] = notebook_slug_override
+        if notebook_auto_create_override is not None:
+            notebook_updates["auto_create"] = notebook_auto_create_override
+        notebook_cfg = config.notebook.model_copy(update=notebook_updates)
         config = config.model_copy(update={"notebook": notebook_cfg})
 
     ablation_cfg: AblationConfig = parse_ablation_flag(ablations)
@@ -131,18 +140,23 @@ def bootstrap_pipeline(
     )
 
     _ensure_dataset_exists(config.world_model.dataset_dir)
-    _refresh_world_model_if_needed(ctx, ingest_before_run)
+    if ctx.ablations.use_world_model:
+        _refresh_world_model_if_needed(ctx, ingest_before_run)
+    else:
+        LOGGER.info("World model ablated; skipping ingest and snapshot checks.")
     _apply_notebook_env(ctx)
 
     return ctx
 
 
 def _ensure_dataset_exists(dataset_dir: Path) -> None:
-    if not dataset_dir.exists():
+    resolved = dataset_dir.expanduser().resolve()
+    if not resolved.exists():
         raise FileNotFoundError(
-            f"Handcrafted dataset not found at {dataset_dir}. "
+            f"Handcrafted dataset not found at {resolved}. "
             "Run scripts/ingest_handcrafted.py or pass --dataset-dir with a valid path."
         )
+    os.environ["COURSEGEN_DATASET_DIR"] = str(resolved)
 
 
 def _refresh_world_model_if_needed(ctx: PipelineContext, ingest_requested: bool) -> None:
@@ -204,6 +218,9 @@ def _apply_notebook_env(ctx: PipelineContext) -> None:
         os.environ["OPEN_NOTEBOOK_SLUG"] = notebook_cfg.notebook_slug
         applied["notebook_slug"] = notebook_cfg.notebook_slug
 
+    os.environ["OPEN_NOTEBOOK_AUTO_CREATE"] = "1" if notebook_cfg.auto_create else "0"
+    applied["auto_create"] = notebook_cfg.auto_create
+
     if applied:
         ctx.provenance.log(
             ProvenanceEvent(
@@ -214,6 +231,7 @@ def _apply_notebook_env(ctx: PipelineContext) -> None:
                     "api_base": applied.get("api_base"),
                     "token_provided": applied.get("token_provided", False),
                     "notebook_slug": applied.get("notebook_slug"),
+                    "auto_create": applied.get("auto_create"),
                 },
             )
         )

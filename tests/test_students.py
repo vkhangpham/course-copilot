@@ -1,5 +1,8 @@
 from pathlib import Path
+from typing import Any, Dict
 
+from apps.orchestrator.student_loop import StudentLoopConfig, StudentLoopRunner
+from apps.orchestrator.student_qa import StudentQuizEvaluator
 from apps.orchestrator.students import StudentGraderPool
 
 RUBRICS = Path("evals/rubrics.yaml")
@@ -49,3 +52,162 @@ Distributed storage and recovery trade-offs are mentioned, but no sources are ci
     assert any(not item["passed"] for item in results["rubrics"])
     failing = [item for item in results["rubrics"] if not item["passed"]]
     assert failing, "Expected at least one rubric failure when sources are missing"
+
+
+def test_student_quiz_evaluator_detects_keywords(tmp_path: Path) -> None:
+    quiz_bank = tmp_path / "quiz.json"
+    quiz_bank.write_text(
+        """
+[
+  {
+    "id": "quiz-1",
+    "prompt": "Explain SQL aggregation",
+    "answer_sketch": "SQL query uses GROUP BY and HAVING clauses",
+    "learning_objectives": ["sql", "aggregation"],
+    "difficulty": "medium"
+  }
+]
+        """.strip(),
+        encoding="utf-8",
+    )
+    lecture = _write_artifact(
+        tmp_path,
+        """
+SQL GROUP BY clauses let us aggregate totals. HAVING filters aggregated rows.
+        """.strip(),
+    )
+
+    evaluator = StudentQuizEvaluator(quiz_bank_path=quiz_bank, pass_threshold=0.5, question_limit=1)
+    result = evaluator.evaluate_path(lecture).as_dict()
+
+    assert result["passed"] == 1
+    assert result["pass_rate"] == 1.0
+    assert result["questions"][0]["passed"] is True
+
+
+def test_student_loop_runner_triggers_mutation(tmp_path: Path) -> None:
+    lecture = _write_artifact(tmp_path, "Original lecture text")
+
+    class StubGrader:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.payloads = [
+                {
+                    "overall_score": 0.4,
+                    "rubrics": [
+                        {"name": "coverage", "passed": False},
+                        {"name": "grounding", "passed": False},
+                    ],
+                },
+                {
+                    "overall_score": 0.92,
+                    "rubrics": [
+                        {"name": "coverage", "passed": True},
+                        {"name": "grounding", "passed": True},
+                    ],
+                },
+            ]
+
+        def evaluate(self, _path: Path) -> Dict[str, object]:  # type: ignore[override]
+            payload = self.payloads[min(self.calls, len(self.payloads) - 1)]
+            self.calls += 1
+            return payload
+
+    class StubQuiz:
+        def __init__(self) -> None:
+            self.calls = 0
+            self.payloads = [
+                {"questions": [{"id": "q1", "passed": False, "score": 0.1}], "pass_rate": 0.0},
+                {"questions": [{"id": "q1", "passed": True, "score": 0.9}], "pass_rate": 1.0},
+            ]
+
+        def evaluate_path(self, _path: Path) -> Any:
+            record = self.payloads[min(self.calls, len(self.payloads) - 1)]
+            self.calls += 1
+
+            class _Wrapper:
+                def __init__(self, data: Dict[str, Any]) -> None:
+                    self.data = data
+
+                def as_dict(self) -> Dict[str, Any]:
+                    return self.data
+
+            return _Wrapper(record)
+
+    def _mutation_callback(path: Path, iteration: int, reason):
+        note = f"\n\n## Mutation {iteration}\nTriggered due to {reason.failing_rubrics}."
+        updated = path.read_text(encoding="utf-8") + note
+        path.write_text(updated, encoding="utf-8")
+        return path
+
+    runner = StudentLoopRunner(
+        grader=StubGrader(),
+        quiz_evaluator=StubQuiz(),
+        config=StudentLoopConfig(rubric_threshold=0.8, quiz_threshold=0.7, max_mutations=1),
+        mutation_callback=_mutation_callback,
+    )
+
+    results = runner.run(lecture)
+    assert results["status"] == "passing"
+    assert results["mutations"] == 1
+    assert results["attempts"][0]["triggered_mutation"] is not None
+
+
+def test_student_loop_runner_respects_individual_rubric_failures(tmp_path: Path) -> None:
+    lecture = _write_artifact(tmp_path, "Draft lecture")
+
+    class StubGrader:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def evaluate(self, _path: Path) -> Dict[str, Any]:  # type: ignore[override]
+            self.calls += 1
+            if self.calls == 1:
+                return {
+                    "overall_score": 0.93,
+                    "rubrics": [
+                        {"name": "coverage", "passed": True, "score": 1.0},
+                        {"name": "grounding", "passed": False, "score": 0.79},
+                        {"name": "pedagogy", "passed": True, "score": 1.0},
+                    ],
+                }
+            return {
+                "overall_score": 0.95,
+                "rubrics": [
+                    {"name": "coverage", "passed": True, "score": 1.0},
+                    {"name": "grounding", "passed": True, "score": 0.9},
+                    {"name": "pedagogy", "passed": True, "score": 0.95},
+                ],
+            }
+
+    class StubQuiz:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def evaluate_path(self, _path: Path) -> Any:
+            self.calls += 1
+
+            class _Wrapper:
+                def as_dict(self) -> Dict[str, Any]:
+                    return {"pass_rate": 1.0, "questions": [{"id": "q1", "passed": True}]}
+
+            return _Wrapper()
+
+    def _mutation_callback(path: Path, iteration: int, reason):
+        note = f"\n\n## Mutation {iteration}\nTriggering due to {reason.failing_rubrics}"
+        updated = path.read_text(encoding="utf-8") + note
+        path.write_text(updated, encoding="utf-8")
+        return path
+
+    runner = StudentLoopRunner(
+        grader=StubGrader(),
+        quiz_evaluator=StubQuiz(),
+        config=StudentLoopConfig(rubric_threshold=0.8, quiz_threshold=0.7, max_mutations=1),
+        mutation_callback=_mutation_callback,
+    )
+
+    results = runner.run(lecture)
+    assert results["mutations"] == 1
+    assert results["status"] == "passing"
+    # Ensure the initial failing rubric is recorded
+    assert "grounding" in results["attempts"][0]["triggered_mutation"]["failing_rubrics"]

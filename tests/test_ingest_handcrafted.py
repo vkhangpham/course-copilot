@@ -116,6 +116,19 @@ def test_load_datasets_supports_plain_citation_column(tmp_path: Path) -> None:
     assert datasets["timeline"][0]["citation_id"] == "paper_a"
 
 
+def test_load_datasets_accepts_comma_delimited_related_concepts(tmp_path: Path) -> None:
+    dataset_copy = tmp_path / "dataset"
+    shutil.copytree(DATASET, dataset_copy)
+    timeline_path = dataset_copy / "timeline.csv"
+    text = timeline_path.read_text(encoding="utf-8")
+    text = text.replace("relational_model;relational_algebra", "relational_model, relational_algebra", 1)
+    timeline_path.write_text(text, encoding="utf-8")
+
+    datasets = ingest._load_datasets(dataset_copy)
+
+    assert datasets["timeline"][0]["concept_ids"] == ["relational_model", "relational_algebra"]
+
+
 def test_ingest_timeline_accepts_event_label_column(tmp_path: Path) -> None:
     dataset_dir = _write_minimal_dataset(tmp_path, timeline_header="event_label")
     store_path = tmp_path / "state.sqlite"

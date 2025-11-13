@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import json
 from collections import defaultdict, deque
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, Iterable, List
+from uuid import uuid4
 
 from .storage import WorldModelStore
 
@@ -253,3 +255,97 @@ class WorldModelAdapter:
             }
             for row in rows
         ]
+
+    def link_concepts(
+        self,
+        *,
+        source_id: str,
+        target_id: str,
+        relation_type: str,
+        justification: str | None = None,
+    ) -> dict[str, Any]:
+        """Create or reinforce a relationship between two concepts."""
+
+        self._ensure_concepts_exist([source_id, target_id])
+        relation = relation_type.strip() if relation_type else "related_to"
+        note = (justification or "Added via CodeAct").strip()
+        rel_id = self.store.execute(
+            "INSERT INTO relationships (source_id, target_id, relation_type, justification) "
+            "VALUES (?, ?, ?, ?)",
+            (source_id, target_id, relation, note),
+        )
+        return {
+            "id": rel_id,
+            "source_id": source_id,
+            "target_id": target_id,
+            "relation_type": relation,
+            "justification": note,
+        }
+
+    def append_timeline_event(
+        self,
+        *,
+        event_label: str,
+        related_concept: str,
+        summary: str | None = None,
+        event_year: int | None = None,
+        citation: str | None = None,
+    ) -> dict[str, Any]:
+        """Append a timeline event linked to a concept."""
+
+        if not event_label:
+            raise ValueError("event_label is required")
+        self._ensure_concepts_exist([related_concept])
+        event_id = self.store.execute(
+            "INSERT INTO observations (event_year, event_label, summary, related_concept, citation) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (event_year, event_label, summary, related_concept, citation),
+        )
+        return {
+            "id": event_id,
+            "year": event_year,
+            "event": event_label,
+            "summary": summary,
+            "concept_id": related_concept,
+            "citation": citation,
+        }
+
+    def persist_outline(
+        self,
+        outline: Dict[str, Any] | List[Dict[str, Any]],
+        *,
+        version: int | None = None,
+        source_uri: str | None = None,
+        metadata: Dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Store an outline artifact so downstream agents can reuse it."""
+
+        artifact_uri = source_uri or f"codeact://course_outline/{uuid4().hex}"
+        payload = {
+            "version": version,
+            "outline": outline,
+        }
+        if metadata:
+            payload["metadata"] = metadata
+        artifact_id = self.store.execute(
+            "INSERT INTO artifacts (artifact_type, uri, metadata) VALUES (?, ?, ?)",
+            ("course_outline", artifact_uri, json.dumps(payload, ensure_ascii=False)),
+        )
+        return {"id": artifact_id, "uri": artifact_uri, "payload": payload}
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+
+    def _ensure_concepts_exist(self, concept_ids: Iterable[str]) -> None:
+        ids = [concept_id for concept_id in concept_ids if concept_id]
+        if not ids:
+            raise ValueError("At least one concept id is required")
+        placeholders = ",".join("?" for _ in ids)
+        rows = self.store.query(
+            f"SELECT id FROM concepts WHERE id IN ({placeholders})",
+            tuple(ids),
+        )
+        found = {row[0] for row in rows}
+        missing = sorted(set(ids) - found)
+        if missing:
+            raise ValueError(f"Unknown concept id(s): {', '.join(missing)}")

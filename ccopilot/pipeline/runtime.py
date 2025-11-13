@@ -23,7 +23,11 @@ class PipelineRunArtifacts:
     provenance: Path
     manifest: Path
     highlights: Path | None = None
+    highlight_source: str | None = None
     use_world_model: bool = True
+    teacher_trace: Path | None = None
+    notebook_exports: List[Dict[str, Any]] | None = None
+    notebook_export_summary: Dict[str, Any] | None = None
 
 
 def run_pipeline(ctx: PipelineContext, *, dry_run: bool = False) -> PipelineRunArtifacts | None:
@@ -53,7 +57,7 @@ def run_pipeline(ctx: PipelineContext, *, dry_run: bool = False) -> PipelineRunA
         )
     )
 
-    if not snapshot_exists:
+    if ctx.ablations.use_world_model and not snapshot_exists:
         ctx.provenance.log(
             ProvenanceEvent(
                 stage="warning",
@@ -74,11 +78,11 @@ def run_pipeline(ctx: PipelineContext, *, dry_run: bool = False) -> PipelineRunA
         )
         return None
 
-    from apps.orchestrator import Orchestrator
+    from apps.orchestrator import TeacherOrchestrator
 
     codeact_registry = build_default_registry(dspy_handles=ctx.dspy_handles)
-    orchestrator = Orchestrator(ctx, codeact_registry=codeact_registry)
-    orch_artifacts = orchestrator.run(
+    orchestrator = TeacherOrchestrator(ctx, codeact_registry=codeact_registry)
+    orch_artifacts = orchestrator.run_coursegen(
         dataset_summary=dataset_summary,
         world_model_store=world_model_store,
         snapshot_exists=snapshot_exists,
@@ -88,7 +92,7 @@ def run_pipeline(ctx: PipelineContext, *, dry_run: bool = False) -> PipelineRunA
     ctx.provenance.log(
         ProvenanceEvent(
             stage="artifacts",
-            message="Placeholder artifacts generated via apps.orchestrator",
+            message="Teacher orchestrator generated artifacts",
             agent="ccopilot.pipeline",
             payload={
                 "course_plan": str(orch_artifacts.course_plan),
@@ -107,7 +111,11 @@ def run_pipeline(ctx: PipelineContext, *, dry_run: bool = False) -> PipelineRunA
         provenance=orch_artifacts.provenance,
         manifest=orch_artifacts.manifest,
         highlights=orch_artifacts.highlights,
+        highlight_source=orch_artifacts.highlight_source,
         use_world_model=ctx.ablations.use_world_model,
+        teacher_trace=orch_artifacts.teacher_trace,
+        notebook_exports=orch_artifacts.notebook_exports,
+        notebook_export_summary=orch_artifacts.notebook_export_summary,
     )
 
 

@@ -28,11 +28,12 @@ export function RunDetailSection({ detail }: { detail: RunDetail | null }) {
       ? (detail?.manifest?.["highlight_source"] as string)
       : undefined);
   const highlightSource = highlightSourceRaw?.toLowerCase();
+  const formattedHighlightSource = formatHighlightSource(highlightSourceRaw);
   const highlightTitle =
     highlightSource === "dataset"
       ? "Dataset highlights"
       : highlightSource && highlightSource !== "world_model"
-        ? `${formatHighlightSource(highlightSourceRaw) ?? "Highlights"} highlights`
+        ? `${formattedHighlightSource ?? "Highlights"} highlights`
         : "World-model highlights";
   const highlightDescription =
     highlightSource === "dataset"
@@ -42,7 +43,7 @@ export function RunDetailSection({ detail }: { detail: RunDetail | null }) {
     highlightSource === "dataset"
       ? "Dataset fallback"
       : highlightSource && highlightSource !== "world_model"
-        ? formatHighlightSource(highlightSourceRaw)
+        ? formattedHighlightSource ?? "Custom"
         : "World model";
   const highlightBadgeVariant = highlightSource === "dataset" ? "secondary" : "outline";
   const rubrics = detail?.evaluation?.rubrics ?? [];

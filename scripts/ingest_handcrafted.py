@@ -5,6 +5,7 @@ import argparse
 import csv
 import json
 import logging
+import re
 import sqlite3
 import sys
 from collections import OrderedDict
@@ -259,7 +260,10 @@ def _load_csv(path: Path) -> List[Dict[str, str]]:
 
 
 def _split_list(raw: str) -> List[str]:
-    return [token.strip() for token in (raw or "").split(";") if token.strip()]
+    if not raw:
+        return []
+    tokens = re.split(r"[;,]", raw)
+    return [token.strip() for token in tokens if token.strip()]
 
 
 # ---------------------------------------------------------------------------

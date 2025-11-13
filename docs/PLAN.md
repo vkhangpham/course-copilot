@@ -21,6 +21,7 @@
 **Core principles from the research you cited:**
 
 - **RLM**: treat the prompt/context as _state_ in an environment; allow the LM to **spawn sub‑LM calls** and manipulate context via a REPL. We’ll use the minimal RLM that exposes `RLM_REPL.completion()` and depth‑1 subcalls, extending it with our tools. ([Alex L. Zhang][1])
+- _Tip:_ The teacher orchestrator imports `rlm.rlm_repl` from the vendored `vendor/rlm` checkout by default. If you are iterating on a different clone (for example, a local fork with experimental prompts), export `COURSEGEN_VENDOR_RLM_PATH=/absolute/path/to/rlm` before running the CLI so bootstrap adds that directory to `sys.path`.
 - **CodeAct as the one sandbox**: **all “thinking with code” + tool use** happens through **DSPy CodeAct**. CodeAct takes a **signature** and **pure‑function tools**, iterates, emits code, executes, and returns results; it **does not import external libs**, so we wrap any library (DuckDB, graph ops, parsers) behind pure‑function tools. ([dspy.ai][2])
 - **Kosmos world model**: maintain a **structured world model** as the shared state bus across agents (entities, claims, observations, tasks) with provenance; agents read/write through tools. ([arXiv][3])
 - **Self‑Evolving Agents** loop (grader/mutator): create **“student” agents** that test understanding and drive mutation of materials; run improve→grade cycles. ([OpenAI Cookbook][4])
@@ -58,7 +59,7 @@
   model_config.yaml           # base LM ids, temperatures, depth, budgets
 scripts/
   run_poc.py                  # end-to-end runner
-external/
+vendor/
   rlm/                        # submodule: your fork; upstream: alexzhang13/rlm
   open-notebook/              # submodule: your fork; upstream: lfnovo/open-notebook
 ```
@@ -88,8 +89,8 @@ external/
 1. **Add submodules** (you already cloned—confirm remotes and pins):
 
    ```bash
-   git submodule add https://github.com/vkhangpham/rlm external/rlm
-   git submodule add https://github.com/vkhangpham/open-notebook external/open-notebook
+   git submodule add https://github.com/vkhangpham/rlm vendor/rlm
+   git submodule add https://github.com/vkhangpham/open-notebook vendor/open-notebook
    git submodule update --init --recursive
    ```
 
@@ -99,7 +100,7 @@ external/
 
 2. **Python env.**
   - Python 3.11, `pip install dspy duckdb sqlite-utils pydantic fastapi uvicorn networkx orjson python-dotenv`.
-  - `pip install -e external/rlm` if needed (or add to `PYTHONPATH`).
+  - `pip install -e vendor/rlm` if needed (or add to `PYTHONPATH`).
   - Add `.env` for API keys (OpenAI/Gemini if relevant), DB paths, Open Notebook API base. DSPy now reads per-role keys in order: `api_key_env` (from `config/model_config.yaml`), `OPENAI_API_KEY_<ROLE>`, and finally `OPENAI_API_KEY`. API bases follow the same pattern via `api_base` / `OPENAI_API_BASE_<ROLE>` / `OPENAI_API_BASE`. CodeAct factories are wired to those handles (PlanCourse/Lecture/Enforce use the TA handle today; future student programs draw from the student handle automatically).
   - The teacher RLM imports `rlm.rlm_repl` from the vendored checkout by default (`vendor/rlm` inside this repo). If you’re iterating on a separate clone or a local branch, export `COURSEGEN_VENDOR_RLM_PATH=/absolute/path/to/rlm_checkout` before running the CLI so the orchestrator adds that directory to `sys.path`.
 
@@ -151,7 +152,7 @@ This mirrors Kosmos’ notion of a **structured world model shared across agents
 
 **Teacher orchestration (RLM).**
 
-- **Wrap `RLM_REPL`** (from external/rlm) in `teacher_rlm.py`. The **environment** exposes a small Python API to the LM:
+- **Wrap `RLM_REPL`** (from `vendor/rlm`) in `teacher_rlm.py`. The **environment** exposes a small Python API to the LM:
   - `use_codeact(program_name, **kwargs)` → runs the right CodeAct program with given tools.
   - `spawn_ta(role, task_spec)` → calls a **sub‑LM** (depth‑1) with a role‑conditioned system prompt; sub‑LM **also** uses `use_codeact` for any tool/code.
   - `wm.observe()` / `wm.commit()` for quick environment reads/writes (under the hood these call the CodeAct tools, keeping **one sandbox** policy).
@@ -230,7 +231,7 @@ This mirrors Kosmos’ notion of a **structured world model shared across agents
 
 ### 4.3 RLM Integration
 
-- [ ] Vendor/wrap **`external/rlm/rlm/rlm_repl.py`** in `agents/teacher_rlm.py`:
+- [ ] Vendor/wrap **`vendor/rlm/rlm/rlm_repl.py`** in `agents/teacher_rlm.py`:
   - Expose to the LM: `use_codeact`, `spawn_ta`, `wm_get`, `wm_link`, etc., as Python functions in the REPL namespace (this is exactly the RLM environment idiom). ([GitHub][6])
 
 - [ ] TA roles in `agents/ta_roles.py` with **role prompts** and **tool whitelists** (each TA’s `use_codeact` calls a specific program).
@@ -271,7 +272,7 @@ This mirrors Kosmos’ notion of a **structured world model shared across agents
    - **Students** run on the draft; if below threshold, **mutate** and re‑grade (AlphaEvolve‑style iterate‑and‑test, adapted to pedagogy). ([arXiv][7])
 
 4. **TA‑Librarian** exports plan + lecture(s) to **Open Notebook** via API (create notebook, add sections). ([GitHub][5])
-5. **UI** shows graph snapshot, trace, student outcomes, and a link to the notebook.
+5. **UI** shows graph snapshot, trace, student outcomes, highlight slices, and a link to the notebook; highlight cards should clearly label the source (world model vs dataset fallback) so ablation runs are obvious at a glance.
 
 ---
 
@@ -301,7 +302,7 @@ This mirrors Kosmos’ notion of a **structured world model shared across agents
 
 **Day 7**
 
-- UI, doc polish, and 3 ablations (no recursion / no students / no world model).
+- UI, doc polish, and 3 ablations (no recursion / no students / no world model). When `no_world_model` is active, highlight exports still land in `outputs/artifacts/run-*-highlights.json` but should be marked `highlight_source="dataset"` and surfaced as such in CLI + portal so reviewers can prove the ablation took effect.
 
 ---
 

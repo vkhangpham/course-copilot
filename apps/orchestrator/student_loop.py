@@ -98,12 +98,16 @@ class StudentLoopRunner:
 
     def _should_continue(self, rubric_results: Dict[str, Any], quiz_results: Dict[str, Any]) -> MutationReason | None:
         overall_score = float(rubric_results.get("overall_score", 0.0) or 0.0)
-        rubric_pass = overall_score >= self.config.rubric_threshold
+        rubric_entries = rubric_results.get("rubrics", []) or []
         rubric_failures = [
             entry.get("name", "")
-            for entry in rubric_results.get("rubrics", [])
+            for entry in rubric_entries
             if not entry.get("passed")
         ]
+        # Treat the rubric check as satisfied only if the aggregate score clears
+        # the configured threshold and every rubric entry passes individually.
+        aggregate_pass = overall_score >= self.config.rubric_threshold
+        rubric_pass = aggregate_pass and not rubric_failures
 
         quiz_pass_rate = float(quiz_results.get("pass_rate", 0.0) or 0.0)
         quiz_pass = quiz_pass_rate >= self.config.quiz_threshold

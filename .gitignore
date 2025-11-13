@@ -20,6 +20,10 @@ coverage.xml
 
 # Node/JS (Open Notebook frontend, etc.)
 node_modules/
+frontend/node_modules/
+frontend/.next/
+frontend/.turbo/
+frontend/dist/
 
 # Config & local env (user-managed)
 .env

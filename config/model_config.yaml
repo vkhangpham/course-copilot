@@ -1,21 +1,35 @@
-models:
-  teacher:
-    provider: openai
-    model: gpt-4.1
-    temperature: 0.2
-  ta:
-    provider: openai
-    model: gpt-4o-mini
-    temperature: 0.1
-  students:
-    provider: openai
-    model: gpt-4o-mini
-    temperature: 0.0
+# Sample DSPy/OpenAI configuration used by the CourseGen pipeline.
+#
+# Each role (teacher, TA, student) can override provider/model/temperature,
+# plus optional env variable names for API keys or custom API bases. Any extra
+# fields are forwarded directly to dspy.OpenAI.
+
+teacher:
+  provider: openai
+  model: gpt-4.1
+  temperature: 0.2
+  max_tokens: 2048
+  api_key_env: OPENAI_API_KEY_TEACHER
+  api_base_env: OPENAI_API_BASE_TEACHER
+
+ta:
+  provider: openai
+  model: gpt-4o-mini
+  temperature: 0.15
+  max_tokens: 1536
+  api_key_env: OPENAI_API_KEY_TA
+
+student:
+  provider: openai
+  model: gpt-4o-mini
+  temperature: 0.05
+  max_tokens: 1200
+
+default_temperature: 0.2
+default_max_tokens: 2048
+
+# Optional extras for future workstreams (not consumed yet but documented in PLAN):
 codeact:
   max_iters: 5
   max_tokens: 2000
   timeout_seconds: 30
-ablation_defaults:
-  disable_recursion: false
-  disable_students: false
-  disable_world_model: false

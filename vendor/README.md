@@ -4,8 +4,8 @@ This project expects two git submodules to provide the reference implementations
 
 | Path | Upstream | Purpose |
 | ---- | -------- | ------- |
-| `vendor/rlm` | https://github.com/vkhangpham/open-notebook | Minimal Recursive Language Model (RLM) REPL used by the teacher agent |
-| `vendor/open-notebook` | https://github.com/vkhangpham/rlm | NotebookLM-style publishing surface |
+| `vendor/rlm` | https://github.com/vkhangpham/rlm | Minimal Recursive Language Model (RLM) REPL used by the teacher agent |
+| `vendor/open-notebook` | https://github.com/vkhangpham/open-notebook | NotebookLM-style publishing surface |
 
 Initialize or update them with:
 
@@ -13,4 +13,4 @@ Initialize or update them with:
 git submodule update --init --recursive vendor/rlm vendor/open-notebook
 ```
 
-The unusual mapping (RLM code hosted in `open-notebook`, Open Notebook code hosted in `rlm`) mirrors the user-provided forks. Update the table above if those forks change.
+These URLs now align with the canonical forks: `vendor/rlm` points at the RLM repo, and `vendor/open-notebook` points at the Open Notebook repo. Update the table above if either fork changes.

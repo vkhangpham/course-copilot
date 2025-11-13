@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, List, Optional
 
@@ -12,8 +13,26 @@ from rich.table import Table
 
 from world_model.storage import WorldModelStore
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_STORE = (REPO_ROOT / "outputs" / "world_model" / "state.sqlite").resolve()
+ENV_REPO_ROOT = "COURSEGEN_REPO_ROOT"
+STORE_ENV_VAR = "WORLD_MODEL_STORE"
+
+
+def _resolve_repo_root() -> Path:
+    override = os.environ.get(ENV_REPO_ROOT)
+    if override:
+        return Path(override).expanduser().resolve()
+    return Path(__file__).resolve().parents[1]
+
+
+def _resolve_default_store(repo_root: Path) -> Path:
+    env_store = os.environ.get(STORE_ENV_VAR)
+    if env_store:
+        return Path(env_store).expanduser().resolve()
+    return (repo_root / "outputs" / "world_model" / "state.sqlite").resolve()
+
+
+REPO_ROOT = _resolve_repo_root()
+DEFAULT_STORE = _resolve_default_store(REPO_ROOT)
 
 app = typer.Typer(help="Inspect concepts, timeline events, and claims in the world model.")
 console = Console()

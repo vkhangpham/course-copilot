@@ -47,14 +47,10 @@ class OpenNotebookClient:
             "content": content_md,
             "citations": citations,
         }
-        headers = {}
-        if self._config.api_key:
-            headers["Authorization"] = f"Bearer {self._config.api_key}"
-
         response = self._client.post(
             f"/api/notebooks/{notebook_id}/sections",
             json=payload,
-            headers=headers or None,
+            headers=self._build_headers(),
         )
         response.raise_for_status()
         try:
@@ -62,9 +58,44 @@ class OpenNotebookClient:
         except ValueError as exc:  # pragma: no cover - defensive
             raise RuntimeError("Open Notebook API returned non-JSON payload") from exc
 
+    def ensure_notebook(
+        self,
+        notebook_id: str,
+        *,
+        description: str | None = None,
+    ) -> Dict[str, Any]:
+        """Create the target notebook if it does not exist."""
+
+        payload: Dict[str, Any] = {"name": notebook_id}
+        if description:
+            payload["description"] = description
+
+        response = self._client.post(
+            "/api/notebooks",
+            json=payload,
+            headers=self._build_headers(),
+        )
+        if response.status_code == 409:
+            return {"status": "exists", "notebook": notebook_id}
+        response.raise_for_status()
+        if response.status_code == 204 or not response.content:
+            return {"status": "ok", "notebook": notebook_id}
+        try:
+            data = response.json()
+        except ValueError as exc:  # pragma: no cover - defensive
+            raise RuntimeError("Open Notebook API returned non-JSON payload") from exc
+        if isinstance(data, dict):
+            data.setdefault("notebook", notebook_id)
+        return data
+
     def close(self) -> None:
         if getattr(self, "_owns_client", False):
             self._client.close()
+
+    def _build_headers(self) -> Dict[str, str] | None:
+        if not self._config.api_key:
+            return None
+        return {"Authorization": f"Bearer {self._config.api_key}"}
 
     def __enter__(self) -> "OpenNotebookClient":  # pragma: no cover - convenience
         return self

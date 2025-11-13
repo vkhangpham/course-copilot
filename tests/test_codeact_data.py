@@ -1,10 +1,21 @@
+import os
+import shutil
 from pathlib import Path
 
 import pytest
 
 from apps.codeact.tools.data import load_dataset_asset, run_sql_query
+from apps.codeact.tools_data import DataTools
 
 DATASET_DIR = Path("data/handcrafted/database_systems")
+
+
+def _seed_repo_root(tmp_path: Path) -> Path:
+    repo_root = tmp_path / "repo"
+    dataset_dir = repo_root / "data" / "handcrafted" / "database_systems"
+    dataset_dir.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(DATASET_DIR, dataset_dir, dirs_exist_ok=True)
+    return repo_root
 
 
 def test_load_dataset_asset_json() -> None:
@@ -71,3 +82,54 @@ def test_run_sql_query_exposes_graph_edges_table() -> None:
     )
     assert rows
     assert rows[0]["relation_type"]
+
+
+def test_data_tools_run_sql_matches_function(tmp_path: Path) -> None:
+    tools = DataTools(tmp_path, dataset_dir=DATASET_DIR)
+    rows = tools.run_sql("SELECT COUNT(*) AS cnt FROM papers")
+    assert rows and rows[0]["cnt"] >= 1
+
+
+def test_load_dataset_asset_honors_env_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    custom_dataset = tmp_path / "dataset"
+    shutil.copytree(DATASET_DIR, custom_dataset)
+    monkeypatch.setenv("COURSEGEN_DATASET_DIR", str(custom_dataset))
+    asset = load_dataset_asset("taxonomy.yaml")
+    assert isinstance(asset, dict)
+    assert "domains" in asset
+
+
+def test_run_sql_query_works_outside_repo_when_env_set(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    custom_dataset = tmp_path / "dataset"
+    shutil.copytree(DATASET_DIR, custom_dataset)
+    monkeypatch.setenv("COURSEGEN_DATASET_DIR", str(custom_dataset))
+    cwd_before = Path.cwd()
+    os.chdir(tmp_path)
+    try:
+        rows = run_sql_query("SELECT COUNT(*) AS cnt FROM authors")
+    finally:
+        os.chdir(cwd_before)
+    assert rows and rows[0]["cnt"] >= 1
+
+
+def test_load_dataset_asset_uses_repo_root_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo_root = _seed_repo_root(tmp_path)
+    monkeypatch.delenv("COURSEGEN_DATASET_DIR", raising=False)
+    monkeypatch.setenv("COURSEGEN_REPO_ROOT", str(repo_root))
+    asset = load_dataset_asset("taxonomy.yaml")
+    assert isinstance(asset, dict)
+    assert asset.get("domains")
+
+
+def test_run_sql_query_uses_repo_root_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo_root = _seed_repo_root(tmp_path)
+    monkeypatch.delenv("COURSEGEN_DATASET_DIR", raising=False)
+    monkeypatch.setenv("COURSEGEN_REPO_ROOT", str(repo_root))
+    rows = run_sql_query("SELECT COUNT(*) AS cnt FROM authors")
+    assert rows and rows[0]["cnt"] >= 1

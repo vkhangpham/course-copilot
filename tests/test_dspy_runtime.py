@@ -41,6 +41,41 @@ class ConfigureDSPyModelsTests(unittest.TestCase):
             if previous is not None:
                 os.environ["OPENAI_API_KEY"] = previous
 
+    @mock.patch("ccopilot.core.dspy_runtime.dspy")
+    def test_role_specific_api_key_envs(self, mock_dspy) -> None:
+        mock_dspy.OpenAI = mock.Mock()
+        cfg = ModelConfig(
+            teacher={"provider": "openai", "model": "gpt-4o", "api_key_env": "OPENAI_API_KEY_TEACHER"},
+            ta={"provider": "openai", "model": "gpt-4o-mini", "api_key_env": "OPENAI_API_KEY_TA"},
+            student={"provider": "openai", "model": "gpt-4o-mini"},
+        )
+        with mock.patch.dict(
+            os.environ,
+            {
+                "OPENAI_API_KEY_TEACHER": "sk-teacher",
+                "OPENAI_API_KEY_TA": "sk-ta",
+                "OPENAI_API_KEY": "sk-student",
+            },
+            clear=True,
+        ):
+            configure_dspy_models(cfg)
+
+        teacher_kwargs = mock_dspy.OpenAI.call_args_list[0].kwargs
+        ta_kwargs = mock_dspy.OpenAI.call_args_list[1].kwargs
+        student_kwargs = mock_dspy.OpenAI.call_args_list[2].kwargs
+        self.assertEqual(teacher_kwargs["api_key"], "sk-teacher")
+        self.assertEqual(ta_kwargs["api_key"], "sk-ta")
+        self.assertEqual(student_kwargs["api_key"], "sk-student")
+
+    @mock.patch("ccopilot.core.dspy_runtime.dspy")
+    def test_openai_api_base_env_applied(self, mock_dspy) -> None:
+        mock_dspy.OpenAI = mock.Mock()
+        with mock.patch.dict(os.environ, {"OPENAI_API_KEY": "sk", "OPENAI_API_BASE": "https://proxy"}, clear=True):
+            configure_dspy_models(self.model_cfg)
+
+        for call in mock_dspy.OpenAI.call_args_list:
+            self.assertEqual(call.kwargs.get("api_base"), "https://proxy")
+
 
 if __name__ == "__main__":
     unittest.main()

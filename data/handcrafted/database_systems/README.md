@@ -29,9 +29,9 @@ This directory contains the handcrafted symbolic world model used by the CourseG
    ```bash
    python scripts/ingest_handcrafted.py \
      data/handcrafted/database_systems \
-     world_model/state.sqlite \
+     outputs/world_model/state.sqlite \
      --jsonl outputs/world_model/snapshot.jsonl
-   wm-inspect concepts --store world_model/state.sqlite --topic transaction
+   wm-inspect concepts --store outputs/world_model/state.sqlite --topic transaction
    ```
 
 The validation step fails fast when IDs/citations drift, and the ingestion script then writes
