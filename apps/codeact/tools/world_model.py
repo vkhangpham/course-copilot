@@ -147,7 +147,7 @@ def link_concepts(
 def append_timeline_event(
     *,
     event_label: str,
-    related_concept: str,
+    related_concept: str | None = None,
     summary: str | None = None,
     event_year: int | None = None,
     citation: str | None = None,

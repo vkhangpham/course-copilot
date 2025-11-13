@@ -174,6 +174,21 @@ def test_append_timeline_event_tool_writes_row(tmp_path: Path) -> None:
     assert rows and rows[0][0] == "CodeAct milestone"
 
 
+def test_append_timeline_event_allows_missing_concept(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    event = append_timeline_event(
+        event_label="Course launch",
+        summary="Kickoff milestone",
+        store_path=store,
+    )
+    db = WorldModelStore(store)
+    rows = db.query(
+        "SELECT related_concept FROM observations WHERE id = ?",
+        (event["id"],),
+    )
+    assert rows and rows[0][0] is None
+
+
 def test_persist_outline_tool_records_artifact(tmp_path: Path) -> None:
     store = _build_store(tmp_path)
     outline = {"weeks": [{"week": 1, "title": "Intro"}]}

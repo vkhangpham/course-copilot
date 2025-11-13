@@ -321,16 +321,17 @@ class WorldModelAdapter:
         self,
         *,
         event_label: str,
-        related_concept: str,
+        related_concept: str | None = None,
         summary: str | None = None,
         event_year: int | None = None,
         citation: str | None = None,
     ) -> dict[str, Any]:
-        """Append a timeline event linked to a concept."""
+        """Append a timeline event (optionally) linked to a concept."""
 
         if not event_label:
             raise ValueError("event_label is required")
-        self._ensure_concepts_exist([related_concept])
+        if related_concept:
+            self._ensure_concepts_exist([related_concept])
         event_id = self.store.execute(
             "INSERT INTO observations (event_year, event_label, summary, related_concept, citation) "
             "VALUES (?, ?, ?, ?, ?)",
