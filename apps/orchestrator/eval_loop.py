@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List
@@ -13,6 +14,10 @@ try:  # pragma: no cover - fallback when executed as a script
     from .students import StudentGraderPool
 except ImportError:  # pragma: no cover
     from apps.orchestrator.students import StudentGraderPool
+
+
+ENV_REPO_ROOT = "COURSEGEN_REPO_ROOT"
+_MODULE_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 app = typer.Typer(help="Run graders against generated course artifacts.")
@@ -26,14 +31,36 @@ def _normalize_sources(sources: List[str]) -> List[str]:
     return [source.strip() for source in sources if source.strip()]
 
 
+def _resolve_repo_root(explicit: Path | None = None) -> Path:
+    if explicit is not None:
+        return explicit.expanduser().resolve()
+    env_root = os.environ.get(ENV_REPO_ROOT)
+    if env_root:
+        return Path(env_root).expanduser().resolve()
+    return _MODULE_REPO_ROOT
+
+
 @app.command()
 def run(
-    artifacts_dir: Path = typer.Option(Path("outputs"), help="Directory containing generated artifacts."),
+    repo_root: Path | None = typer.Option(
+        None,
+        "--repo-root",
+        help="Repository root used to resolve default artifacts/rubrics (defaults to repo containing this module).",
+    ),
+    artifacts_dir: Path | None = typer.Option(
+        None,
+        "--artifacts-dir",
+        help="Directory containing generated artifacts (defaults to <repo-root>/outputs).",
+    ),
     lectures_dir: Path = typer.Option(
         Path("lectures"),
-        help="Path to lecture markdown files. Relative paths are resolved within --artifacts-dir.",
+        help="Path to lecture markdown files. Relative paths are resolved within the artifacts directory.",
     ),
-    rubric: Path = typer.Option(Path("evals/rubrics.yaml"), help="Rubric config file."),
+    rubric: Path | None = typer.Option(
+        None,
+        "--rubric",
+        help="Rubric config file (defaults to <repo-root>/evals/rubrics.yaml).",
+    ),
     output_dir: Path | None = typer.Option(
         None,
         help="Directory where evaluation JSONL results should be written (defaults to <artifacts>/evaluations).",
@@ -53,9 +80,11 @@ def run(
 ) -> None:
     """Evaluate generated lectures with the lightweight student grader."""
 
-    artifacts_dir = artifacts_dir.expanduser().resolve()
+    repo_root = _resolve_repo_root(repo_root)
+    os.environ[ENV_REPO_ROOT] = str(repo_root)
+    artifacts_dir = (artifacts_dir or (repo_root / "outputs")).expanduser().resolve()
     lectures_dir = _resolve(artifacts_dir, lectures_dir)
-    rubric = rubric.expanduser().resolve()
+    rubric = (rubric or (repo_root / "evals" / "rubrics.yaml")).expanduser().resolve()
     output_dir = (output_dir.expanduser().resolve() if output_dir else artifacts_dir / "evaluations")
     output_dir.mkdir(parents=True, exist_ok=True)
 

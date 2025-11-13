@@ -1,70 +1,57 @@
+from __future__ import annotations
+
+import os
 from pathlib import Path
 
 from typer.testing import CliRunner
 
-from apps.orchestrator.eval_loop import app
+from apps.orchestrator import eval_loop
 
 
-runner = CliRunner()
+def _seed_repo(tmp_path: Path) -> Path:
+    repo = tmp_path / "repo"
+    lectures_dir = repo / "outputs" / "lectures"
+    lectures_dir.mkdir(parents=True, exist_ok=True)
+    (lectures_dir / "demo.md").write_text("# Demo\n\nThis lecture mentions demo coverage.", encoding="utf-8")
 
-
-def _seed_artifacts(base: Path) -> tuple[Path, Path, Path]:
-    artifacts = base / "outputs"
-    lectures = artifacts / "lectures"
-    evaluations = artifacts / "evaluations"
-    lectures.mkdir(parents=True)
-    evaluations.mkdir(parents=True)
-
-    lecture_path = lectures / "module.md"
-    lecture_path.write_text(
-        "# Module\n\nThe relational model underpins transactions and recovery logs.",
-        encoding="utf-8",
-    )
-
-    rubric_path = base / "rubric.yaml"
-    rubric_path.write_text(
-        """
+    evals_dir = repo / "evals"
+    evals_dir.mkdir(parents=True, exist_ok=True)
+    rubrics_yaml = """
 coverage:
-  description: "simple"
-  pass_threshold: 0.0
+  description: Coverage
   checklist:
-    - "mentions relational"
-        """.strip()
-        + "\n",
-        encoding="utf-8",
-    )
-
-    return artifacts, lectures, rubric_path
+    - demo
+"""
+    (evals_dir / "rubrics.yaml").write_text(rubrics_yaml.strip(), encoding="utf-8")
+    return repo
 
 
-def test_eval_loop_quiet_flag(tmp_path):
-    artifacts_dir, lectures_dir, rubric = _seed_artifacts(tmp_path)
-
-    result = runner.invoke(
-        app,
-        [
-            "--artifacts-dir",
-            str(artifacts_dir),
-            "--lectures-dir",
-            str(lectures_dir.relative_to(artifacts_dir)),
-            "--rubric",
-            str(rubric),
-        ],
-    )
+def test_eval_loop_defaults_use_repo_root(monkeypatch, tmp_path: Path) -> None:
+    repo = _seed_repo(tmp_path)
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        result = runner.invoke(eval_loop.app, ["--repo-root", str(repo), "--quiet"])
     assert result.exit_code == 0
-    assert "Evaluated 1 artifact" in result.stdout
+    eval_dir = repo / "outputs" / "evaluations"
+    assert any(eval_dir.glob("eval-*.jsonl"))
 
-    quiet_result = runner.invoke(
-        app,
-        [
-            "--artifacts-dir",
-            str(artifacts_dir),
-            "--lectures-dir",
-            str(lectures_dir.relative_to(artifacts_dir)),
-            "--rubric",
-            str(rubric),
-            "--quiet",
-        ],
-    )
-    assert quiet_result.exit_code == 0
-    assert quiet_result.stdout.strip() == ""
+
+def test_eval_loop_honors_repo_root_env(monkeypatch, tmp_path: Path) -> None:
+    repo = _seed_repo(tmp_path)
+    monkeypatch.setenv("COURSEGEN_REPO_ROOT", str(repo))
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        result = runner.invoke(eval_loop.app, ["--quiet"])
+    assert result.exit_code == 0
+
+
+def test_eval_loop_overrides_existing_repo_root_env(monkeypatch, tmp_path: Path) -> None:
+    repo = _seed_repo(tmp_path)
+    stale_repo = tmp_path / "stale"
+    stale_repo.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("COURSEGEN_REPO_ROOT", str(stale_repo))
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        result = runner.invoke(eval_loop.app, ["--repo-root", str(repo), "--quiet"])
+    assert result.exit_code == 0
+    assert os.environ["COURSEGEN_REPO_ROOT"] == str(repo.resolve())
