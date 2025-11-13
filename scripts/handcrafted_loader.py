@@ -137,11 +137,14 @@ def validate_dataset(dataset: HandcraftedDataset) -> tuple[list[str], list[str]]
 
     # Quiz bank references
     for quiz in dataset.quiz_bank:
-        quiz_id = quiz.get("id")
-        for concept in quiz.get("concept_ids", []):
+        quiz_id = quiz.get("id") or "quiz"
+        objectives = quiz.get("learning_objectives")
+        if not objectives:
+            objectives = quiz.get("concept_ids", [])
+        for concept in objectives or []:
             if concept not in concept_ids:
                 errors.append(f"Quiz {quiz_id} references unknown concept {concept}")
-        for paper in quiz.get("reference_papers", []):
+        for paper in quiz.get("reference_papers", []) or []:
             if paper not in paper_ids:
                 warnings.append(f"Quiz {quiz_id} references unknown paper {paper}")
 
