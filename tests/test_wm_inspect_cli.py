@@ -109,3 +109,4 @@ def test_summary_command_outputs_counts(tmp_path: Path) -> None:
     payload = json.loads(result.stdout)
     assert payload["counts"]["concepts"] > 0
     assert payload["artifacts_by_type"]
+    assert payload["artifact_details"]["quiz_bank"]["questions"] > 0

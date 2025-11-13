@@ -134,6 +134,9 @@ def test_query_summary_returns_counts(tmp_path: Path) -> None:
     summary = query_world_model.query_summary(store)
     assert summary["counts"]["concepts"] > 0
     assert summary["artifacts_by_type"]
+    details = summary["artifact_details"]
+    assert details["quiz_bank"]["questions"] > 0
+    assert details["course_outline"]["weeks"] > 0
 
 
 runner = CliRunner()
@@ -145,6 +148,7 @@ def test_summary_cli_json(tmp_path: Path) -> None:
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["counts"]["concepts"] > 0
+    assert payload["artifact_details"]["quiz_bank"]["questions"] > 0
 
 
 def test_query_summary_reports_counts(tmp_path: Path) -> None:

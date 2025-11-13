@@ -247,6 +247,29 @@ def _count_rows(store: WorldModelStore, sql: str, params: tuple | None = None) -
     return int(value) if value is not None else 0
 
 
+def _summarize_artifact_metadata(rows: List[tuple]) -> Dict[str, Dict[str, Any]]:
+    details: Dict[str, Dict[str, Any]] = {}
+    for row in rows:
+        if not row:
+            continue
+        artifact_type = str(row[0]) if row[0] is not None else "unknown"
+        metadata = _safe_json(row[1])
+        entry: Dict[str, Any] = {}
+        if artifact_type == "quiz_bank" and isinstance(metadata, dict):
+            count = metadata.get("count")
+            if count is None and isinstance(metadata.get("items"), list):
+                count = len(metadata["items"])
+            if count is not None:
+                entry["questions"] = int(count)
+        elif artifact_type == "course_outline" and isinstance(metadata, dict):
+            weeks = metadata.get("weeks")
+            if isinstance(weeks, list):
+                entry["weeks"] = len(weeks)
+        if entry:
+            details[artifact_type] = entry
+    return details
+
+
 def query_summary(store_path: Path | None = None) -> Dict[str, Any]:
     store = _resolve_store(store_path)
 
@@ -268,6 +291,8 @@ def query_summary(store_path: Path | None = None) -> Dict[str, Any]:
     artifact_counts = {
         str(row[0]): int(row[1]) for row in artifact_rows if row and row[0] is not None
     }
+    artifact_detail_rows = store.query("SELECT artifact_type, metadata FROM artifacts")
+    artifact_details = _summarize_artifact_metadata(artifact_detail_rows)
     counts["artifacts"] = sum(artifact_counts.values())
 
     last_artifact_row = store.query("SELECT MAX(created_at) FROM artifacts")
@@ -278,6 +303,7 @@ def query_summary(store_path: Path | None = None) -> Dict[str, Any]:
         "exists": Path(store.db_path).exists(),
         "counts": counts,
         "artifacts_by_type": artifact_counts,
+        "artifact_details": artifact_details,
         "last_artifact_at": last_artifact_at,
     }
 
@@ -308,6 +334,14 @@ def _print_summary(summary: Dict[str, Any]) -> None:
         for artifact_type, count in artifact_counts.items():
             artifact_table.add_row(artifact_type, str(count))
         console.print(artifact_table)
+
+    artifact_details = summary.get("artifact_details", {})
+    if artifact_details:
+        detail_table = Table("Artifact", "Details")
+        for artifact_type, info in artifact_details.items():
+            detail_parts = [f"{key}={value}" for key, value in info.items()]
+            detail_table.add_row(artifact_type, ", ".join(detail_parts))
+        console.print(detail_table)
 
     last_artifact = summary.get("last_artifact_at")
     if last_artifact:
