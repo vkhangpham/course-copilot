@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import os
+from pathlib import Path
 from typing import Iterator
 
 import pytest
@@ -11,6 +11,11 @@ from fastapi.testclient import TestClient
 from fastapi import HTTPException
 
 from apps.portal_backend.main import app, get_settings, PortalSettings
+
+
+def _first_manifest_path(outputs_dir: Path) -> Path:
+    artifacts_dir = outputs_dir / "artifacts"
+    return next(artifacts_dir.glob("run-*-manifest.json"))
 
 
 @pytest.fixture()
@@ -509,6 +514,35 @@ def test_run_detail_falls_back_to_response_id(portal_settings: PortalSettings) -
     assert export["section_id"] == "note-xyz"
     expected_relative = _relative_from_manifest(_first_actual_export(manifest), portal_settings)
     assert export["path"] == expected_relative
+
+
+def test_relative_manifest_paths_use_repo_root_for_external_files(
+    portal_settings: PortalSettings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write_run(portal_settings.outputs_dir, include_notebook=False)
+    repo_config_dir = portal_settings.repo_root / "config"
+    repo_config_dir.mkdir(parents=True, exist_ok=True)
+    repo_config = repo_config_dir / "scientific_config.yaml"
+    repo_config.write_text("enabled: false\n", encoding="utf-8")
+    external_science = repo_config_dir / "external-science.json"
+    external_science.write_text("{}", encoding="utf-8")
+
+    manifest_path = _first_manifest_path(portal_settings.outputs_dir)
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    payload["science_config_path"] = "../config/scientific_config.yaml"
+    payload["scientific_metrics_artifact"] = "../config/external-science.json"
+    manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    external_runner = portal_settings.repo_root.parent / "external-runner-xbpv"
+    external_runner.mkdir(parents=True, exist_ok=True)
+    monkeypatch.chdir(external_runner)
+
+    client = TestClient(app)
+    runs_resp = client.get("/runs")
+    assert runs_resp.status_code == 200
+    run_item = runs_resp.json()[0]
+    assert run_item["science_config_path"] == "config/scientific_config.yaml"
+    assert run_item["scientific_metrics_artifact"] == "config/external-science.json"
 
 
 def test_resolve_path_blocks_outside_outputs(tmp_path: Path) -> None:
