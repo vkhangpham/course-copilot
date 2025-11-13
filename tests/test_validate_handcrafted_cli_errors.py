@@ -78,11 +78,12 @@ def _build_dataset(
 
     quiz_refs = ["missing-paper"] if quiz_warning else ["paper_a"]
     objectives = ["unknown_concept"] if bad_quiz_objective else ["concept_a"]
+    legacy_concepts = ["concept_a"]
     quiz_bank = [
         {
             "id": "quiz_a",
             "learning_objectives": objectives,
-            "concept_ids": objectives,
+            "concept_ids": legacy_concepts,
             "reference_papers": quiz_refs,
         }
     ]
