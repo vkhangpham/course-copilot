@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 import typer
 from rich.console import Console
@@ -110,7 +110,7 @@ def query_claims(
     limit: int = 25,
 ) -> List[dict]:
     store = _resolve_store(store_path)
-    sql = "SELECT subject_id, body, citation, created_at FROM claims"
+    sql = "SELECT subject_id, body, citation, confidence, asserted_at, created_at FROM claims"
     params: List[Any] = []
     if concept_id:
         sql += " WHERE subject_id = ?"
@@ -123,7 +123,9 @@ def query_claims(
             "concept": row[0],
             "body": row[1],
             "citation": row[2],
-            "created_at": row[3],
+            "confidence": row[3],
+            "asserted_at": row[4],
+            "created_at": row[5],
         }
         for row in rows
     ]
@@ -237,6 +239,100 @@ def _print_table(headers: list[str], rows: List[dict], keys: list[str]) -> None:
     console.print(table)
 
 
+def _count_rows(store: WorldModelStore, sql: str, params: tuple | None = None) -> int:
+    rows = store.query(sql, params or tuple())
+    if not rows:
+        return 0
+    value = rows[0][0]
+    return int(value) if value is not None else 0
+
+
+def query_summary(store_path: Path | None = None) -> Dict[str, Any]:
+    store = _resolve_store(store_path)
+
+    counts = {
+        "concepts": _count_rows(store, "SELECT COUNT(*) FROM concepts"),
+        "relationships": _count_rows(store, "SELECT COUNT(*) FROM relationships"),
+        "authors": _count_rows(store, "SELECT COUNT(*) FROM authors"),
+        "papers": _count_rows(store, "SELECT COUNT(*) FROM papers"),
+        "timeline_events": _count_rows(store, "SELECT COUNT(*) FROM observations"),
+        "claims": _count_rows(store, "SELECT COUNT(*) FROM claims"),
+        "definitions": _count_rows(
+            store, "SELECT COUNT(*) FROM claims WHERE created_by = ?", ("definition",)
+        ),
+    }
+
+    artifact_rows = store.query(
+        "SELECT artifact_type, COUNT(*) FROM artifacts GROUP BY artifact_type ORDER BY artifact_type"
+    )
+    artifact_counts = {
+        str(row[0]): int(row[1]) for row in artifact_rows if row and row[0] is not None
+    }
+    counts["artifacts"] = sum(artifact_counts.values())
+
+    last_artifact_row = store.query("SELECT MAX(created_at) FROM artifacts")
+    last_artifact_at = last_artifact_row[0][0] if last_artifact_row else None
+
+    return {
+        "store": str(store.db_path),
+        "exists": Path(store.db_path).exists(),
+        "counts": counts,
+        "artifacts_by_type": artifact_counts,
+        "last_artifact_at": last_artifact_at,
+    }
+
+
+def _print_summary(summary: Dict[str, Any]) -> None:
+    console.print(f"[bold]World model store:[/bold] {summary.get('store')}")
+    counts = summary.get("counts", {})
+    table = Table("Metric", "Count")
+    for label, key in (
+        ("Concepts", "concepts"),
+        ("Relationships", "relationships"),
+        ("Authors", "authors"),
+        ("Papers", "papers"),
+        ("Timeline events", "timeline_events"),
+        ("Claims", "claims"),
+        ("Definitions", "definitions"),
+        ("Artifacts", "artifacts"),
+    ):
+        value = counts.get(key)
+        if value is None:
+            continue
+        table.add_row(label, str(value))
+    console.print(table)
+
+    artifact_counts = summary.get("artifacts_by_type", {})
+    if artifact_counts:
+        artifact_table = Table("Artifact type", "Count")
+        for artifact_type, count in artifact_counts.items():
+            artifact_table.add_row(artifact_type, str(count))
+        console.print(artifact_table)
+
+    last_artifact = summary.get("last_artifact_at")
+    if last_artifact:
+        console.print(f"[dim]Last artifact created at {last_artifact}[/dim]")
+
+
+@app.command()
+def summary(
+    store: Path | None = typer.Option(
+        None,
+        "--store",
+        show_default=False,
+        help="SQLite world model path (defaults to WORLD_MODEL_STORE or repo outputs).",
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON instead of a table."),
+) -> None:
+    """Show aggregate counts for the current world-model snapshot."""
+
+    info = query_summary(store)
+    if as_json:
+        typer.echo(json.dumps(info, indent=2, ensure_ascii=False))
+        return
+    _print_summary(info)
+
+
 def _extract_excerpt(raw: object) -> str | None:
     if not raw:
         return None
@@ -262,6 +358,25 @@ def _safe_json(raw: object) -> dict | list | str | None:
         except json.JSONDecodeError:  # pragma: no cover - defensive
             return raw
     return raw
+
+
+@app.command()
+def summary(
+    store: Path | None = typer.Option(
+        None,
+        "--store",
+        show_default=False,
+        help=f"SQLite world model path (defaults to WORLD_MODEL_STORE or {DEFAULT_STORE}).",
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON instead of a table."),
+) -> None:
+    """Summarize the snapshot with row counts and artifact breakdown."""
+
+    payload = query_summary(store)
+    if as_json:
+        typer.echo(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
+    _print_summary(payload)
 
 
 @app.command()

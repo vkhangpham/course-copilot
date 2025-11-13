@@ -1,7 +1,10 @@
 import importlib
 from pathlib import Path
 
+import json
+
 import pytest
+from typer.testing import CliRunner
 
 from scripts.ingest_handcrafted import ingest
 import scripts.query_world_model as query_world_model
@@ -124,3 +127,31 @@ def test_query_artifacts_filters_by_type(tmp_path: Path) -> None:
     rows = query_world_model.query_artifacts(store, artifact_type="quiz_bank")
     assert rows
     assert rows[0]["type"] == "quiz_bank"
+
+
+def test_query_summary_returns_counts(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    summary = query_world_model.query_summary(store)
+    assert summary["counts"]["concepts"] > 0
+    assert summary["artifacts_by_type"]
+
+
+runner = CliRunner()
+
+
+def test_summary_cli_json(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    result = runner.invoke(query_world_model.app, ["summary", "--store", str(store), "--json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["counts"]["concepts"] > 0
+
+
+def test_query_summary_reports_counts(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    summary = query_world_model.query_summary(store)
+    counts = summary["counts"]
+    assert counts["concepts"] > 0
+    assert counts["artifacts"] >= 0
+    assert summary["artifacts_by_type"]
+    assert Path(summary["store"]).exists()

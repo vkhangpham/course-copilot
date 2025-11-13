@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -99,3 +100,12 @@ def test_authors_command_filters_by_keyword(tmp_path: Path) -> None:
     output = result.stdout.lower()
     assert "stonebraker" in output
     assert "uc berkeley" in output
+
+
+def test_summary_command_outputs_counts(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    result = RUNNER.invoke(wm_cli.app, ["summary", "--store", str(store), "--json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["counts"]["concepts"] > 0
+    assert payload["artifacts_by_type"]
