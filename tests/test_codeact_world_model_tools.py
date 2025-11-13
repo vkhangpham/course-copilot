@@ -26,6 +26,7 @@ DATASET = Path("data/handcrafted/database_systems")
 
 def test_world_model_default_store_is_repo_relative(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("COURSEGEN_REPO_ROOT", raising=False)
+    monkeypatch.delenv("WORLD_MODEL_STORE", raising=False)
     module = importlib.reload(codeact_world_model)
     expected = (Path(__file__).resolve().parents[1] / "outputs" / "world_model" / "state.sqlite").resolve()
     assert module.DEFAULT_STORE == expected
@@ -35,12 +36,14 @@ def test_world_model_store_honors_repo_override(monkeypatch: pytest.MonkeyPatch,
     override_root = (tmp_path / "repo_override").resolve()
     override_root.mkdir()
     monkeypatch.setenv("COURSEGEN_REPO_ROOT", str(override_root))
+    monkeypatch.delenv("WORLD_MODEL_STORE", raising=False)
     module = importlib.reload(codeact_world_model)
     try:
         expected = (override_root / "outputs" / "world_model" / "state.sqlite").resolve()
         assert module.DEFAULT_STORE == expected
     finally:
         monkeypatch.delenv("COURSEGEN_REPO_ROOT", raising=False)
+        monkeypatch.delenv("WORLD_MODEL_STORE", raising=False)
         importlib.reload(codeact_world_model)
 
 
