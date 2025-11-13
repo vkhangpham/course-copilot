@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import os
 import re
@@ -8,7 +9,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, List
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
@@ -67,6 +68,7 @@ class RunListItem(BaseModel):
     has_eval_report: bool
     overall_score: float | None = None
     notebook_export_summary: Dict[str, Any] | None = None
+    highlight_source: str | None = None
 
 
 class TraceFile(BaseModel):
@@ -92,6 +94,8 @@ class NotebookExport(BaseModel):
     note_id: str | None = None
     section_id: str | None = None
     path: str | None = None
+    reason: str | None = None
+    error: str | None = None
 
 
 class EvaluationAttempt(BaseModel):
@@ -137,19 +141,23 @@ app.add_middleware(
 
 @app.get("/health", response_model=HealthResponse)
 def health(settings: PortalSettings = Depends(get_settings)) -> HealthResponse:
-    runs = _list_runs(settings)
-    latest = runs[0].run_id if runs else None
+    manifest_paths = _iter_manifest_paths(settings)
+    latest = _extract_run_id(manifest_paths[0]) if manifest_paths else None
     return HealthResponse(status="ok", latest_run_id=latest)
 
 
 @app.get("/runs", response_model=List[RunListItem])
-def list_runs(settings: PortalSettings = Depends(get_settings)) -> List[RunListItem]:
-    return _list_runs(settings)
+def list_runs(
+    limit: int = Query(50, ge=1, le=500, description="Maximum runs to return"),
+    offset: int = Query(0, ge=0, description="Number of runs to skip before listing"),
+    settings: PortalSettings = Depends(get_settings),
+) -> List[RunListItem]:
+    return _list_runs(settings, limit=limit, offset=offset)
 
 
 @app.get("/runs/latest", response_model=RunDetail)
 def get_latest_run(settings: PortalSettings = Depends(get_settings)) -> RunDetail:
-    runs = _list_runs(settings)
+    runs = _list_runs(settings, limit=1)
     if not runs:
         raise HTTPException(status_code=404, detail="No runs captured yet")
     latest = runs[0]
@@ -168,14 +176,19 @@ def get_run_detail(run_id: str, settings: PortalSettings = Depends(get_settings)
     evaluation_attempts = _parse_evaluation_attempts(manifest)
     notebook_slug = _infer_notebook_slug(manifest, notebook_exports, settings)
 
+    highlight_source = _derive_highlight_source(manifest)
+    sanitized_manifest = _sanitize_manifest_paths(manifest, settings)
+    if highlight_source and not sanitized_manifest.get("highlight_source"):
+        sanitized_manifest["highlight_source"] = highlight_source
+
     return RunDetail(
         run_id=run_id,
-        manifest_path=str(manifest_path),
+        manifest_path=_relative_to_outputs(settings, manifest_path),
         created_at=_timestamp_for(manifest_path),
-        manifest=manifest,
+        manifest=sanitized_manifest,
         dataset_summary=manifest.get("dataset_summary"),
         ablations=manifest.get("ablations"),
-        highlight_source=manifest.get("highlight_source"),
+        highlight_source=highlight_source,
         evaluation=manifest.get("evaluation"),
         course_plan_excerpt=_read_excerpt(course_plan_path),
         lecture_excerpt=_read_excerpt(lecture_path),
@@ -223,16 +236,22 @@ def get_trace_file(run_id: str, trace_name: str, settings: PortalSettings = Depe
     trace_files = collect_trace_files(run_id, manifest, settings)
     for trace in trace_files:
         if trace.name == trace_name:
-            trace_path = Path(trace.path)
-            if not trace_path.exists():
+            trace_path = settings.resolve_path(trace.path)
+            if not trace_path or not trace_path.exists():
                 raise HTTPException(status_code=404, detail=f"Trace file missing at {trace.path}")
             return trace_path.read_text(encoding="utf-8")
     raise HTTPException(status_code=404, detail=f"Trace '{trace_name}' not found for run {run_id}")
 
 
-def _list_runs(settings: PortalSettings) -> List[RunListItem]:
+def _list_runs(settings: PortalSettings, *, limit: int | None = None, offset: int = 0) -> List[RunListItem]:
     items: List[RunListItem] = []
-    for manifest_path in _iter_manifest_paths(settings):
+    manifest_paths = _iter_manifest_paths(settings)
+    if offset:
+        manifest_paths = manifest_paths[offset:]
+    if limit is not None:
+        manifest_paths = manifest_paths[:limit]
+
+    for manifest_path in manifest_paths:
         try:
             manifest = _load_manifest(manifest_path)
         except ValueError:
@@ -243,16 +262,19 @@ def _list_runs(settings: PortalSettings) -> List[RunListItem]:
         eval_report = _safe_resolve(settings, manifest.get("eval_report"))
         evaluation = manifest.get("evaluation") or {}
         notebook_summary = manifest.get("notebook_export_summary")
+        highlight_source = _derive_highlight_source(manifest)
+
         items.append(
             RunListItem(
                 run_id=run_id,
-                manifest_path=str(manifest_path),
+                manifest_path=_relative_to_outputs(settings, manifest_path),
                 created_at=_timestamp_for(manifest_path),
                 has_course_plan=bool(course_plan and course_plan.exists()),
                 has_lecture=bool(lecture and lecture.exists()),
                 has_eval_report=bool(eval_report and eval_report.exists()),
                 overall_score=evaluation.get("overall_score"),
                 notebook_export_summary=notebook_summary if isinstance(notebook_summary, dict) else None,
+                highlight_source=highlight_source,
             )
         )
     return items
@@ -295,7 +317,7 @@ def _timestamp_for(path: Path) -> datetime:
 def collect_trace_files(run_id: str, manifest: Dict[str, Any], settings: PortalSettings) -> List[TraceFile]:
     """Aggregate available trace/provenance artifacts for a run."""
 
-    highlight_label = _highlight_label(manifest.get("highlight_source"))
+    highlight_label = _highlight_label(_derive_highlight_source(manifest))
     candidates = [
         ("provenance", "Provenance log", manifest.get("provenance")),
         ("evaluation", "Evaluation report", manifest.get("eval_report")),
@@ -311,7 +333,11 @@ def collect_trace_files(run_id: str, manifest: Dict[str, Any], settings: PortalS
     for name, label, raw_path in candidates:
         resolved = _safe_resolve(settings, raw_path)
         if resolved and resolved.exists():
-            seen[name] = TraceFile(name=name, label=label, path=str(resolved))
+            seen[name] = TraceFile(
+                name=name,
+                label=label,
+                path=_relative_to_outputs(settings, resolved),
+            )
 
     trace_dirs = [settings.outputs_dir / "traces", settings.outputs_dir / "logs"]
     for directory in trace_dirs:
@@ -322,9 +348,64 @@ def collect_trace_files(run_id: str, manifest: Dict[str, Any], settings: PortalS
                 continue
             slug = re.sub(r"[^a-zA-Z0-9_-]", "_", candidate.stem.lower())
             if slug not in seen:
-                seen[slug] = TraceFile(name=slug, label=candidate.name, path=str(candidate.resolve()))
+                seen[slug] = TraceFile(
+                    name=slug,
+                    label=candidate.name,
+                    path=_relative_to_outputs(settings, candidate.resolve()),
+                )
 
     return list(seen.values())
+
+
+def _sanitize_manifest_paths(manifest: Dict[str, Any], settings: PortalSettings) -> Dict[str, Any]:
+    sanitized = copy.deepcopy(manifest)
+    path_keys = [
+        "course_plan",
+        "lecture",
+        "eval_report",
+        "provenance",
+        "world_model_store",
+        "world_model_highlight_artifact",
+        "world_model_highlights_artifact",
+        "teacher_trace",
+        "highlights",
+    ]
+    for key in path_keys:
+        if key in sanitized:
+            sanitized[key] = _relative_manifest_path(settings, sanitized.get(key))
+
+    notebook_exports = sanitized.get("notebook_exports")
+    if isinstance(notebook_exports, list):
+        for entry in notebook_exports:
+            if isinstance(entry, dict) and entry.get("path"):
+                entry["path"] = _relative_manifest_path(settings, entry.get("path"))
+            response_payload = entry.get("response") if isinstance(entry.get("response"), dict) else None
+            if response_payload and response_payload.get("export_path"):
+                response_payload["export_path"] = _relative_manifest_path(
+                    settings,
+                    response_payload.get("export_path"),
+                )
+
+    export_summary = sanitized.get("notebook_export_summary")
+    if isinstance(export_summary, dict):
+        queued = export_summary.get("queued_exports")
+        if isinstance(queued, list):
+            export_summary["queued_exports"] = [
+                _relative_manifest_path(settings, item) if isinstance(item, str) else item
+                for item in queued
+            ]
+
+    return sanitized
+
+
+def _relative_manifest_path(settings: PortalSettings, raw: Any) -> str | None:
+    if not raw or not isinstance(raw, str):
+        return None if raw in (None, "") else raw
+    try:
+        resolved = settings.resolve_path(raw)
+    except HTTPException:
+        resolved = Path(raw)
+    return _relative_to_outputs(settings, resolved)
 
 
 def _highlight_label(source: Any) -> str:
@@ -353,6 +434,8 @@ def _parse_notebook_exports(manifest: Dict[str, Any], settings: PortalSettings) 
         response = entry.get("response") if isinstance(entry.get("response"), dict) else None
         citations = entry.get("citations") if isinstance(entry.get("citations"), list) else []
         safe_citations = [str(cite) for cite in citations if isinstance(cite, (str, int, float))]
+        if response and response.get("export_path"):
+            response["export_path"] = _relative_manifest_path(settings, response["export_path"])
         response_id = response.get("id") if response else None
         note_id = response.get("note_id") if response else None
         section_id = response.get("section_id") if response else None
@@ -376,6 +459,8 @@ def _parse_notebook_exports(manifest: Dict[str, Any], settings: PortalSettings) 
                 note_id=note_id,
                 section_id=section_id,
                 path=str(relative_path) if relative_path else None,
+                reason=response.get("reason") if response else None,
+                error=response.get("error") if response else None,
             )
         )
     return results
@@ -415,6 +500,34 @@ def _safe_str_list(value: Any) -> List[str]:
     if not isinstance(value, list):
         return []
     return [str(item) for item in value if isinstance(item, (str, int, float))]
+
+
+def _derive_highlight_source(manifest: Dict[str, Any]) -> str | None:
+    source = manifest.get("highlight_source")
+    if isinstance(source, str):
+        trimmed = source.strip()
+        if trimmed:
+            return trimmed
+
+    ablations = manifest.get("ablations") if isinstance(manifest.get("ablations"), dict) else None
+    use_world_model = None
+    if isinstance(ablations, dict):
+        use_world_model = ablations.get("use_world_model")
+        if use_world_model is False:
+            return "dataset"
+
+    store_exists = manifest.get("world_model_store_exists")
+    if isinstance(store_exists, bool):
+        if store_exists:
+            return "world_model"
+        # Snapshot missing -> we fell back to dataset highlights regardless of ablation metadata.
+        return "dataset"
+
+    wm_highlights = manifest.get("world_model_highlights")
+    if isinstance(wm_highlights, dict) and wm_highlights:
+        return "world_model"
+
+    return None
 
 
 def _parse_evaluation_attempts(manifest: Dict[str, Any]) -> List[EvaluationAttempt]:
@@ -466,6 +579,15 @@ def _safe_resolve(settings: PortalSettings, raw_path: str | None) -> Path | None
         return settings.resolve_path(raw_path)
     except HTTPException:
         return None
+
+
+def _relative_to_outputs(settings: PortalSettings, path: Path | None) -> str | None:
+    if not path:
+        return None
+    try:
+        return str(path.resolve().relative_to(settings.outputs_dir.resolve()))
+    except ValueError:
+        return path.name
 
 
 def _read_excerpt(path: Path | None, *, limit: int = 400) -> str | None:

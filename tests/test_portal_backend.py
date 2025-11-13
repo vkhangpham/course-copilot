@@ -32,6 +32,8 @@ def _write_run(
     *,
     include_notebook: bool = False,
     notebook_slug: str = "database-systems-poc",
+    highlight_source: str = "world_model",
+    world_model_store_exists: bool = True,
 ) -> dict:
     artifacts_dir = outputs_dir / "artifacts"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
@@ -87,7 +89,12 @@ def _write_run(
                 "title": "Course Plan",
                 "path": str(course_plan),
                 "citations": ["codd-1970"],
-                "response": {"status": "ok", "notebook": notebook_slug, "id": "note-1"},
+                "response": {
+                    "status": "ok",
+                    "notebook": notebook_slug,
+                    "id": "note-1",
+                    "export_path": str(outputs_dir / "notebook_exports" / "course-plan.json"),
+                },
             },
         ]
         notebook_summary = {
@@ -106,6 +113,7 @@ def _write_run(
         "lecture": str(lecture_path),
         "eval_report": str(eval_report_path),
         "provenance": str(provenance_path),
+        "world_model_store": str(outputs_dir / "world_model" / "state.sqlite"),
         "ablations": {"use_students": True, "use_world_model": True, "allow_recursion": True},
         "dataset_summary": {"concept_count": 30},
         "evaluation": {
@@ -123,7 +131,8 @@ def _write_run(
         "world_model_highlights": {"concepts": [{"id": "relational_model", "summary": "Foundations"}]},
         "world_model_highlight_artifact": str(artifacts_dir / f"run-{run_id}-highlights.json"),
         "teacher_trace": str(teacher_trace_path),
-        "highlight_source": "world_model",
+        "highlight_source": highlight_source,
+        "world_model_store_exists": world_model_store_exists,
     }
     if notebook_exports is not None:
         manifest["notebook_exports"] = notebook_exports
@@ -157,6 +166,17 @@ def test_health_without_runs(portal_settings: PortalSettings) -> None:
     assert data["latest_run_id"] is None
 
 
+def test_health_reports_latest_run_id(portal_settings: PortalSettings) -> None:
+    _write_run(portal_settings.outputs_dir, run_id="20250101-000000")
+    _write_run(portal_settings.outputs_dir, run_id="20250102-000000")
+
+    client = TestClient(app)
+    response = client.get("/health")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["latest_run_id"] == "20250102-000000"
+
+
 def test_list_runs_and_detail(portal_settings: PortalSettings) -> None:
     manifest = _write_run(portal_settings.outputs_dir, include_notebook=True)
     client = TestClient(app)
@@ -166,14 +186,21 @@ def test_list_runs_and_detail(portal_settings: PortalSettings) -> None:
     runs = runs_resp.json()
     assert len(runs) == 1
     run_id = runs[0]["run_id"]
+    expected_manifest_rel = "artifacts/run-20250101-000000-manifest.json"
     assert runs[0]["has_course_plan"] is True
     assert runs[0]["overall_score"] == pytest.approx(0.92)
     assert runs[0]["notebook_export_summary"]["success"] == 1
+    assert runs[0]["highlight_source"] == "world_model"
+    assert runs[0]["manifest_path"] == expected_manifest_rel
 
     detail_resp = client.get(f"/runs/{run_id}")
     assert detail_resp.status_code == 200
     detail = detail_resp.json()
     assert detail["manifest"]["dataset_summary"] == manifest["dataset_summary"]
+    assert detail["manifest_path"] == expected_manifest_rel
+    assert detail["manifest"]["course_plan"] == "course_plan.md"
+    assert detail["manifest"]["lecture"] == "lectures/module_01.md"
+    assert detail["manifest"].get("world_model_store") == "world_model/state.sqlite"
     assert "Course Plan" in detail["course_plan_excerpt"]
     assert detail["notebook_slug"] == "database-systems-poc"
     assert detail["highlight_source"] == "world_model"
@@ -184,6 +211,9 @@ def test_list_runs_and_detail(portal_settings: PortalSettings) -> None:
     assert first_export["note_id"] == "note-1"
     assert first_export["path"] == expected_relative
     assert all(entry["title"] != "notebook_preflight" for entry in detail["notebook_exports"])
+    manifest_exports = detail["manifest"].get("notebook_exports", [])
+    manifest_actual = next(entry for entry in manifest_exports if str(entry.get("kind", "")).lower() != "preflight")
+    assert manifest_actual["response"]["export_path"] == "notebook_exports/course-plan.json"
     assert detail["evaluation_attempts"][0]["iteration"] == 1
     assert detail["evaluation_attempts"][0]["overall_score"] == 0.5
     assert any(trace["name"] == "provenance" for trace in detail["trace_files"])
@@ -198,12 +228,34 @@ def test_list_runs_and_detail(portal_settings: PortalSettings) -> None:
     assert attempts[0]["quiz_pass_rate"] == pytest.approx(0.5)
     assert attempts[0]["failing_rubrics"] == ["coverage"]
 
+
+def test_runs_fallback_highlight_source_when_manifest_missing(portal_settings: PortalSettings) -> None:
+    run_id = "20250303-010101"
+    manifest = _write_run(portal_settings.outputs_dir, run_id=run_id)
+    artifacts_dir = portal_settings.outputs_dir / "artifacts"
+    manifest_path = artifacts_dir / f"run-{run_id}-manifest.json"
+    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    data.pop("highlight_source", None)
+    data.setdefault("ablations", {})["use_world_model"] = False
+    manifest_path.write_text(json.dumps(data), encoding="utf-8")
+
+    client = TestClient(app)
+    runs_resp = client.get("/runs")
+    assert runs_resp.status_code == 200
+    runs = runs_resp.json()
+    assert runs[0]["highlight_source"] == "dataset"
+
+    detail_resp = client.get(f"/runs/{run_id}")
+    assert detail_resp.status_code == 200
+    detail = detail_resp.json()
+    assert detail["highlight_source"] == "dataset"
+    assert detail["manifest"].get("highlight_source") == "dataset"
+
     trace_names = {trace["name"] for trace in detail["trace_files"]}
     assert "teacher_trace" in trace_names
     highlights_trace = next(trace for trace in detail["trace_files"] if trace["name"] == "highlights")
-    assert highlights_trace["label"] == "World-model highlights"
-
-    assert detail["manifest"].get("notebook_exports") is not None
+    assert highlights_trace["label"] == "Dataset highlights"
+    assert not highlights_trace["path"].startswith("/")
 
     trace_resp = client.get(f"/runs/{run_id}/traces/teacher_trace")
     assert trace_resp.status_code == 200
@@ -224,12 +276,58 @@ def test_dataset_highlight_source_updates_trace_label(portal_settings: PortalSet
     highlights_trace = next(trace for trace in detail["trace_files"] if trace["name"] == "highlights")
     assert highlights_trace["label"] == "Dataset highlights"
 
-    notebook_resp = client.get(f"/runs/{run_id}/notebook-exports")
-    assert notebook_resp.status_code == 200
-    notebook_entries = notebook_resp.json()
-    assert notebook_entries
-    assert notebook_entries[0]["note_id"] == "note-1"
-    assert all(entry["title"] != "notebook_preflight" for entry in notebook_entries)
+    runs_listing = client.get("/runs").json()
+    listing = {item["run_id"]: item for item in runs_listing}
+    assert listing[run_id]["highlight_source"] == "dataset"
+
+
+def test_portal_derives_dataset_highlight_from_missing_store(portal_settings: PortalSettings) -> None:
+    run_id = "20250104-000000"
+    _write_run(
+        portal_settings.outputs_dir,
+        run_id=run_id,
+        include_notebook=False,
+        world_model_store_exists=False,
+    )
+    manifest_path = portal_settings.outputs_dir / "artifacts" / f"run-{run_id}-manifest.json"
+    payload = json.loads(manifest_path.read_text())
+    payload.pop("highlight_source", None)
+    payload.pop("ablations", None)
+    manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    client = TestClient(app)
+    runs_listing = client.get("/runs").json()
+    listing = {item["run_id"]: item for item in runs_listing}
+    assert listing[run_id]["highlight_source"] == "dataset"
+
+    detail = client.get(f"/runs/{run_id}").json()
+    assert detail["highlight_source"] == "dataset"
+    highlights_trace = next(trace for trace in detail["trace_files"] if trace["name"] == "highlights")
+    assert highlights_trace["label"] == "Dataset highlights"
+
+
+def test_notebook_export_reason_exposed(portal_settings: PortalSettings) -> None:
+    run_id = "20250103-000000"
+    _write_run(portal_settings.outputs_dir, run_id=run_id, include_notebook=False)
+    manifest_path = portal_settings.outputs_dir / "artifacts" / f"run-{run_id}-manifest.json"
+    payload = json.loads(manifest_path.read_text())
+    payload["notebook_exports"] = [
+        {
+            "title": "Course Plan",
+            "citations": ["codd-1970"],
+            "response": {
+                "status": "skipped",
+                "reason": "missing_api_base",
+            },
+        }
+    ]
+    manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    client = TestClient(app)
+    exports = client.get(f"/runs/{run_id}/notebook-exports").json()
+    assert exports[0]["status"] == "skipped"
+    assert exports[0]["reason"] == "missing_api_base"
+    assert exports[0]["error"] is None
 
     cp_resp = client.get(f"/runs/{run_id}/course-plan")
     assert cp_resp.status_code == 200
@@ -264,6 +362,27 @@ def test_latest_run_endpoint(portal_settings: PortalSettings) -> None:
     data = latest_resp.json()
     assert data["run_id"].startswith("2025")
     assert data["notebook_exports"]
+
+
+def test_runs_endpoint_supports_pagination(portal_settings: PortalSettings) -> None:
+    for day in ("01", "02", "03"):
+        _write_run(portal_settings.outputs_dir, run_id=f"202501{day}-000000")
+
+    client = TestClient(app)
+
+    first_page = client.get("/runs", params={"limit": 2})
+    assert first_page.status_code == 200
+    runs_page = first_page.json()
+    assert [run["run_id"] for run in runs_page] == ["20250103-000000", "20250102-000000"]
+
+    second_page = client.get("/runs", params={"limit": 1, "offset": 2})
+    assert second_page.status_code == 200
+    runs_offset = second_page.json()
+    assert len(runs_offset) == 1
+    assert runs_offset[0]["run_id"] == "20250101-000000"
+
+    invalid = client.get("/runs", params={"limit": 0})
+    assert invalid.status_code == 422
 
 
 def test_run_detail_prefers_export_notebook_slug(portal_settings: PortalSettings) -> None:
