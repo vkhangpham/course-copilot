@@ -1,3 +1,12 @@
+export type ScientificMetricGroup = Record<string, number | null | undefined>;
+
+export type ScientificMetrics = {
+  pedagogical?: ScientificMetricGroup;
+  content_quality?: ScientificMetricGroup;
+  learning_outcomes?: ScientificMetricGroup;
+  [key: string]: ScientificMetricGroup | undefined;
+};
+
 export type RunListItem = {
   run_id: string;
   manifest_path: string;
@@ -6,6 +15,9 @@ export type RunListItem = {
   has_lecture: boolean;
   has_eval_report: boolean;
   overall_score?: number | null;
+  highlight_source?: string | null;
+  world_model_store_exists?: boolean | null;
+  scientific_metrics?: ScientificMetrics | null;
   notebook_export_summary?: {
     total?: number;
     success?: number;
@@ -28,6 +40,8 @@ export type NotebookExportEntry = {
   note_id?: string | null;
   section_id?: string | null;
   path?: string | null;
+  reason?: string | null;
+  error?: string | null;
 };
 
 export type TeacherTraceMeta = {
@@ -45,6 +59,8 @@ export type RunDetail = {
   dataset_summary?: Record<string, unknown> | null;
   ablations?: Record<string, boolean> | null;
   highlight_source?: string | null;
+  world_model_store_exists?: boolean | null;
+  scientific_metrics?: ScientificMetrics | null;
   evaluation?: {
     overall_score?: number | null;
     rubrics?: { name: string; passed: boolean; score?: number | null }[];

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import type { NotebookExportEntry, RunDetail } from "@/lib/api";
+import type { NotebookExportEntry, RunDetail, ScientificMetrics } from "@/lib/api";
 
 const PORTAL_API_BASE = process.env.NEXT_PUBLIC_PORTAL_API_BASE ?? "http://localhost:8001";
 
@@ -70,8 +70,45 @@ export function RunDetailSection({ detail }: { detail: RunDetail | null }) {
   const notebookExports = (detail?.notebook_exports && detail.notebook_exports.length > 0
     ? detail.notebook_exports
     : manifestExports) as NotebookExportEntry[];
+  const actualNotebookExportCount = notebookExports.filter(
+    (entry) => (entry.status ?? "").toLowerCase() !== "skipped",
+  ).length;
   const coursePlanUrl = detail ? `${PORTAL_API_BASE}/runs/${detail.run_id}/course-plan` : null;
   const lectureUrl = detail ? `${PORTAL_API_BASE}/runs/${detail.run_id}/lecture` : null;
+  const portalScientificMetrics =
+    (detail?.scientific_metrics as ScientificMetrics | undefined) ??
+    (manifest?.["scientific_metrics"] as ScientificMetrics | undefined);
+  type ScientificMetricRow = { label: string; detail: string; value: number };
+  const scientificRows: ScientificMetricRow[] = (
+    [
+      {
+        label: "Bloom's alignment",
+        detail: "Curriculum coverage across Bloom's taxonomy",
+        value: portalScientificMetrics?.pedagogical?.blooms_alignment as number | undefined,
+      },
+      {
+        label: "Learning-path coherence",
+        detail: "How well modules build on each other",
+        value: portalScientificMetrics?.pedagogical?.learning_path_coherence as number | undefined,
+      },
+      {
+        label: "Citation validity",
+        detail: "Grounding of claims against sources",
+        value: portalScientificMetrics?.content_quality?.citation_validity as number | undefined,
+      },
+      {
+        label: "Citation coverage",
+        detail: "Share of sections with supporting citations",
+        value: portalScientificMetrics?.content_quality?.citation_coverage as number | undefined,
+      },
+      {
+        label: "Predicted retention",
+        detail: "Estimated learner retention after this lecture",
+        value: portalScientificMetrics?.learning_outcomes?.predicted_retention as number | undefined,
+      },
+    ] as { label: string; detail: string; value: number | undefined }[]
+  ).filter((entry): entry is ScientificMetricRow => typeof entry.value === "number" && !Number.isNaN(entry.value));
+  const hasScientificMetrics = scientificRows.length > 0;
 
   return (
     <section className="mx-auto w-full max-w-6xl px-6 py-14">
@@ -131,8 +168,8 @@ export function RunDetailSection({ detail }: { detail: RunDetail | null }) {
               <CardTitle className="text-sm font-medium">Notebook exports</CardTitle>
               <BadgePercent className="h-4 w-4 text-slate-400" />
             </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{notebookExports.length || "—"}</div>
+              <CardContent>
+              <div className="text-2xl font-bold">{actualNotebookExportCount || "—"}</div>
               <p className="text-xs text-muted-foreground">Sections pushed this run</p>
             </CardContent>
           </Card>
@@ -171,26 +208,55 @@ export function RunDetailSection({ detail }: { detail: RunDetail | null }) {
             )}
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Student rubric outcomes</CardTitle>
-            <CardDescription>Scores reported by the simulated student graders.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {rubrics.length === 0 && <p className="text-sm text-muted-foreground">No rubric scores recorded yet.</p>}
-            {rubrics.map((rubric) => (
-              <div key={rubric.name} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2">
-                <div>
-                  <p className="text-sm font-semibold">{rubric.name}</p>
-                  {rubric.score !== undefined && (
-                    <p className="text-xs text-muted-foreground">Score: {rubric.score?.toFixed?.(2) ?? rubric.score}</p>
-                  )}
+        <div className="space-y-6 md:col-span-1">
+          <Card>
+            <CardHeader>
+              <CardTitle>Student rubric outcomes</CardTitle>
+              <CardDescription>Scores reported by the simulated student graders.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {rubrics.length === 0 && <p className="text-sm text-muted-foreground">No rubric scores recorded yet.</p>}
+              {rubrics.map((rubric) => (
+                <div key={rubric.name} className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2">
+                  <div>
+                    <p className="text-sm font-semibold">{rubric.name}</p>
+                    {rubric.score !== undefined && (
+                      <p className="text-xs text-muted-foreground">Score: {rubric.score?.toFixed?.(2) ?? rubric.score}</p>
+                    )}
+                  </div>
+                  <Badge variant={rubric.passed ? "success" : "destructive"}>{rubric.passed ? "PASS" : "FAIL"}</Badge>
                 </div>
-                <Badge variant={rubric.passed ? "success" : "destructive"}>{rubric.passed ? "PASS" : "FAIL"}</Badge>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
+              ))}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Scientific metrics</CardTitle>
+              <CardDescription>Signals from the scientific evaluator loop.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {!hasScientificMetrics && (
+                <p className="text-sm text-muted-foreground">
+                  Scientific metrics will appear after the evaluator runs on a completed lecture.
+                </p>
+              )}
+              {hasScientificMetrics && (
+                <div className="space-y-3">
+                  {scientificRows.map((row) => (
+                    <div key={row.label} className="rounded-lg border border-slate-100 px-3 py-2">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-semibold">{row.label}</p>
+                        <Badge variant="outline">{formatScore(row.value)}</Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{row.detail}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       <div className="mt-6 grid gap-6 md:grid-cols-3">
@@ -292,19 +358,25 @@ export function RunDetailSection({ detail }: { detail: RunDetail | null }) {
                       Note ID: <span className="font-mono">{noteId}</span>
                     </p>
                   )}
-                  {entry.path && (
-                    <p className="text-xs text-muted-foreground break-all">
-                      Source: <span className="font-mono">{entry.path}</span>
-                    </p>
-                  )}
-                  {entry.notebook && (
-                    <p className="text-xs text-muted-foreground">Notebook: {entry.notebook}</p>
-                  )}
-                </div>
-              );
-            })}
-          </CardContent>
-        </Card>
+              {entry.path && (
+                <p className="text-xs text-muted-foreground break-all">
+                  Source: <span className="font-mono">{entry.path}</span>
+                </p>
+              )}
+              {entry.notebook && (
+                <p className="text-xs text-muted-foreground">Notebook: {entry.notebook}</p>
+              )}
+              {entry.reason && (
+                <p className="text-xs text-muted-foreground">Reason: {entry.reason}</p>
+              )}
+              {entry.error && (
+                <p className="text-xs text-destructive">Error: {entry.error}</p>
+              )}
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
 
         <Card>
           <CardHeader>
