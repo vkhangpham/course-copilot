@@ -73,7 +73,7 @@ class RunListItem(BaseModel):
     scientific_metrics: Dict[str, Any] | None = None
     scientific_metrics_artifact: str | None = None
     ablations: Dict[str, Any] | None = None
-    scientific_metrics_artifact: str | None = None
+    science_config_path: str | None = None
 
 
 class TraceFile(BaseModel):
@@ -130,6 +130,7 @@ class RunDetail(BaseModel):
     teacher_trace: TeacherTraceMeta | None = None
     scientific_metrics: Dict[str, Any] | None = None
     scientific_metrics_artifact: str | None = None
+    science_config_path: str | None = None
 
 
 class HealthResponse(BaseModel):
@@ -212,6 +213,7 @@ def get_run_detail(run_id: str, settings: PortalSettings = Depends(get_settings)
         teacher_trace=teacher_trace,
         scientific_metrics=manifest.get("scientific_metrics"),
         scientific_metrics_artifact=science_artifact_rel,
+        science_config_path=sanitized_manifest.get("science_config_path"),
     )
 
 
@@ -280,6 +282,7 @@ def _list_runs(settings: PortalSettings, *, limit: int | None = None, offset: in
         store_exists = _derive_world_model_store_exists(manifest, settings)
         highlight_source = _derive_highlight_source(manifest, settings, store_exists=store_exists)
         science_artifact = _relative_manifest_path(settings, manifest.get("scientific_metrics_artifact"))
+        science_config_rel = _relative_manifest_path(settings, manifest.get("science_config_path"))
 
         items.append(
             RunListItem(
@@ -296,6 +299,7 @@ def _list_runs(settings: PortalSettings, *, limit: int | None = None, offset: in
                 scientific_metrics=manifest.get("scientific_metrics"),
                 scientific_metrics_artifact=science_artifact,
                 ablations=manifest.get("ablations") if isinstance(manifest.get("ablations"), dict) else None,
+                science_config_path=science_config_rel,
             )
         )
     return items
@@ -398,6 +402,7 @@ def _sanitize_manifest_paths(manifest: Dict[str, Any], settings: PortalSettings)
         "teacher_trace",
         "highlights",
         "scientific_metrics_artifact",
+        "science_config_path",
     ]
     for key in path_keys:
         if key in sanitized:

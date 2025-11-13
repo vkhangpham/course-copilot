@@ -38,6 +38,11 @@ def _write_run(
     artifacts_dir = outputs_dir / "artifacts"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
 
+    config_dir = outputs_dir / "config"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    science_config_path = config_dir / "scientific_config.yaml"
+    science_config_path.write_text("enabled: true\n", encoding="utf-8")
+
     course_plan = outputs_dir / "course_plan.md"
     course_plan.write_text("# Course Plan\n\nWeek 1: Intro", encoding="utf-8")
 
@@ -144,6 +149,7 @@ def _write_run(
         "world_model_store_exists": world_model_store_exists,
         "scientific_metrics": scientific_metrics,
         "scientific_metrics_artifact": str(science_artifact),
+        "science_config_path": str(science_config_path),
     }
     if notebook_exports is not None:
         manifest["notebook_exports"] = notebook_exports
@@ -206,6 +212,7 @@ def test_list_runs_and_detail(portal_settings: PortalSettings) -> None:
     assert runs[0]["scientific_metrics"]["pedagogical"]["blooms_alignment"] == pytest.approx(0.82)
     assert runs[0]["scientific_metrics_artifact"] == "artifacts/run-20250101-000000-science.json"
     assert runs[0]["ablations"]["use_world_model"] is True
+    assert runs[0]["science_config_path"] == "config/scientific_config.yaml"
     assert runs[0]["manifest_path"] == expected_manifest_rel
     assert runs[0]["scientific_metrics"]["pedagogical"]["blooms_alignment"] == pytest.approx(0.82)
 
@@ -219,6 +226,7 @@ def test_list_runs_and_detail(portal_settings: PortalSettings) -> None:
     assert detail["manifest"].get("world_model_store") == "world_model/state.sqlite"
     assert detail["manifest"].get("world_model_store_exists") is True
     assert detail["manifest"].get("scientific_metrics_artifact") == "artifacts/run-20250101-000000-science.json"
+    assert detail["manifest"].get("science_config_path") == "config/scientific_config.yaml"
     assert detail["world_model_store_exists"] is True
     assert "Course Plan" in detail["course_plan_excerpt"]
     assert detail["notebook_slug"] == "database-systems-poc"
@@ -226,6 +234,7 @@ def test_list_runs_and_detail(portal_settings: PortalSettings) -> None:
     assert detail["scientific_metrics"]["content_quality"]["citation_validity"] == pytest.approx(0.88)
     assert detail["manifest"]["scientific_metrics"]["learning_outcomes"]["predicted_retention"] == pytest.approx(0.73)
     assert detail["scientific_metrics_artifact"] == "artifacts/run-20250101-000000-science.json"
+    assert detail["science_config_path"] == "config/scientific_config.yaml"
     assert detail["ablations"]["use_world_model"] is True
     first_export = detail["notebook_exports"][0]
     expected_manifest_export = _first_actual_export(manifest)

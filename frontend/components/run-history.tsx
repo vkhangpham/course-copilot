@@ -32,6 +32,7 @@ export function RunHistory({ runs, activeRunId }: { runs: RunListItem[]; activeR
                   <p className="text-xs text-muted-foreground">{new Date(run.created_at).toLocaleString()}</p>
                   <ScientificMetricBadges metrics={run.scientific_metrics} />
                   <AblationBadges ablations={run.ablations} />
+                  <ScienceConfigHint path={run.science_config_path} />
                 </div>
                 <div className="flex items-center gap-3">
                   {typeof run.highlight_source === "string" && run.highlight_source.length > 0 && (
@@ -114,22 +115,35 @@ function AblationBadges({ ablations }: { ablations?: Record<string, boolean> | n
   }
 
   const flags = [
-    { label: "World model", enabled: ablations.use_world_model ?? true },
-    { label: "Students", enabled: ablations.use_students ?? true },
-    { label: "Recursion", enabled: ablations.allow_recursion ?? true },
+    { key: "use_world_model", label: "World model", short: "WM", enabled: ablations.use_world_model ?? true },
+    { key: "use_students", label: "Students", short: "ST", enabled: ablations.use_students ?? true },
+    { key: "allow_recursion", label: "Recursion", short: "RC", enabled: ablations.allow_recursion ?? true },
   ];
-  const disabled = flags.filter((flag) => flag.enabled === false);
-  if (disabled.length === 0) {
+
+  return (
+    <div className="mt-1 flex flex-wrap gap-2">
+      {flags.map((flag) => (
+        <Badge
+          key={flag.key}
+          variant={flag.enabled ? "success" : "destructive"}
+          className="font-mono text-[11px]"
+          title={`${flag.label}: ${flag.enabled ? "Enabled" : "Disabled"}`}
+        >
+          {flag.short}: {flag.enabled ? "On" : "Off"}
+        </Badge>
+      ))}
+    </div>
+  );
+}
+
+function ScienceConfigHint({ path }: { path?: string | null }) {
+  if (!path) {
     return null;
   }
 
   return (
-    <div className="mt-1 flex flex-wrap gap-2">
-      {disabled.map((flag) => (
-        <Badge key={flag.label} variant="destructive" className="text-[11px]">
-          {flag.label} off
-        </Badge>
-      ))}
-    </div>
+    <p className="mt-1 truncate text-[11px] font-mono text-muted-foreground" title={`Scientific config: ${path}`}>
+      science cfg: {path}
+    </p>
   );
 }
