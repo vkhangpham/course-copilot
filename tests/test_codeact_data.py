@@ -66,6 +66,34 @@ def test_run_sql_query_blocks_mutations() -> None:
         run_sql_query("DROP TABLE papers", dataset_dir=DATASET_DIR)
 
 
+def test_run_sql_query_blocks_mutations_inside_cte() -> None:
+    sql = "WITH bad AS (UPDATE authors SET affiliation='Test') SELECT * FROM authors"
+    with pytest.raises(ValueError):
+        run_sql_query(sql, dataset_dir=DATASET_DIR)
+
+
+def test_run_sql_query_blocks_multi_statement_payloads() -> None:
+    with pytest.raises(ValueError):
+        run_sql_query("SELECT 1; DROP TABLE authors", dataset_dir=DATASET_DIR)
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "COPY authors TO 'copy.csv'",
+        "LOAD httpfs",
+        "INSTALL json",
+        "CALL some_proc()",
+        "SET threads TO 4",
+    ],
+)
+def test_run_sql_query_blocks_copy_and_load(statement: str, tmp_path: Path) -> None:
+    target = tmp_path / "copy.csv"
+    with pytest.raises(ValueError):
+        run_sql_query(statement, dataset_dir=DATASET_DIR)
+    assert not target.exists()
+
+
 def test_run_sql_query_exposes_definitions_table() -> None:
     rows = run_sql_query(
         "SELECT statement FROM definitions WHERE id='def-transaction'",
@@ -82,6 +110,15 @@ def test_run_sql_query_exposes_graph_edges_table() -> None:
     )
     assert rows
     assert rows[0]["relation_type"]
+
+
+def test_run_sql_query_exposes_domain_summaries() -> None:
+    rows = run_sql_query(
+        "SELECT title, summary FROM domains WHERE id='foundations'",
+        dataset_dir=DATASET_DIR,
+    )
+    assert rows and rows[0]["summary"]
+    assert "relational" in rows[0]["summary"].lower()
 
 
 def test_data_tools_run_sql_matches_function(tmp_path: Path) -> None:

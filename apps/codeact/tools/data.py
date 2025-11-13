@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -26,6 +27,11 @@ _READ_ONLY_PREFIXES = {
     "create",
     "attach",
     "pragma",
+    "copy",
+    "load",
+    "call",
+    "install",
+    "set",
 }
 
 # Tables backed by raw handcrafted assets that DuckDB can load directly.
@@ -181,12 +187,13 @@ def _register_domains_table(conn: duckdb.DuckDBPyConnection, taxonomy_path: Path
         CREATE OR REPLACE TEMP TABLE domains (
             id TEXT,
             title TEXT,
+            summary TEXT,
             focus TEXT,
             concept_ids JSON
         )
         """
     )
-    conn.executemany("INSERT INTO domains VALUES (?, ?, ?, ?)", rows)
+    conn.executemany("INSERT INTO domains VALUES (?, ?, ?, ?, ?)", rows)
 
 
 def _register_definitions_table(conn: duckdb.DuckDBPyConnection, definitions_path: Path) -> None:
@@ -245,18 +252,25 @@ def _load_concept_rows(path: Path) -> List[tuple[str, str | None, str | None, st
     return rows
 
 
-def _load_domain_rows(path: Path) -> List[tuple[str | None, str | None, str | None, str]]:
+def _load_domain_rows(path: Path) -> List[tuple[str | None, str | None, str | None, str | None, str]]:
     if not path.exists():
         return []
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     domains = data.get("domains", []) if isinstance(data, dict) else []
-    rows: List[tuple[str | None, str | None, str | None, str]] = []
+    rows: List[tuple[str | None, str | None, str | None, str | None, str]] = []
     for domain in domains:
+        summary = domain.get("summary")
+        focus = domain.get("focus")
+        if summary is None:
+            summary = focus
+        if focus is None:
+            focus = summary
         rows.append(
             (
                 domain.get("id"),
                 domain.get("title"),
-                domain.get("focus"),
+                summary,
+                focus,
                 json.dumps(domain.get("concepts", []), ensure_ascii=False),
             )
         )
@@ -302,5 +316,91 @@ def _load_graph_rows(path: Path) -> List[tuple[str | None, str | None, str | Non
 
 
 def _is_mutating_statement(statement: str) -> bool:
-    token = statement.split(None, 1)[0].lower()
-    return token in _READ_ONLY_PREFIXES
+    if not statement:
+        return False
+
+    sanitized = _strip_literals_and_comments(statement)
+    cleaned = sanitized.strip().lower()
+    if not cleaned:
+        return False
+
+    segments = [segment.strip() for segment in cleaned.split(";") if segment.strip()]
+    if len(segments) > 1:
+        return True  # multi-statement payloads are not allowed
+
+    tokens = re.findall(r"\b[a-z_]+\b", segments[0])
+    return any(token in _READ_ONLY_PREFIXES for token in tokens)
+
+
+def _strip_literals_and_comments(sql: str) -> str:
+    """Remove string literals and comments so keyword scans stay reliable."""
+
+    result: List[str] = []
+    i = 0
+    length = len(sql)
+    in_single = False
+    in_double = False
+    in_line_comment = False
+    in_block_comment = False
+
+    while i < length:
+        ch = sql[i]
+        nxt = sql[i + 1] if i + 1 < length else ""
+
+        if in_single:
+            if ch == "'" and nxt == "'":
+                i += 2
+                continue
+            if ch == "'":
+                in_single = False
+            i += 1
+            continue
+
+        if in_double:
+            if ch == '"' and nxt == '"':
+                i += 2
+                continue
+            if ch == '"':
+                in_double = False
+            i += 1
+            continue
+
+        if in_line_comment:
+            if ch == "\n":
+                in_line_comment = False
+                result.append("\n")
+            i += 1
+            continue
+
+        if in_block_comment:
+            if ch == "*" and nxt == "/":
+                in_block_comment = False
+                i += 2
+            else:
+                i += 1
+            continue
+
+        if ch == "'":
+            in_single = True
+            i += 1
+            continue
+
+        if ch == '"':
+            in_double = True
+            i += 1
+            continue
+
+        if ch == "-" and nxt == "-":
+            in_line_comment = True
+            i += 2
+            continue
+
+        if ch == "/" and nxt == "*":
+            in_block_comment = True
+            i += 2
+            continue
+
+        result.append(ch)
+        i += 1
+
+    return "".join(result)
