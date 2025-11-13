@@ -114,22 +114,26 @@ function AblationBadges({ ablations }: { ablations?: Record<string, boolean> | n
     return null;
   }
 
-  const flags = [
+  const disabledFlags = [
     { key: "use_world_model", label: "World model", short: "WM", enabled: ablations.use_world_model ?? true },
     { key: "use_students", label: "Students", short: "ST", enabled: ablations.use_students ?? true },
     { key: "allow_recursion", label: "Recursion", short: "RC", enabled: ablations.allow_recursion ?? true },
-  ];
+  ].filter((flag) => flag.enabled === false);
+
+  if (disabledFlags.length === 0) {
+    return null;
+  }
 
   return (
     <div className="mt-1 flex flex-wrap gap-2">
-      {flags.map((flag) => (
+      {disabledFlags.map((flag) => (
         <Badge
           key={flag.key}
-          variant={flag.enabled ? "success" : "destructive"}
+          variant="destructive"
           className="font-mono text-[11px]"
-          title={`${flag.label}: ${flag.enabled ? "Enabled" : "Disabled"}`}
+          title={`${flag.label}: Disabled`}
         >
-          {flag.short}: {flag.enabled ? "On" : "Off"}
+          {flag.short}: Off
         </Badge>
       ))}
     </div>
