@@ -13,7 +13,39 @@ This is the CourseGen PoC (Proof of Concept) for Concepedia, implementing a Teac
 2. **TA Roles** (`apps/orchestrator/ta_roles/`) - Specialized agents for syllabus design, lecture authoring, etc.
 3. **CodeAct Sandbox** (`apps/codeact/`) - DSPy-based tool execution environment
 4. **World Model** (`outputs/world_model/`) - SQLite database with concepts, papers, timeline, claims
-5. **Open Notebook Export** - Course artifacts published to external notebook API
+5. **Scientific Evaluation** - Hypothesis-driven development and Bayesian uncertainty quantification
+6. **Open Notebook Export** - Course artifacts published to external notebook API
+
+### Scientific Evaluation Modules
+The system includes rigorous scientific evaluation capabilities:
+
+**Hypothesis Generation** (`apps/codeact/hypothesis_generator.py`)
+- HypoGeniC framework integration for pedagogical hypothesis testing
+- Category-based hypothesis testing: content ordering, difficulty progression, engagement, assessment, cognitive load
+- Fallback hypothesis generation when hypogenic package unavailable
+- Hypothesis refinement through iterative testing
+
+**Scientific Evaluator** (`apps/orchestrator/scientific_evaluator.py`)
+- Bloom's taxonomy alignment scoring
+- Learning path coherence measurement
+- Citation validity and coverage analysis
+- Readability assessment (Flesch-Kincaid metrics)
+- Retention and engagement predictions
+- Configurable per-metric toggles via `config/scientific_config.yaml`
+
+**Belief Network** (`world_model/belief_network.py`)
+- Bayesian confidence scoring for knowledge claims
+- Contradiction detection using semantic heuristics
+- Evidence accumulation and belief updating
+- Confidence decay over time
+- Multiple resolution strategies (highest confidence, most recent, merge)
+
+**Configuration** (`config/scientific_config.yaml`)
+- Unified configuration for all scientific features
+- Hypothesis testing settings (method, num_hypotheses, refinement_iterations)
+- Evaluation metric toggles and thresholds
+- Reproducibility settings (seeds, deterministic mode, caching)
+- World model integration (confidence scores, contradiction detection)
 
 ### Model Configuration
 The system uses three distinct model handles configured in `config/pipeline.yaml`:

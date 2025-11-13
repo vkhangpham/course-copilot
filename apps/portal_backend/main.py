@@ -239,6 +239,19 @@ def get_lecture(run_id: str, settings: PortalSettings = Depends(get_settings)) -
     return lecture_path.read_text(encoding="utf-8")
 
 
+@app.get("/runs/{run_id}/science-metrics")
+def get_science_metrics(run_id: str, settings: PortalSettings = Depends(get_settings)) -> Dict[str, Any]:
+    manifest_path = _find_manifest_path(run_id, settings)
+    manifest = _load_manifest(manifest_path)
+    science_path = settings.resolve_path(manifest.get("scientific_metrics_artifact"))
+    if not science_path or not science_path.exists():
+        raise HTTPException(status_code=404, detail="Scientific metrics artifact not found for this run")
+    try:
+        return json.loads(science_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:  # pragma: no cover - defensive
+        raise HTTPException(status_code=500, detail="Scientific metrics artifact is not valid JSON") from exc
+
+
 @app.get("/runs/{run_id}/notebook-exports", response_model=List[NotebookExport])
 def get_notebook_exports(run_id: str, settings: PortalSettings = Depends(get_settings)) -> List[NotebookExport]:
     manifest_path = _find_manifest_path(run_id, settings)

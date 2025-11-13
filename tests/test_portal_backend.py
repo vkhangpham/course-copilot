@@ -262,6 +262,20 @@ def test_list_runs_and_detail(portal_settings: PortalSettings) -> None:
     assert attempts[0]["failing_rubrics"] == ["coverage"]
 
 
+def test_science_metrics_endpoint(portal_settings: PortalSettings) -> None:
+    run_id = "20250401-123456"
+    manifest = _write_run(portal_settings.outputs_dir, run_id=run_id)
+    client = TestClient(app)
+
+    response = client.get(f"/runs/{run_id}/science-metrics")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["agent"] == "scientific_evaluator"
+    assert payload["metrics"]["pedagogical"]["blooms_alignment"] == pytest.approx(
+        manifest["scientific_metrics"]["pedagogical"]["blooms_alignment"]
+    )
+
+
 def test_runs_fallback_highlight_source_when_manifest_missing(portal_settings: PortalSettings) -> None:
     run_id = "20250303-010101"
     manifest = _write_run(portal_settings.outputs_dir, run_id=run_id)

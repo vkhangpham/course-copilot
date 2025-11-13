@@ -80,8 +80,8 @@ export function RunDetailSection({ detail }: { detail: RunDetail | null }) {
     (typeof manifest?.["scientific_metrics_artifact"] === "string"
       ? (manifest?.["scientific_metrics_artifact"] as string)
       : undefined);
-  const scienceDownloadUrl = scienceArtifactPath
-    ? `${PORTAL_API_BASE}/${scienceArtifactPath.replace(/^\//, "")}`
+  const scienceDownloadUrl = detail && scienceArtifactPath
+    ? `${PORTAL_API_BASE.replace(/\/$/, "")}/runs/${detail.run_id}/science-metrics`
     : null;
   const scienceConfigPath =
     (typeof detail?.science_config_path === "string" && detail.science_config_path) ||
