@@ -196,17 +196,17 @@ class NotebookPublisher:
 def _extract_citations(markdown: str) -> List[str]:
     raw_tokens = [match.group(1).strip() for match in _CITATION_PATTERN.finditer(markdown)]
     normalized: List[str] = []
-    seen: set[str] = set()
+    seen_lower: set[str] = set()
     for token in raw_tokens:
         cleaned = token.strip("`*_ ")
         if not cleaned:
             continue
         lowered = cleaned.lower()
-        if lowered in seen:
+        if lowered in seen_lower:
             continue
-        seen.add(lowered)
-        normalized.append(lowered)
-    return sorted(normalized)
+        seen_lower.add(lowered)
+        normalized.append(cleaned)
+    return sorted(normalized, key=lambda value: value.lower())
 
 
 def chunk_markdown_sections(markdown: str, fallback_title: str) -> List[tuple[str, str]]:
