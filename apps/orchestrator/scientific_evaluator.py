@@ -48,6 +48,26 @@ BLOOMS_LEVELS = [
     BloomsTaxonomyLevel(6, "Create"),
 ]
 
+DOMAIN_KEYWORDS = {
+    "normalization",
+    "transaction",
+    "transactions",
+    "sharding",
+    "query",
+    "queries",
+    "index",
+    "indexes",
+    "security",
+    "replication",
+    "concurrency",
+    "locking",
+    "schema",
+    "optimizer",
+    "storage",
+    "sql",
+    "acid",
+}
+
 
 @dataclass
 class EvaluationMetrics:
@@ -617,33 +637,18 @@ class ScientificEvaluator:
         if len(lectures) < 2:
             return 1.0
 
-        difficulties = []
+        difficulties = [self._lecture_difficulty_score(lecture) for lecture in lectures]
 
-        for lecture in lectures:
-            # Estimate difficulty based on:
-            # - Bloom's level
-            # - Concept complexity
-            # - Prerequisite depth
+        gradients = [difficulties[i + 1] - difficulties[i] for i in range(len(difficulties) - 1)]
+        if not gradients:
+            return 1.0
 
-            blooms = self._extract_blooms_levels_from_content(lecture)
-            avg_bloom_level = sum(b.level for b in blooms) / len(blooms) if blooms else 1
+        regression_penalty = sum(max(0.0, -gradient) for gradient in gradients)
+        surge_penalty = sum(max(0.0, gradient - 0.4) for gradient in gradients)
 
-            concepts = self._extract_concepts(lecture)
-            concept_complexity = len(concepts) / 10  # Normalize
-
-            difficulty = (avg_bloom_level / 6 + concept_complexity) / 2
-            difficulties.append(difficulty)
-
-        # Check for gradual progression
-        gradients = [difficulties[i+1] - difficulties[i] for i in range(len(difficulties)-1)]
-
-        # Penalize large jumps or regressions
-        large_jumps = sum(1 for g in gradients if abs(g) > 0.3)
-        regressions = sum(1 for g in gradients if g < -0.1)
-
-        progression_quality = 1 - (large_jumps + regressions * 2) / len(gradients)
-
-        return max(0.0, progression_quality)
+        penalty = (regression_penalty * 1.5 + surge_penalty * 0.5) / len(gradients)
+        score = 1 - penalty
+        return max(0.0, min(1.0, score))
 
     def estimate_cognitive_load(self, lectures: List[str]) -> float:
         """Estimate cognitive load.
@@ -659,6 +664,8 @@ class ScientificEvaluator:
 
         load_scores = []
 
+        sentence_splitter = re.compile(r"[.!?]+")
+
         for lecture in lectures:
             # Factors contributing to cognitive load
             factors = []
@@ -670,10 +677,11 @@ class ScientificEvaluator:
                 density = len(concepts) / (words / 100)  # Per 100 words
                 # Optimal: 1-2 concepts per 100 words
                 density_load = abs(1.5 - density) / 1.5
+                density_load = min(1.0, max(0.0, density_load))
                 factors.append(density_load)
 
             # Sentence complexity
-            sentences = lecture.split('.')
+            sentences = [segment.strip() for segment in sentence_splitter.split(lecture) if segment and segment.strip()]
             if sentences:
                 avg_words_per_sentence = words / len(sentences)
                 # Optimal: 15-20 words per sentence
@@ -685,9 +693,11 @@ class ScientificEvaluator:
             ref_load = min(1.0, cross_refs / 10)
             factors.append(ref_load)
 
-            load_scores.append(sum(factors) / len(factors) if factors else 0.5)
+            load_value = sum(factors) / len(factors) if factors else 0.5
+            load_scores.append(min(1.0, max(0.0, load_value)))
 
-        return sum(load_scores) / len(load_scores)
+        overall = sum(load_scores) / len(load_scores)
+        return min(1.0, max(0.0, overall))
 
     # Helper methods
 
@@ -803,53 +813,142 @@ class ScientificEvaluator:
         return connections_found / (len(lectures) - 1) if len(lectures) > 1 else 1.0
 
     def _extract_modules(self, course_plan: str) -> List[Dict[str, Any]]:
-        """Extract modules from course plan."""
-        modules = []
+        """Extract module metadata (number, title, body) from markdown text."""
 
-        # Find module headers (e.g., "## Module 1:", "# Week 1:")
-        module_pattern = r'(?:##|#)\s*(?:Module|Week|Unit)\s*(\d+)[:\s]*([^\n]+)'
-        matches = re.finditer(module_pattern, course_plan)
-
-        for match in matches:
-            number, title = match.groups()
-            modules.append({
-                "number": int(number),
-                "title": title.strip(),
-                "content": "",  # Would extract section content
-            })
-
+        pattern = re.compile(
+            r"^(?P<header>#{1,2})\s*(?:Module|Week|Unit)\s*(?P<number>\d+)\s*[:\-]*\s*(?P<title>[^\n]*)",
+            re.IGNORECASE | re.MULTILINE,
+        )
+        matches = list(pattern.finditer(course_plan))
+        modules: List[Dict[str, Any]] = []
+        for idx, match in enumerate(matches):
+            start = match.end()
+            end = matches[idx + 1].start() if idx + 1 < len(matches) else len(course_plan)
+            content = course_plan[start:end].strip()
+            modules.append(
+                {
+                    "number": int(match.group("number")),
+                    "title": (match.group("title") or "").strip(),
+                    "content": content,
+                }
+            )
         return modules
 
     def _get_module_prerequisites(self, module: Dict[str, Any]) -> List[str]:
-        """Get prerequisites for a module."""
-        # Extract from module content or title
-        return []
+        """Extract prerequisite tokens declared for a module."""
+
+        content = module.get("content", "") or ""
+        prerequisites: List[str] = []
+        for line in content.splitlines():
+            match = re.search(r"(?i)(prereq(?:uisite)?s?|requires?)\s*[:\-]\s*(.+)", line)
+            if not match:
+                continue
+            prerequisites.extend(self._parse_prerequisite_targets(match.group(2)))
+
+        if not prerequisites:
+            title = module.get("title", "")
+            references = re.findall(r"(?i)(module|week)\s+(\d+)", title)
+            for _, number in references:
+                prerequisites.append(f"module {number}")
+
+        return prerequisites
+
+    @staticmethod
+    def _parse_prerequisite_targets(spec: str) -> List[str]:
+        tokens = re.split(r",|;| and | & ", spec)
+        return [token.strip() for token in tokens if token and token.strip()]
 
     def _module_covers_concept(self, module: Dict[str, Any], concept: str) -> bool:
-        """Check if module covers a concept."""
-        return concept.lower() in module.get("title", "").lower()
+        """Check if module title or body references the concept."""
+
+        if not concept:
+            return False
+        haystack = " ".join(
+            [
+                module.get("title", ""),
+                module.get("content", ""),
+            ]
+        ).lower()
+        return concept.lower() in haystack
 
     def _extract_citations(self, lecture: str) -> List[str]:
-        """Extract citations from lecture."""
-        citations = []
+        """Extract citations from lecture text.
 
-        # Find citation patterns: [Author, Year], (Author Year), etc.
-        patterns = [
-            r'\[([A-Za-z\s]+,\s*\d{4})\]',
-            r'\(([A-Za-z\s]+\s+\d{4})\)',
-            r'\[(\d+)\]',  # Numbered citations
-        ]
+        Supports a variety of formats including:
+        - `[Author, 1970]`
+        - `[Codd1970]`
+        - `(Stone 2020)`
+        - `[12]`
+        - `[Codd1970; GrayReuter1993]`
+        """
 
-        for pattern in patterns:
-            citations.extend(re.findall(pattern, lecture))
+        citations: List[str] = []
+
+        bracket_blocks = re.findall(r"\[([^\]]+)\]", lecture)
+        for block in bracket_blocks:
+            citations.extend(self._extract_citation_tokens(block))
+
+        paren_blocks = re.findall(r"\(([^)]+)\)", lecture)
+        for block in paren_blocks:
+            citations.extend(self._extract_citation_tokens(block))
+
+        url_matches = re.findall(r"https?://\S+", lecture)
+        for match in url_matches:
+            normalized = self._normalize_citation_token(match)
+            if normalized and normalized not in citations and self._is_valid_citation(normalized):
+                citations.append(normalized)
+
+        doi_matches = re.findall(r"\b10\.\d{4,9}/\S+\b", lecture)
+        for match in doi_matches:
+            normalized = self._normalize_citation_token(match)
+            if normalized and normalized not in citations and self._is_valid_citation(normalized):
+                citations.append(normalized)
 
         return citations
+
+    def _extract_citation_tokens(self, block: str) -> List[str]:
+        """Return individual citation tokens from a bracket/parenthetical block."""
+
+        entries = re.split(r"[;,]", block)
+        citations: List[str] = []
+        for entry in entries:
+            candidate = self._normalize_citation_token(entry)
+            if not candidate:
+                continue
+            years = re.findall(r"(?:18|19|20|21)\d{2}", candidate)
+            if self._is_valid_citation(candidate) and (candidate.isdigit() or len(years) <= 1):
+                if candidate not in citations:
+                    citations.append(candidate)
+                continue
+            compact_matches = re.findall(r"[A-Za-z][A-Za-z0-9_.&-]*\d{4}", candidate)
+            for match in compact_matches:
+                normalized = self._normalize_citation_token(match)
+                if normalized and self._is_valid_citation(normalized) and normalized not in citations:
+                    citations.append(normalized)
+            numeric_matches = re.findall(r"\b\d+\b", candidate)
+            for match in numeric_matches:
+                normalized = match.strip()
+                if normalized and self._is_valid_citation(normalized) and normalized not in citations:
+                    citations.append(normalized)
+        return citations
+
+    @staticmethod
+    def _normalize_citation_token(token: str) -> str:
+        cleaned = token.strip()
+        cleaned = cleaned.strip(".,;:")
+        return cleaned
 
     def _is_valid_citation(self, citation: str) -> bool:
         """Check if citation is valid."""
         # Would validate against world model in production
         # For now, check basic format
-        return bool(re.search(r'[A-Za-z]+.*\d{4}', citation) or re.search(r'^\d+$', citation))
+        if not citation:
+            return False
+        has_author_year = bool(re.search(r"[A-Za-z]+.*\d{4}", citation))
+        is_numeric = citation.isdigit()
+        has_doi = bool(re.search(r"10\.\d{4,9}/\S+", citation))
+        has_url = bool(re.search(r"https?://", citation))
+        return has_author_year or is_numeric or has_doi or has_url
 
     def _extract_factual_claims(self, lecture: str) -> List[str]:
         """Extract factual claims from lecture."""
@@ -926,10 +1025,13 @@ class ScientificEvaluator:
             return 0.5
 
         # Track concept appearances
-        concept_appearances = {}
+        concept_appearances: Dict[str, List[int]] = {}
 
         for i, lecture in enumerate(lectures):
-            concepts = set(self._extract_concepts(lecture))
+            extracted = self._extract_concepts(lecture)
+            concepts = self._normalize_concept_tokens(extracted)
+            if not concepts:
+                concepts = self._fallback_keyword_concepts(lecture)
             for concept in concepts:
                 if concept not in concept_appearances:
                     concept_appearances[concept] = []
@@ -939,19 +1041,73 @@ class ScientificEvaluator:
         repeated_concepts = [c for c, appearances in concept_appearances.items() if len(appearances) > 1]
 
         if not repeated_concepts:
-            return 0.0
+            return 0.5
 
         # Assess spacing quality
-        spacing_scores = []
+        spacing_scores: List[float] = []
+        total_repeat_occurrences = 0
         for concept in repeated_concepts:
             appearances = concept_appearances[concept]
-            gaps = [appearances[i+1] - appearances[i] for i in range(len(appearances)-1)]
+            extra_occurrences = max(0, len(appearances) - 1)
+            total_repeat_occurrences += extra_occurrences
+            gaps = [appearances[i + 1] - appearances[i] for i in range(len(appearances) - 1)]
 
-            # Ideal gap: 1-3 lectures
-            ideal_spacing = all(1 <= gap <= 3 for gap in gaps)
-            spacing_scores.append(1.0 if ideal_spacing else 0.5)
+            gap_scores = [self._gap_quality(gap) for gap in gaps]
+            spacing_scores.append(sum(gap_scores) / len(gap_scores) if gap_scores else 1.0)
 
-        return sum(spacing_scores) / len(spacing_scores) if spacing_scores else 0.0
+        avg_spacing = sum(spacing_scores) / len(spacing_scores) if spacing_scores else 0.0
+        if avg_spacing == 0.0:
+            return 0.0
+
+        # Include the initial occurrences via len(repeated_concepts) so well-covered topics still receive credit
+        # while single repeats across long lecture sequences remain low.
+        coverage_numerator = total_repeat_occurrences + len(repeated_concepts)
+        coverage = min(1.0, coverage_numerator / max(1, len(lectures)))
+        return avg_spacing * coverage
+
+    @staticmethod
+    def _gap_quality(gap: int) -> float:
+        if gap <= 0:
+            return 0.0
+        if 1 <= gap <= 3:
+            return 1.0
+        if gap >= 6:
+            return 0.0
+        # Penalize moderate spacing quickly (gap 4 -> 0.5, gap 5 -> 0.25)
+        return max(0.0, 1 - 0.5 * (gap - 3))
+
+    @staticmethod
+    def _normalize_concept_tokens(concepts: List[str]) -> set[str]:
+        normalized: set[str] = set()
+        for concept in concepts:
+            if not concept:
+                continue
+            lowered = concept.lower().strip()
+            if lowered:
+                normalized.add(lowered)
+            for token in re.split(r"\s+", concept):
+                token = token.lower().strip()
+                if len(token) >= 4:
+                    normalized.add(token)
+        return normalized
+
+    @staticmethod
+    def _fallback_keyword_concepts(text: str) -> set[str]:
+        tokens = re.findall(r"\b[a-zA-Z][a-zA-Z0-9_-]{3,}\b", text)
+        return {token.lower() for token in tokens if token.lower() in DOMAIN_KEYWORDS}
+
+    def _lecture_difficulty_score(self, lecture: str) -> float:
+        blooms = self._extract_blooms_levels_from_content(lecture)
+        bloom_component = sum(b.level for b in blooms) / (len(blooms) * 6) if blooms else 0.5
+
+        concepts = self._extract_concepts(lecture)
+        concept_component = min(1.0, len(concepts) / 8)
+
+        advanced_terms = re.findall(r"\b(?:ACID|serializability|normalization|sharding|replication|optimizer|transaction)\b", lecture, flags=re.IGNORECASE)
+        terminology_component = min(1.0, len(advanced_terms) / 5)
+
+        score = bloom_component * 0.5 + concept_component * 0.3 + terminology_component * 0.2
+        return max(0.0, min(1.0, score))
 
     def _aggregate_pedagogical_score(self, metrics: EvaluationMetrics) -> float:
         components = [
