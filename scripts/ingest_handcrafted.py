@@ -108,7 +108,7 @@ def _load_datasets(source_dir: Path) -> Dict[str, Any]:
         field = row.get("author_ids") or row.get("authors")
         if field is None:
             raise ValueError(f"Paper {row.get('id')} missing authors column")
-        ids = [token.strip() for token in field.split(";") if token.strip()]
+        ids = _split_list(field)
         missing = [aid for aid in ids if aid not in author_ids]
         if missing:
             raise ValueError(f"Paper {row['id']} references unknown authors: {missing}")
@@ -384,7 +384,7 @@ def _insert_claims(
         sources = payload.get("canonical_sources", []) or []
         primary = sources[0] if sources else None
         provenance = json.dumps({"sources": sources})
-        claim_rows.append((concept_id, summary, primary, "concept_summary", provenance))
+        claim_rows.append((concept_id, summary, primary, "concept_summary", provenance, 0.8))
     for definition in definitions:
         concept_ref = definition.get("concept")
         statement = definition.get("statement")
@@ -404,12 +404,13 @@ def _insert_claims(
                 definition.get("citation"),
                 "definition",
                 provenance,
+                0.9,
             )
         )
     if claim_rows:
         conn.executemany(
-            "INSERT INTO claims (subject_id, body, citation, created_by, provenance) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO claims (subject_id, body, citation, created_by, provenance, confidence) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
             claim_rows,
         )
     LOGGER.info("Inserted %d claims", len(claim_rows))
@@ -445,13 +446,17 @@ def _insert_timeline(
     events: List[Dict[str, Any]],
     concepts: Dict[str, Dict[str, Any]],
 ) -> None:
-    rows: List[tuple[int | None, str, str, str, str | None]] = []
+    rows: List[tuple[int | None, str, str, str | None, str | None]] = []
     for row in events:
         year = int(row["year"]) if row.get("year") else None
         description = row.get("why_it_matters")
         event_label = row.get("event") or row.get("event_label")
         citation = row.get("citation_id") or row.get("citation")
-        for concept_id in row.get("concept_ids", []):
+        concept_ids = row.get("concept_ids", []) or []
+        if not concept_ids:
+            rows.append((year, event_label, description, None, citation))
+            continue
+        for concept_id in concept_ids:
             if concept_id not in concepts:
                 raise ValueError(f"Timeline references unknown concept {concept_id}")
             rows.append((year, event_label, description, concept_id, citation))
