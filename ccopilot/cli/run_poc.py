@@ -102,7 +102,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         repo_root = _resolve_path(args.repo_root)
-        os.environ.setdefault("COURSEGEN_REPO_ROOT", str(repo_root))
+        os.environ["COURSEGEN_REPO_ROOT"] = str(repo_root)
         config_path = _resolve_path(args.config, base=repo_root)
         constraints_path = _resolve_optional(args.constraints, base=repo_root)
         concept_override = _resolve_optional(args.concept, base=repo_root)
@@ -124,8 +124,10 @@ def main(argv: list[str] | None = None) -> int:
         )
         artifacts = run_pipeline(ctx, dry_run=args.dry_run)
         _print_eval_summary(artifacts, quiet=args.quiet)
+        _print_scientific_summary(artifacts, quiet=args.quiet)
         _print_highlight_hint(artifacts, quiet=args.quiet)
         _print_notebook_hint(artifacts, quiet=args.quiet)
+        _print_artifact_summary(artifacts, quiet=args.quiet)
     except FileNotFoundError as exc:
         parser.error(str(exc))
     except Exception as exc:  # noqa: BLE001 - bubble up to CLI for now
@@ -163,6 +165,42 @@ def _print_eval_summary(artifacts: PipelineRunArtifacts | None, *, quiet: bool =
     print(f"[eval] overall={overall_display} | rubrics: {rubric_summary} | report={eval_path}")
 
 
+def _print_scientific_summary(artifacts: PipelineRunArtifacts | None, *, quiet: bool = False) -> None:
+    """Summarize scientific evaluation metrics on stdout."""
+
+    if artifacts is None or quiet:
+        return
+
+    metrics = getattr(artifacts, "scientific_metrics", None)
+    if not metrics:
+        return
+
+    pedagogical: dict[str, Any] = metrics.get("pedagogical") or {}
+    content: dict[str, Any] = metrics.get("content_quality") or {}
+    outcomes: dict[str, Any] = metrics.get("learning_outcomes") or {}
+
+    parts: list[str] = []
+    blooms = pedagogical.get("blooms_alignment")
+    coherence = pedagogical.get("learning_path_coherence")
+    citations = content.get("citation_validity")
+    citation_coverage = content.get("citation_coverage")
+    retention = outcomes.get("predicted_retention")
+
+    if blooms is not None:
+        parts.append(f"blooms={_format_score(blooms)}")
+    if coherence is not None:
+        parts.append(f"coherence={_format_score(coherence)}")
+    if citations is not None:
+        parts.append(f"citations={_format_score(citations)}")
+    if citation_coverage is not None:
+        parts.append(f"cite_cov={_format_score(citation_coverage)}")
+    if retention is not None:
+        parts.append(f"retention={_format_score(retention)}")
+
+    summary = " | ".join(parts) if parts else "no scientific metrics"
+    print(f"[science] {summary}")
+
+
 def _load_eval_record(path: Path) -> dict[str, Any]:
     line = path.read_text(encoding="utf-8").splitlines()
     if not line:
@@ -196,19 +234,16 @@ def _print_highlight_hint(artifacts: PipelineRunArtifacts | None, *, quiet: bool
         return
 
     highlight_path = getattr(artifacts, "highlights", None)
-    if not highlight_path:
-        return
+    source = getattr(artifacts, "highlight_source", None)
+    label = "[highlights]"
+    if source:
+        label = f"[highlights] ({source})"
 
-    if highlight_path.exists():
-        source = getattr(artifacts, "highlight_source", None)
-        if source == "dataset":
-            label = "[highlights] (dataset)"
-        elif source and source != "world_model":
-            label = f"[highlights] ({source})"
-        else:
-            label = "[highlights]"
+    if highlight_path and highlight_path.exists():
         print(f"{label} saved to {highlight_path}")
-    else:  # pragma: no cover - defensive logging
+    elif source:
+        print(f"{label} not generated (no highlight artifact)")
+    elif highlight_path:  # pragma: no cover - defensive logging
         print(f"[highlights] expected at {highlight_path} (missing)")
 
 
@@ -274,6 +309,38 @@ def _print_notebook_hint(artifacts: PipelineRunArtifacts | None, *, quiet: bool 
         print(
             f"[notebook] export unavailable (status={status}{error_fragment}{reason_fragment}); see manifest for details"
         )
+
+
+def _print_artifact_summary(artifacts: PipelineRunArtifacts | None, *, quiet: bool = False) -> None:
+    """Emit a concise map of key artifact paths for reproducibility."""
+
+    if artifacts is None or quiet:
+        return
+
+    entries: list[str] = []
+    for label, attr in (
+        ("course_plan", "course_plan"),
+        ("lecture", "lecture"),
+        ("manifest", "manifest"),
+        ("eval_report", "eval_report"),
+        ("provenance", "provenance"),
+    ):
+        formatted = _stringify_path(getattr(artifacts, attr, None))
+        if formatted:
+            entries.append(f"{label}={formatted}")
+
+    if entries:
+        print(f"[artifacts] {' | '.join(entries)}")
+
+    trace_path = _stringify_path(artifacts.teacher_trace)
+    if trace_path:
+        print(f"[teacher] trace saved to {trace_path}")
+
+
+def _stringify_path(path_value: Path | str | None) -> str | None:
+    if not path_value:
+        return None
+    return str(Path(path_value).expanduser().resolve())
 
 
 if __name__ == "__main__":
