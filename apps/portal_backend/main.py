@@ -650,10 +650,16 @@ def _safe_resolve(settings: PortalSettings, raw_path: str | None) -> Path | None
 def _relative_to_outputs(settings: PortalSettings, path: Path | None) -> str | None:
     if not path:
         return None
+    resolved = path.resolve()
+    outputs_root = settings.outputs_dir.resolve()
+    repo_root = settings.repo_root.resolve()
     try:
-        return str(path.resolve().relative_to(settings.outputs_dir.resolve()))
+        return str(resolved.relative_to(outputs_root))
     except ValueError:
-        return path.name
+        try:
+            return str(resolved.relative_to(repo_root))
+        except ValueError:
+            return str(resolved)
 
 
 def _read_excerpt(path: Path | None, *, limit: int = 400) -> str | None:
