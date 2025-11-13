@@ -18,6 +18,7 @@ class BeliefState:
     """Represents belief in a claim with confidence and evidence."""
 
     claim_id: str
+    content: str
     confidence: float  # 0.0 to 1.0
     evidence: List[Dict[str, Any]] = field(default_factory=list)
     contradictions: List[str] = field(default_factory=list)  # IDs of contradicting claims
@@ -27,6 +28,7 @@ class BeliefState:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "claim_id": self.claim_id,
+            "content": self.content,
             "confidence": self.confidence,
             "evidence": self.evidence,
             "contradictions": self.contradictions,
@@ -92,6 +94,7 @@ class BayesianBeliefNetwork:
         # Create belief state
         belief = BeliefState(
             claim_id=claim_id,
+            content=content,
             confidence=adjusted_confidence,
             evidence=[
                 {
@@ -111,6 +114,10 @@ class BayesianBeliefNetwork:
             LOGGER.warning(
                 f"Claim {claim_id} contradicts existing claims: {contradictions}"
             )
+            for contradicting_id in contradictions:
+                existing_belief = self.beliefs.get(contradicting_id)
+                if existing_belief is not None and claim_id not in existing_belief.contradictions:
+                    existing_belief.contradictions.append(claim_id)
 
         return belief
 
@@ -184,9 +191,10 @@ class BayesianBeliefNetwork:
 
         # If no existing claims provided, check against all beliefs
         if existing_claims is None:
-            # In production, this would query the world model for related claims
-            # For now, check against stored beliefs
-            existing_claims = []
+            existing_claims = [
+                (belief.claim_id, belief.content)
+                for belief in self.beliefs.values()
+            ]
 
         # Check for semantic contradictions
         for claim_id, existing_content in existing_claims:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import os
 from typing import Iterator
 
 import pytest
@@ -18,7 +19,7 @@ def portal_settings(tmp_path: Path) -> Iterator[PortalSettings]:
     artifacts_dir = outputs_dir / "artifacts"
     artifacts_dir.mkdir(parents=True)
 
-    settings = PortalSettings(outputs_dir=outputs_dir, notebook_slug="database-systems-poc")
+    settings = PortalSettings(repo_root=tmp_path, outputs_dir=outputs_dir, notebook_slug="database-systems-poc")
     app.dependency_overrides[get_settings] = lambda: settings
     try:
         yield settings
@@ -307,6 +308,22 @@ def test_runs_fallback_highlight_source_when_manifest_missing(portal_settings: P
     highlights_trace = next(trace for trace in detail["trace_files"] if trace["name"] == "highlights")
     assert highlights_trace["label"] == "Dataset highlights"
     assert not highlights_trace["path"].startswith("/")
+
+
+def test_science_config_path_resolves_relative_to_repo_root(portal_settings: PortalSettings, monkeypatch: pytest.MonkeyPatch) -> None:
+    manifest = _write_run(portal_settings.outputs_dir, run_id="20250105-000000")
+    client = TestClient(app)
+    original_cwd = os.getcwd()
+    other_dir = portal_settings.outputs_dir.parent / "elsewhere"
+    other_dir.mkdir(parents=True, exist_ok=True)
+    os.chdir(other_dir)
+    try:
+        runs = client.get("/runs").json()
+        assert runs[0]["science_config_path"] == "config/scientific_config.yaml"
+        detail = client.get(f"/runs/{runs[0]['run_id']}").json()
+        assert detail["science_config_path"] == "config/scientific_config.yaml"
+    finally:
+        os.chdir(original_cwd)
 
 
 def test_runs_backfill_world_model_store_exists_when_missing(portal_settings: PortalSettings) -> None:

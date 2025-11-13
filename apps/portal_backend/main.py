@@ -451,7 +451,10 @@ def _relative_manifest_path(settings: PortalSettings, raw: Any) -> str | None:
     try:
         resolved = settings.resolve_path(raw)
     except HTTPException:
-        resolved = Path(raw)
+        candidate = Path(raw)
+        if not candidate.is_absolute():
+            candidate = (settings.repo_root / candidate).resolve()
+        resolved = candidate
     return _relative_to_outputs(settings, resolved)
 
 

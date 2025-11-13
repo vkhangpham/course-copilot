@@ -568,6 +568,25 @@ Implement a simple transaction manager with 2PL.
             self.assertEqual(h1.category, h2.category)
             # Content might vary if random generation is involved
 
+    def test_detect_contradictions_uses_existing_beliefs(self):
+        network = BayesianBeliefNetwork(contradiction_threshold=0.3)
+        network.add_claim(
+            claim_id="claim_positive",
+            content="Approach A improves throughput",
+            citations=["paper_a"],
+        )
+        belief_b = network.add_claim(
+            claim_id="claim_negative",
+            content="Approach A worsens throughput",
+            citations=["paper_b"],
+        )
+
+        self.assertIn("claim_positive", belief_b.contradictions)
+        self.assertIn(
+            "claim_negative",
+            network.beliefs["claim_positive"].contradictions,
+        )
+
 
 class TestBeliefNetworkEdgeCases(unittest.TestCase):
     """Test edge cases in belief network."""
