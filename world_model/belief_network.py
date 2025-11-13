@@ -44,7 +44,7 @@ class BayesianBeliefNetwork:
         self,
         prior_weight: float = 0.3,
         evidence_weight: float = 0.7,
-        contradiction_threshold: float = 0.8,
+        contradiction_threshold: float = 0.6,
         confidence_decay_rate: float = 0.95,
     ):
         """Initialize belief network.
@@ -198,6 +198,8 @@ class BayesianBeliefNetwork:
 
         # Check for semantic contradictions
         for claim_id, existing_content in existing_claims:
+            if not existing_content:
+                continue
             if self._are_contradictory(claim_content, existing_content):
                 contradictions.append(claim_id)
 
@@ -511,13 +513,13 @@ class BayesianBeliefNetwork:
             if (pos in claim1_lower and neg in claim2_lower) or (
                 neg in claim1_lower and pos in claim2_lower
             ):
-                # Check if they're about similar concepts
-                # (very simple overlap check)
                 words1 = set(claim1_lower.split())
                 words2 = set(claim2_lower.split())
-                overlap = len(words1 & words2) / len(words1 | words2)
+                if not words1 or not words2:
+                    continue
+                overlap = len(words1 & words2) / max(1, min(len(words1), len(words2)))
 
-                if overlap > self.contradiction_threshold:
+                if overlap >= self.contradiction_threshold:
                     return True
 
         return False
@@ -604,6 +606,6 @@ def create_default_belief_network(config: Optional[Dict[str, Any]] = None) -> Ba
     return BayesianBeliefNetwork(
         prior_weight=config.get("prior_weight", 0.3),
         evidence_weight=config.get("evidence_weight", 0.7),
-        contradiction_threshold=config.get("contradiction_threshold", 0.8),
+        contradiction_threshold=config.get("contradiction_threshold", 0.6),
         confidence_decay_rate=config.get("confidence_decay_rate", 0.95),
     )

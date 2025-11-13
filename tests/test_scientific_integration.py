@@ -655,9 +655,9 @@ class TestBeliefNetworkEdgeCases(unittest.TestCase):
             initial_confidence=0.6,
         )
 
-        # Manually mark as contradictory
-        self.belief_network.beliefs["claim_a"].contradictions.append("claim_b")
-        self.belief_network.beliefs["claim_b"].contradictions.append("claim_a")
+        # Contradictions should be detected automatically
+        assert "claim_b" in claim1.contradictions
+        assert "claim_a" in claim2.contradictions
 
         # Test highest_confidence strategy
         accepted, rejected = self.belief_network.resolve_contradiction(
