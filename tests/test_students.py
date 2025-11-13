@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from apps.orchestrator.student_loop import StudentLoopConfig, StudentLoopRunner
-from apps.orchestrator.student_qa import StudentQuizEvaluator
+from apps.orchestrator.student_qa import QuizEvaluation, StudentQuizEvaluator
 from apps.orchestrator.students import StudentGraderPool
 
 RUBRICS = Path("evals/rubrics.yaml")
@@ -136,6 +136,61 @@ SQL GROUP BY clauses let us aggregate totals. HAVING filters aggregated rows.
     assert result["questions"][0]["passed"] is True
 
 
+def test_student_quiz_evaluator_respects_word_boundaries(tmp_path: Path) -> None:
+    quiz_bank = tmp_path / "quiz.json"
+    quiz_bank.write_text(
+        """
+[
+  {
+    "id": "quiz-acid",
+    "prompt": "Explain the ACID guarantees",
+    "answer_sketch": "ACID guarantees atomicity and durability",
+    "learning_objectives": ["acid"],
+    "difficulty": "medium"
+  }
+]
+        """.strip(),
+        encoding="utf-8",
+    )
+    lecture = _write_artifact(
+        tmp_path,
+        """
+Acidic workloads stress concurrency control but never detail the classic transactional assurances explicitly.
+        """.strip(),
+    )
+
+    evaluator = StudentQuizEvaluator(quiz_bank_path=quiz_bank, pass_threshold=0.3, question_limit=1)
+    result = evaluator.evaluate_path(lecture).as_dict()
+
+    assert result["questions"][0]["matched_keywords"] == []
+    assert result["questions"][0]["passed"] is False
+
+
+def test_student_quiz_evaluator_handles_short_acronyms(tmp_path: Path) -> None:
+    quiz_bank = tmp_path / "quiz.json"
+    quiz_bank.write_text(
+        """
+[
+  {
+    "id": "quiz-sql",
+    "prompt": "Define SQL",
+    "answer_sketch": "SQL",
+    "learning_objectives": ["sql"],
+    "difficulty": "easy"
+  }
+]
+        """.strip(),
+        encoding="utf-8",
+    )
+    lecture = _write_artifact(tmp_path, "SQL is the standard language for relational databases.")
+
+    evaluator = StudentQuizEvaluator(quiz_bank_path=quiz_bank, pass_threshold=0.5, question_limit=1)
+    result = evaluator.evaluate_path(lecture).as_dict()
+
+    assert result["questions"][0]["matched_keywords"] == ["sql"]
+    assert result["questions"][0]["passed"] is True
+
+
 def test_student_loop_runner_triggers_mutation(tmp_path: Path) -> None:
     lecture = _write_artifact(tmp_path, "Original lecture text")
 
@@ -262,3 +317,108 @@ def test_student_loop_runner_respects_individual_rubric_failures(tmp_path: Path)
     assert results["status"] == "passing"
     # Ensure the initial failing rubric is recorded
     assert "grounding" in results["attempts"][0]["triggered_mutation"]["failing_rubrics"]
+
+
+def test_student_loop_runner_logs_reason_when_max_mutations_reached(tmp_path: Path) -> None:
+    lecture = _write_artifact(tmp_path, "Draft lecture that will fail")
+
+    class FailingGrader:
+        def evaluate(self, _path: Path) -> Dict[str, Any]:  # type: ignore[override]
+            return {
+                "overall_score": 0.4,
+                "rubrics": [
+                    {"name": "coverage", "passed": False, "score": 0.2},
+                    {"name": "grounding", "passed": False, "score": 0.1},
+                ],
+            }
+
+    class FailingQuiz:
+        def evaluate_path(self, _path: Path) -> Any:
+            class _Wrapper:
+                def as_dict(self) -> Dict[str, Any]:
+                    return {
+                        "pass_rate": 0.1,
+                        "questions": [{"id": "q1", "passed": False}],
+                    }
+
+            return _Wrapper()
+
+    runner = StudentLoopRunner(
+        grader=FailingGrader(),
+        quiz_evaluator=FailingQuiz(),
+        config=StudentLoopConfig(rubric_threshold=0.8, quiz_threshold=0.7, max_mutations=0),
+        mutation_callback=lambda path, iteration, reason: path,
+    )
+
+    results = runner.run(lecture)
+
+    assert results["status"] == "max_mutations_reached"
+    assert results["mutations"] == 0
+    final_attempt = results["attempts"][-1]
+    reason = final_attempt["triggered_mutation"]
+    assert reason is not None
+    assert "coverage" in reason["failing_rubrics"]
+    assert reason["failing_questions"] == ["q1"]
+
+
+def test_student_loop_handles_empty_rubrics_and_quiz(tmp_path: Path) -> None:
+    lecture = _write_artifact(tmp_path, "Seed lecture text")
+
+    class EmptyGrader:
+        def evaluate(self, _path: Path) -> Dict[str, object]:  # type: ignore[override]
+            return {
+                "overall_score": 0.95,
+                "rubrics": [],
+            }
+
+    class EmptyQuiz:
+        def evaluate_path(self, _path: Path) -> QuizEvaluation:  # type: ignore[override]
+            return QuizEvaluation(questions=[])
+
+    runner = StudentLoopRunner(
+        grader=EmptyGrader(),
+        quiz_evaluator=EmptyQuiz(),
+        config=StudentLoopConfig(rubric_threshold=0.8, quiz_threshold=0.75, max_mutations=1),
+        mutation_callback=lambda path, _iteration, _reason: path,
+    )
+
+    result = runner.run(lecture)
+    assert result["status"] == "passing"
+    assert result["mutations"] == 0
+
+
+def test_student_loop_mutates_when_quiz_fails_without_rubrics(tmp_path: Path) -> None:
+    lecture = _write_artifact(tmp_path, "Seed lecture text")
+
+    class EmptyGrader:
+        def evaluate(self, _path: Path) -> Dict[str, object]:  # type: ignore[override]
+            return {
+                "overall_score": 0.95,
+                "rubrics": [],
+            }
+
+    class FailingQuiz:
+        def evaluate_path(self, _path: Path) -> QuizEvaluation:  # type: ignore[override]
+            return QuizEvaluation(
+                questions=[
+                    {
+                        "id": "quiz-1",
+                        "prompt": "Example",
+                        "passed": False,
+                        "score": 0.0,
+                    }
+                ]
+            )
+
+    runner = StudentLoopRunner(
+        grader=EmptyGrader(),
+        quiz_evaluator=FailingQuiz(),
+        config=StudentLoopConfig(rubric_threshold=0.8, quiz_threshold=0.75, max_mutations=0),
+        mutation_callback=lambda path, _iteration, _reason: path,
+    )
+
+    result = runner.run(lecture)
+    assert result["status"] == "max_mutations_reached"
+    final_reason = result["attempts"][-1]["triggered_mutation"]
+    assert final_reason is not None
+    assert final_reason["failing_questions"] == ["quiz-1"]

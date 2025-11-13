@@ -191,32 +191,40 @@ class StudentGraderPool:
     # Shared primitives ------------------------------------------------
 
     @staticmethod
-    def _require_all(text: str, keywords: Iterable[str]) -> Tuple[bool, str | None]:
+    def _keyword_present(text: str, keyword: str) -> bool:
+        if not keyword:
+            return False
+        pattern = rf"\b{re.escape(keyword)}\b"
+        return re.search(pattern, text) is not None
+
+    @classmethod
+    def _require_all(cls, text: str, keywords: Iterable[str]) -> Tuple[bool, str | None]:
         kw_list = list(keywords)
-        matches = [kw for kw in kw_list if kw in text]
+        matches = [kw for kw in kw_list if cls._keyword_present(text, kw)]
         return (len(matches) == len(kw_list), ", ".join(matches) if matches else None)
 
-    @staticmethod
-    def _require_any(text: str, keywords: Iterable[str]) -> Tuple[bool, str | None]:
+    @classmethod
+    def _require_any(cls, text: str, keywords: Iterable[str]) -> Tuple[bool, str | None]:
         kw_list = list(keywords)
-        hits = [kw for kw in kw_list if kw in text]
+        hits = [kw for kw in kw_list if cls._keyword_present(text, kw)]
         return (bool(hits), hits[0] if hits else None)
 
-    @staticmethod
+    @classmethod
     def _require_count(
+        cls,
         text: str,
         keywords: Iterable[str],
         *,
         min_hits: int,
     ) -> Tuple[bool, str | None]:
         kw_list = list(keywords)
-        hits = [kw for kw in kw_list if kw in text]
+        hits = [kw for kw in kw_list if cls._keyword_present(text, kw)]
         return (len(hits) >= min_hits, ", ".join(hits[:min_hits]) if hits else None)
 
-    @staticmethod
-    def _default_keyword_check(normalized_item: str, lowered_text: str) -> Tuple[bool, str | None]:
+    @classmethod
+    def _default_keyword_check(cls, normalized_item: str, lowered_text: str) -> Tuple[bool, str | None]:
         tokens = [token for token in re.split(r"[^a-z0-9]+", normalized_item) if len(token) >= 4]
-        hits = [token for token in tokens if token in lowered_text]
+        hits = [token for token in tokens if cls._keyword_present(lowered_text, token)]
         return (bool(hits), hits[0] if hits else None)
 
     def _check_required_sources(self, lowered_text: str) -> Tuple[bool, str | None]:
@@ -226,7 +234,7 @@ class StudentGraderPool:
         missing = []
         hits = []
         for source_id, keywords in self._source_keywords.items():
-            if any(keyword in lowered_text for keyword in keywords):
+            if any(self._keyword_present(lowered_text, keyword) for keyword in keywords):
                 hits.append(source_id)
             else:
                 missing.append(source_id)
@@ -248,15 +256,21 @@ class StudentGraderPool:
     @staticmethod
     def _build_source_keyword_map(sources: Sequence[str]) -> Dict[str, List[str]]:
         if not sources:
-            return {
-                "codd": ["codd", "relational"],
-                "system r": ["system r", "system-r", "rdbms"],
-            }
+            return {}
 
         mapping: Dict[str, List[str]] = {}
         for source in sources:
-            normalized = source.lower()
-            tokens = {normalized, normalized.replace("-", " ")}
-            tokens.add(normalized.split("-")[0])
-            mapping[source] = sorted(tokens)
+            normalized = source.lower().strip()
+            if not normalized:
+                continue
+            tokens = {
+                normalized,
+                normalized.replace("-", " "),
+                normalized.replace("_", " "),
+            }
+            if "-" in normalized:
+                tokens.add(normalized.split("-", 1)[0])
+            if " " in normalized:
+                tokens.add(normalized.replace(" ", ""))
+            mapping[source] = sorted({token for token in tokens if token})
         return mapping

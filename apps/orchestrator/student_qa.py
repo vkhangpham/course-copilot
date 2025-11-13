@@ -21,9 +21,12 @@ class QuizQuestion:
 
     @property
     def keywords(self) -> List[str]:
-        tokens = re.split(r"[^a-z0-9]+", self.answer_sketch.lower())
-        filtered = {token for token in tokens if len(token) >= 4}
-        return sorted(filtered)
+        tokens = [token for token in re.split(r"[^a-z0-9]+", self.answer_sketch.lower()) if token]
+        primary = {token for token in tokens if len(token) >= 4}
+        if primary:
+            return sorted(primary)
+        fallback = {token for token in tokens if len(token) >= 3}
+        return sorted(fallback or primary)
 
 
 @dataclass(slots=True)
@@ -130,9 +133,15 @@ class StudentQuizEvaluator:
         return self.questions[: self.question_limit]
 
     @staticmethod
-    def _keyword_hits(keywords: Sequence[str], text: str) -> List[str]:
-        hits = [keyword for keyword in keywords if keyword and keyword in text]
-        return hits
+    def _keyword_present(text: str, keyword: str) -> bool:
+        if not keyword:
+            return False
+        pattern = rf"\b{re.escape(keyword)}\b"
+        return re.search(pattern, text) is not None
+
+    @classmethod
+    def _keyword_hits(cls, keywords: Sequence[str], text: str) -> List[str]:
+        return [keyword for keyword in keywords if cls._keyword_present(text, keyword)]
 
 
 __all__ = ["StudentQuizEvaluator", "QuizEvaluation", "QuizQuestion"]
