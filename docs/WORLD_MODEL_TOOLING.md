@@ -40,7 +40,7 @@ All IDs are lowercase snake_case and must match across files (concepts ↔ taxon
 | Run orchestrator with fresh ingest | `coursegen-poc --config config/pipeline.yaml --ingest-world-model` |
 
 > **CodeAct note:** the CodeAct world-model tools (`fetch_concepts`, `search_events`, etc.) now follow the same rules.
-> If `WORLD_MODEL_STORE` is unset, they fall back to `COURSEGEN_REPO_ROOT/outputs/world_model/state.sqlite`. This lookup happens at execution time, so library callers and tests can flip env vars between invocations without reloading the module.
+> If `WORLD_MODEL_STORE` is unset, they fall back to `COURSEGEN_REPO_ROOT/outputs/world_model/state.sqlite`. This lookup happens at execution time (the module updates its default path on each call), so library callers and tests can flip env vars between invocations without reloading the module.
 > means automation or REPL sessions running outside the repo only need to export `COURSEGEN_REPO_ROOT`, and every tool
 > (CLI + CodeAct) will resolve paths consistently.
 

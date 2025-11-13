@@ -44,6 +44,18 @@ def test_world_model_store_honors_repo_override(monkeypatch: pytest.MonkeyPatch,
         importlib.reload(codeact_world_model)
 
 
+def test_world_model_tools_honor_env_after_import(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    store = _build_store(tmp_path)
+    monkeypatch.delenv("COURSEGEN_REPO_ROOT", raising=False)
+    monkeypatch.setenv("WORLD_MODEL_STORE", str(store))
+    try:
+        concepts = fetch_concepts(topic="transaction")
+    finally:
+        monkeypatch.delenv("WORLD_MODEL_STORE", raising=False)
+    assert concepts, "Expected concepts when WORLD_MODEL_STORE is set"
+    assert codeact_world_model.DEFAULT_STORE == store.resolve()
+
+
 def _build_store(tmp_path: Path) -> Path:
     store_path = tmp_path / "world_model.sqlite"
     ingest(DATASET, store_path)

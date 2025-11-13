@@ -11,7 +11,6 @@ ENV_REPO_ROOT = "COURSEGEN_REPO_ROOT"
 STORE_ENV_VAR = "WORLD_MODEL_STORE"
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_STORE = (PROJECT_ROOT / "outputs" / "world_model" / "state.sqlite").resolve()
 
 
 def _current_repo_root() -> Path:
@@ -21,13 +20,28 @@ def _current_repo_root() -> Path:
     return PROJECT_ROOT
 
 
-def _default_store_path(store_path: Path | str | None = None) -> Path:
-    if store_path is not None:
-        return Path(store_path).expanduser().resolve()
+def _resolve_default_store(repo_root: Path | None = None) -> Path:
     env_store = os.environ.get(STORE_ENV_VAR)
     if env_store:
         return Path(env_store).expanduser().resolve()
-    return (_current_repo_root() / "outputs" / "world_model" / "state.sqlite").resolve()
+    base_root = repo_root or _current_repo_root()
+    return (base_root / "outputs" / "world_model" / "state.sqlite").resolve()
+
+
+DEFAULT_STORE = _resolve_default_store()
+
+
+def _refresh_default_store() -> Path:
+    path = _resolve_default_store()
+    global DEFAULT_STORE
+    DEFAULT_STORE = path
+    return path
+
+
+def _default_store_path(store_path: Path | str | None = None) -> Path:
+    if store_path is not None:
+        return Path(store_path).expanduser().resolve()
+    return _refresh_default_store()
 
 
 def _adapter(store_path: Path | str | None = None) -> WorldModelAdapter:
