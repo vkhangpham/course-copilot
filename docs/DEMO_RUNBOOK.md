@@ -15,6 +15,8 @@ This guide captures the exact steps we expect reviewers to follow for the Databa
 - Portal UI: `NEXT_PUBLIC_PORTAL_API_BASE` (defaults to `http://localhost:8001`), `NEXT_PUBLIC_NOTEBOOK_BASE`, `NEXT_PUBLIC_TRIGGER_RUN_URL` (optional).
 | Misc | If you want to point the teacher at a different checkout, set `COURSEGEN_VENDOR_RLM_PATH=/abs/path/to/rlm`. Leave unset to use `vendor/rlm`.
 
+_Tip:_ If you only have a single `OPENAI_API_KEY` in `.env`, every role will automatically fall back to it. The per-role env vars are purely optional overrides.
+
 ### Optional offline overrides
 - `--offline-teacher` flag (or `COURSEGEN_RLM_OFFLINE=1`) keeps the teacher loop deterministic without hitting the vendor RLM.
 - `COURSEGEN_CODEACT_OFFLINE=1` forces the TA CodeAct programs into scaffolding mode (useful when API keys are not available, but course artifacts will be placeholder text).
@@ -23,7 +25,8 @@ This guide captures the exact steps we expect reviewers to follow for the Databa
 ## 1. Hydrate the handcrafted world model
 Run this once per repo refresh or whenever `data/handcrafted/database_systems` changes. **Never** source inputs from
 `docs/samples/` or any pre-authored plan/lecture markdown—the demo must derive everything from the handcrafted YAML/CSV
-world model plus `config/course_config.yaml` constraints.
+world model plus `config/course_config.yaml` constraints. The bundled `quiz_bank.json` / `course_outline.yaml` act as
+world-model reference artifacts only; the runtime pipeline still needs to generate quizzes/outlines on the fly.
 
 ```bash
 python scripts/ingest_handcrafted.py \
@@ -149,8 +152,9 @@ python -m apps.orchestrator.eval_loop run \
 Outputs land in `outputs/evaluations/` with fresh timestamps; useful for testing rubric tweaks without regenerating lectures.
 
 ## 6. Notebook verification
-- Live API mode: check the slug (default `database-systems-poc`) in your Open Notebook instance. The CLI reports note IDs inside the `[notebook]` hint and in `notebook_export_summary` within the manifest.
-- Offline mode: inspect `outputs/notebook_exports/*.jsonl`. Each entry includes the original title plus citations so reviewers can diff without hitting the API.
+- **Default (export-dir) mode.** Leave `OPEN_NOTEBOOK_API_BASE` unset and let bootstrap set `OPEN_NOTEBOOK_EXPORT_DIR=<repo>/outputs/notebook_exports`. Every section push lands in the JSONL queue and the CLI `[notebook]` hint lists the queued paths. This is the configuration `demo_smoke.py` and CI should use.
+- **Live API mode.** Point the CLI at the user’s Dockerized instance (e.g., `OPEN_NOTEBOOK_API_BASE=http://localhost:5055`, `OPEN_NOTEBOOK_SLUG=database-systems-poc`, `OPEN_NOTEBOOK_API_KEY=<token>`). Successful pushes surface real note IDs both in the CLI hint and `notebook_export_summary` inside the manifest.
+- **Offline inspection.** Even when hitting the API, set `OPEN_NOTEBOOK_EXPORT_MIRROR=1` if you want a JSONL mirror under `outputs/notebook_exports/` for debugging.
 
 ## 7. Troubleshooting quick reference
 
