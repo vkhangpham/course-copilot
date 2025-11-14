@@ -801,7 +801,7 @@ def integrate_with_teacher(
 
     for hypothesis in hypotheses:
         # Apply hypothesis to course generation
-        strategy = {
+        {
             "hypothesis_id": hypothesis.id,
             "config_overrides": _hypothesis_to_config(hypothesis),
         }

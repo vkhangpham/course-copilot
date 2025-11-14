@@ -336,7 +336,7 @@ Implement a simple transaction manager with 2PL.
     def test_belief_network_contradiction_detection(self):
         """Test contradiction detection between claims."""
         # Add claim about performance
-        claim1 = self.belief_network.add_claim(
+        self.belief_network.add_claim(
             claim_id="claim_perf_increase",
             content="Indexing increases query performance significantly",
             citations=["IndexPaper2000"],
@@ -367,7 +367,7 @@ Implement a simple transaction manager with 2PL.
 
         # Add hypotheses as claims to belief network
         for hyp in hypotheses[:3]:  # Test with first 3
-            claim = self.belief_network.add_claim(
+            self.belief_network.add_claim(
                 claim_id=f"hyp_{hyp.id}",
                 content=hyp.content,
                 citations=[],
@@ -588,7 +588,7 @@ class TestBeliefNetworkEdgeCases(unittest.TestCase):
     def test_zero_evidence_probability(self):
         """Test handling of zero evidence probability in Bayesian update."""
         # This edge case is now logged but shouldn't crash
-        claim = self.belief_network.add_claim(
+        self.belief_network.add_claim(
             claim_id="test_claim",
             content="Test content",
             citations=[],

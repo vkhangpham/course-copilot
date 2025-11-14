@@ -317,7 +317,7 @@ def test_science_metrics_endpoint(portal_settings: PortalSettings) -> None:
 
 def test_runs_fallback_highlight_source_when_manifest_missing(portal_settings: PortalSettings) -> None:
     run_id = "20250303-010101"
-    manifest = _write_run(portal_settings.outputs_dir, run_id=run_id)
+    _write_run(portal_settings.outputs_dir, run_id=run_id)
     artifacts_dir = portal_settings.outputs_dir / "artifacts"
     manifest_path = artifacts_dir / f"run-{run_id}-manifest.json"
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -349,7 +349,7 @@ def test_runs_fallback_highlight_source_when_manifest_missing(portal_settings: P
 
 
 def test_science_config_path_resolves_relative_to_repo_root(portal_settings: PortalSettings, monkeypatch: pytest.MonkeyPatch) -> None:
-    manifest = _write_run(portal_settings.outputs_dir, run_id="20250105-000000")
+    _write_run(portal_settings.outputs_dir, run_id="20250105-000000")
     client = TestClient(app)
     original_cwd = os.getcwd()
     other_dir = portal_settings.outputs_dir.parent / "elsewhere"
@@ -366,7 +366,7 @@ def test_science_config_path_resolves_relative_to_repo_root(portal_settings: Por
 
 def test_runs_backfill_world_model_store_exists_when_missing(portal_settings: PortalSettings) -> None:
     run_id = "20250303-020202"
-    manifest = _write_run(portal_settings.outputs_dir, run_id=run_id)
+    _write_run(portal_settings.outputs_dir, run_id=run_id)
     artifacts_dir = portal_settings.outputs_dir / "artifacts"
     manifest_path = artifacts_dir / f"run-{run_id}-manifest.json"
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
