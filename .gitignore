@@ -1,3 +1,5 @@
+# Generated outputs
+outputs/
 # Python / build artifacts
 __pycache__/
 *.py[oc]
@@ -47,3 +49,6 @@ history/
 
 # Beads issue tracking (local only)
 .beads/
+
+# Generated artifacts
+outputs/course_plan.md
