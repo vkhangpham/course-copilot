@@ -1,0 +1,91 @@
+version: 1
+weeks:
+  - week: 1
+    theme: Relational Thinking & SQL Foundations
+    learning_objectives:
+      - "Explain why the relational model abstracts storage details."
+      - "Translate ER diagrams to SQL schemas."
+    concept_ids: [relational_model, relational_algebra, sql_language]
+    required_readings: [codd-1970, system-r-1976]
+    activities:
+      - type: lecture
+        title: "From ER to Relations"
+      - type: studio
+        title: "Relational algebra drills"
+    deliverable: "Schema + query worksheet"
+  - week: 2
+    theme: Functional Dependencies & Normal Forms
+    learning_objectives:
+      - "Identify functional dependencies from business rules."
+      - "Normalize into BCNF while articulating trade-offs."
+    concept_ids: [functional_dependencies, normal_forms, schema_design]
+    required_readings: [fagin-1977]
+    activities:
+      - type: lecture
+        title: "Dependency theory"
+      - type: lab
+        title: "Normalization clinic"
+    deliverable: "BCNF rationale memo"
+  - week: 3
+    theme: Physical Storage + Indexing
+    learning_objectives:
+      - "Compare heap vs. log-structured layouts."
+      - "Select index types for different workload shapes."
+    concept_ids: [storage_engines, indexing_strategies]
+    required_readings: [stonebraker-1986]
+    activities:
+      - type: lecture
+        title: "Pages, buffers, and WAL"
+      - type: lab
+        title: "Index tuning benchmark"
+    deliverable: "Index tuning report"
+  - week: 4
+    theme: Query Planning & Cost Models
+    learning_objectives:
+      - "Trace Selinger-style DP join enumeration."
+      - "Diagnose plan regressions via cardinality estimates."
+    concept_ids: [query_planning, cost_models]
+    required_readings: [system-r-1976, volcano-1994]
+    activities:
+      - type: studio
+        title: "Plan digests"
+    deliverable: "Plan analysis notebook"
+  - week: 5
+    theme: Transactions, Concurrency, and Recovery
+    learning_objectives:
+      - "Relate ACID properties to application-level invariants."
+      - "Contrast locking, MVCC, and optimistic control."
+    concept_ids: [transaction_management, concurrency_control, mvcc, recovery]
+    required_readings: [gray-reuter-1993, aries-1992]
+    deliverable: "Concurrency anomaly catalog"
+  - week: 6
+    theme: Replication, Sharding, and Distributed Transactions
+    learning_objectives:
+      - "Design leader/follower + sharding strategies."
+      - "Explain two-phase commit and TrueTime."
+    concept_ids: [replication_and_sharding, distributed_transactions, truetime]
+    required_readings: [bigtable-2006, spanner-2012]
+    deliverable: "Replication design doc"
+  - week: 7
+    theme: Consistency Trade-offs & NoSQL Patterns
+    learning_objectives:
+      - "Map workloads onto CAP/PACELC choices."
+      - "Describe Dynamo-style reconciliation."
+    concept_ids: [cap_theorem, consistency_models, nosql_models]
+    required_readings: [dynamo-2007, bailis-2013]
+    deliverable: "CAP decision brief"
+  - week: 8
+    theme: Modern Cloud Warehouses, Streaming, and Governance
+    learning_objectives:
+      - "Explain how Snowflake decouples storage/compute."
+      - "Capture lineage to ground generated materials."
+    concept_ids: [cloud_data_warehouses, streaming_analytics, governance_lineage, htap]
+    required_readings: [snowflake-2016, beam-2017, google-f1-2013]
+    deliverable: "Capstone outline"
+milestones:
+  - name: Midterm plan review
+    week: 4
+    criteria: [coverage, grounding]
+  - name: Capstone submission
+    week: 8
+    criteria: [coverage, pedagogy, coherence]

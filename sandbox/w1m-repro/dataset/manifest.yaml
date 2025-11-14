@@ -1,0 +1,19 @@
+version: 1
+notes: |
+  Manifest describing handcrafted Database Systems assets for the CourseGen PoC.
+files:
+  taxonomy: taxonomy.yaml
+  concepts: concepts.yaml
+  graph: graph.yaml
+  definitions: definitions.yaml
+  timeline: timeline.csv
+  quiz_bank: quiz_bank.json
+  authors: authors.csv
+  papers: papers.csv
+  course_outline: course_outline.yaml
+checks:
+  - ensure concepts referenced by taxonomy exist
+  - ensure citations referenced by concepts appear in papers.csv
+  - ensure quiz items reference valid concept_ids
+commands:
+  ingest: "python scripts/ingest_handcrafted.py data/handcrafted/database_systems outputs/world_model/state.sqlite --jsonl outputs/world_model/snapshot.jsonl"

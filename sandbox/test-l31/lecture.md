@@ -1,0 +1,1 @@
+Redo logs ensure durability via ARIES redo phases.

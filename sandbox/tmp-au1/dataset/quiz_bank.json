@@ -1,0 +1,100 @@
+[
+  {
+    "id": "quiz-sql-group",
+    "prompt": "Given Relations Orders(order_id, customer_id, total) and Customers(customer_id, region), write SQL to return each region with average order total for customers placing >=5 orders.",
+    "answer_sketch": "SELECT c.region, AVG(o.total) ... GROUP BY c.region HAVING COUNT(*) >= 5",
+    "learning_objectives": [
+      "sql_language",
+      "query_planning"
+    ],
+    "difficulty": "medium"
+  },
+  {
+    "id": "quiz-normalization",
+    "prompt": "A table Campaign(channel, campaign_id, region, manager, region_manager_email) exhibits repeated manager info. Show how to reach BCNF and justify the functional dependencies you used.",
+    "answer_sketch": "Identify region -> (manager, email); decompose into Campaign + RegionManager tables.",
+    "learning_objectives": [
+      "functional_dependencies",
+      "normal_forms"
+    ],
+    "difficulty": "medium"
+  },
+  {
+    "id": "quiz-locking",
+    "prompt": "Explain how strict two-phase locking prevents dirty reads yet can deadlock. Provide a concrete deadlock example and mitigation.",
+    "answer_sketch": "Transactions acquire X locks and hold until commit; cycle via T1 lock A then waiting on B while T2 holds B, waiting on A.",
+    "learning_objectives": [
+      "concurrency_control",
+      "transaction_management"
+    ],
+    "difficulty": "hard"
+  },
+  {
+    "id": "quiz-aries",
+    "prompt": "During crash recovery, outline ARIES's Analysis, Redo, and Undo phases and describe the role of LSNs and compensation log records.",
+    "answer_sketch": "Analysis rebuilds dirty page table + txn table; Redo repeats history; Undo uses CLRs for winner txns.",
+    "learning_objectives": [
+      "recovery"
+    ],
+    "difficulty": "hard"
+  },
+  {
+    "id": "quiz-cap",
+    "prompt": "A cross-region key-value store must remain available during network partitions. According to CAP, which trade-offs are forced and what compensating techniques can preserve developer sanity?",
+    "answer_sketch": "Availability + partition tolerance imply relaxing consistency (eventual). Use version vectors, CRDTs, or client reconciliation.",
+    "learning_objectives": [
+      "cap_theorem",
+      "consistency_models"
+    ],
+    "difficulty": "medium"
+  },
+  {
+    "id": "quiz-streaming",
+    "prompt": "Contrast event-time vs. processing-time windows in unified streaming/batch APIs like Beam. Provide a use case where watermarks lag but correctness must be maintained.",
+    "answer_sketch": "Event-time windows keyed by data timestamps; late data handled via allowed lateness/trigger updates.",
+    "learning_objectives": [
+      "streaming_analytics"
+    ],
+    "difficulty": "medium"
+  },
+  {
+    "id": "quiz-mvcc-write-skew",
+    "prompt": "Two doctors share an MVCC-backed appointments table. Under snapshot isolation they each read the same rows and book overlapping shifts, violating staffing rules. Explain why write skew occurs and describe two mitigation strategies.",
+    "answer_sketch": "Snapshot isolation lets concurrent updates touch disjoint rows; enforce predicate locks or elevate to SERIALIZABLE with constraint checks/escrow.",
+    "learning_objectives": [
+      "mvcc",
+      "concurrency_control"
+    ],
+    "difficulty": "hard"
+  },
+  {
+    "id": "quiz-2pc-recovery",
+    "prompt": "During two-phase commit across three regions, the coordinator crashes after sending PREPARE. Outline how participants remain safe, what state they persist, and how a replacement coordinator or TrueTime-based commit wait restores global ordering after recovery.",
+    "answer_sketch": "Participants force-write prepare records and block until coordinator outcome; new coordinator replays logs, asks for votes, then commits/aborts. Spanner waits out 2*epsilon to ensure timestamps respect real-time order.",
+    "learning_objectives": [
+      "distributed_transactions",
+      "truetime"
+    ],
+    "difficulty": "hard"
+  },
+  {
+    "id": "quiz-replication-shard-plan",
+    "prompt": "Design a replication + sharding strategy for a multi-tenant SaaS workload that needs low-latency reads in 2 regions yet survives a regional outage. Specify leader selection, shard mapping, and failover steps.",
+    "answer_sketch": "Use hash-based shards with regional leaders and follower replicas in the other region; async followers serve reads, promote via consensus + rebalancing when leader fails; keep metadata service for shard map.",
+    "learning_objectives": [
+      "replication_and_sharding",
+      "cap_theorem"
+    ],
+    "difficulty": "medium"
+  },
+  {
+    "id": "quiz-lineage-grounding",
+    "prompt": "Notebook outputs must cite every dataset touched in Snowflake. Describe how you would capture lineage from staging tables through dashboards and expose it to the CourseGen agents for grounding.",
+    "answer_sketch": "Ingest Snowflake query history + tagging into a lineage graph, attach dataset IDs to generated sections, and require the RLM to reference those IDs when exporting to Notebook.",
+    "learning_objectives": [
+      "governance_lineage",
+      "cloud_data_warehouses"
+    ],
+    "difficulty": "medium"
+  }
+]

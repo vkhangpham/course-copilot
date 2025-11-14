@@ -1,0 +1,1 @@
+[{"id": "quiz-redo", "prompt": "Explain redo logging", "answer_sketch": "Redo logs track history and must be replayed", "learning_objectives": ["recovery"], "difficulty": "medium"}]

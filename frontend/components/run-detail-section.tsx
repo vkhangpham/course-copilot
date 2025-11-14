@@ -75,6 +75,8 @@ export function RunDetailSection({ detail }: { detail: RunDetail | null }) {
   ).length;
   const coursePlanUrl = detail ? `${PORTAL_API_BASE}/runs/${detail.run_id}/course-plan` : null;
   const lectureUrl = detail ? `${PORTAL_API_BASE}/runs/${detail.run_id}/lecture` : null;
+  const coursePlanExcerpt = detail?.course_plan_excerpt?.trim() || null;
+  const lectureExcerpt = detail?.lecture_excerpt?.trim() || null;
   const scienceArtifactPath =
     (typeof detail?.scientific_metrics_artifact === "string" && detail.scientific_metrics_artifact) ||
     (typeof manifest?.["scientific_metrics_artifact"] === "string"
@@ -187,6 +189,66 @@ export function RunDetailSection({ detail }: { detail: RunDetail | null }) {
             </CardContent>
           </Card>
         </div>
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>Course plan excerpt</CardTitle>
+              <CardDescription>A quick preview of the latest syllabus draft.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {coursePlanExcerpt ? (
+                <pre className="max-h-64 overflow-auto rounded-2xl border border-slate-100 bg-slate-50/80 p-4 text-sm font-mono text-slate-800 whitespace-pre-wrap">
+                  {coursePlanExcerpt}
+                </pre>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  {detail
+                    ? "Course plan excerpt not captured for this run."
+                    : "Once the first run completes, the generated course plan will appear here."}
+                </p>
+              )}
+              {coursePlanUrl ? (
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={coursePlanUrl} target="_blank" className="flex items-center gap-2">
+                    <Download className="h-4 w-4" /> View full plan
+                  </Link>
+                </Button>
+              ) : (
+                <p className="text-xs text-muted-foreground">Full plan download will appear after the first run.</p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Lecture excerpt</CardTitle>
+              <CardDescription>Snapshot of the most recent lecture module.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {lectureExcerpt ? (
+                <pre className="max-h-64 overflow-auto rounded-2xl border border-slate-100 bg-slate-50/80 p-4 text-sm font-mono text-slate-800 whitespace-pre-wrap">
+                  {lectureExcerpt}
+                </pre>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  {detail
+                    ? "Lecture excerpt not captured for this run."
+                    : "Lecture output will appear as soon as the orchestrator finishes a run."}
+                </p>
+              )}
+              {lectureUrl ? (
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={lectureUrl} target="_blank" className="flex items-center gap-2">
+                    <Download className="h-4 w-4" /> View full lecture
+                  </Link>
+                </Button>
+              ) : (
+                <p className="text-xs text-muted-foreground">Lecture download will appear after the first run.</p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
       </div>
 
       <div className="grid gap-6 md:grid-cols-3">

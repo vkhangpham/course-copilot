@@ -1,0 +1,1 @@
+This lecture says incredible and redoing things without actual redo logs.

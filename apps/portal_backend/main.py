@@ -671,13 +671,12 @@ def _relative_to_outputs(settings: PortalSettings, path: Path | None) -> str | N
     resolved = path.resolve()
     outputs_root = settings.outputs_dir.resolve()
     repo_root = settings.repo_root.resolve()
-    try:
-        return str(resolved.relative_to(outputs_root))
-    except ValueError:
+    for base in (outputs_root, repo_root):
         try:
-            return str(resolved.relative_to(repo_root))
+            return str(resolved.relative_to(base))
         except ValueError:
-            return str(resolved)
+            continue
+    return resolved.name
 
 
 def _read_excerpt(path: Path | None, *, limit: int = 400) -> str | None:

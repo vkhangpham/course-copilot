@@ -15,6 +15,8 @@ from ccopilot.cli.run_poc import (
     _print_artifact_summary,
     _print_highlight_hint,
     _print_scientific_summary,
+    REPO_ROOT,
+    build_parser,
     main as cli_main,
 )
 from tests.mocks.notebook_api import NotebookAPIMock
@@ -225,6 +227,11 @@ evaluation:
         with redirect_stdout(buffer):
             exit_code = cli_main(args)
         return exit_code, buffer.getvalue(), output_dir
+
+    def test_cli_defaults_repo_root_to_repo(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args([])
+        self.assertEqual(args.repo_root, str(REPO_ROOT))
 
     def test_cli_run_produces_artifacts(self) -> None:
         exit_code, output, output_dir = self._run_cli()

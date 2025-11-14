@@ -1,0 +1,133 @@
+citations:
+  aries-1992:
+    title: "ARIES: A Transaction Recovery Method Supporting Fine-Granularity Locking and Partial Rollbacks"
+    type: journal-article
+    venue: "ACM TODS"
+    year: 1992
+    url: https://dl.acm.org/doi/10.1145/146931.146938
+  aurora-2017:
+    title: "Amazon Aurora: An On-Demand Relational Database Service"
+    type: conference-paper
+    venue: "SIGMOD"
+    year: 2017
+    url: https://dl.acm.org/doi/10.1145/3035918.3056101
+  bailis-2013:
+    title: "Highly Available Transactions: Virtues and Limitations"
+    type: blog-post
+    venue: "bailis.org"
+    year: 2013
+    url: https://www.bailis.org/blog/highly-available-transactions/
+  beam-2017:
+    title: "The World Beyond Batch: Streaming 101"
+    type: magazine
+    venue: "Communications of the ACM"
+    year: 2017
+    url: https://dl.acm.org/doi/10.1145/3158662
+  bernstein-1987:
+    title: "Concurrency Control and Recovery in Database Systems"
+    type: book
+    venue: "Addison-Wesley"
+    year: 1987
+    url: https://dl.acm.org/doi/book/10.5555/37043
+  bigtable-2006:
+    title: "Bigtable: A Distributed Storage System for Structured Data"
+    type: conference-paper
+    venue: "OSDI"
+    year: 2006
+    url: https://research.google/pubs/pub27898/
+  brewer-2000:
+    title: "Towards Robust Distributed Systems"
+    type: keynote
+    venue: "PODC"
+    year: 2000
+    url: https://people.eecs.berkeley.edu/~brewer/cs262b-2004/PODC-keynote.pdf
+  brewer-cap-2000:
+    title: "Towards Robust Distributed Systems"
+    type: keynote
+    venue: "PODC"
+    year: 2000
+    url: https://people.eecs.berkeley.edu/~brewer/cs262b-2004/PODC-keynote.pdf
+  chen-1976:
+    title: "The Entity-Relationship Model—Toward a Unified View of Data"
+    type: journal-article
+    venue: "ACM TODS"
+    year: 1976
+    url: https://dl.acm.org/doi/10.1145/320434.320440
+  codd-1970:
+    title: "A Relational Model of Data for Large Shared Data Banks"
+    type: journal-article
+    venue: "Communications of the ACM"
+    year: 1970
+    url: https://dl.acm.org/doi/10.1145/362384.362685
+  dynamo-2007:
+    title: "Dynamo: Amazon's Highly Available Key-value Store"
+    type: conference-paper
+    venue: "SOSP"
+    year: 2007
+    url: https://dl.acm.org/doi/10.1145/1294261.1294281
+  fagin-1977:
+    title: "Multivalued Dependencies and a New Normal Form"
+    type: journal-article
+    venue: "ACM TODS"
+    year: 1977
+    url: https://dl.acm.org/doi/10.1145/321357.321368
+  google-f1-2013:
+    title: "F1: A Distributed SQL Database That Scales"
+    type: conference-paper
+    venue: "VLDB"
+    year: 2013
+    url: https://research.google/pubs/pub38125/
+  graefe-1994:
+    title: "Query Evaluation Techniques for Large Databases"
+    type: journal-article
+    venue: "ACM Computing Surveys"
+    year: 1993
+    url: https://dl.acm.org/doi/10.1145/161419.161423
+  gray-reuter-1993:
+    title: "Transaction Processing: Concepts and Techniques"
+    type: book
+    venue: "Morgan Kaufmann"
+    year: 1993
+    url: https://dl.acm.org/doi/book/10.5555/573132
+  mapreduce-2004:
+    title: "MapReduce: Simplified Data Processing on Large Clusters"
+    type: conference-paper
+    venue: "OSDI"
+    year: 2004
+    url: https://research.google/pubs/pub62/
+  selinger-1979:
+    title: "Access Path Selection in a Relational DBMS"
+    type: conference-paper
+    venue: "SIGMOD"
+    year: 1979
+    url: https://dl.acm.org/doi/10.1145/582095.582099
+  snowflake-2016:
+    title: "The Snowflake Elastic Data Warehouse"
+    type: conference-paper
+    venue: "SIGMOD"
+    year: 2016
+    url: https://dl.acm.org/doi/10.1145/2882903.2903741
+  spanner-2012:
+    title: "Spanner: Google's Globally Distributed Database"
+    type: conference-paper
+    venue: "OSDI"
+    year: 2012
+    url: https://research.google/pubs/pub39966/
+  stonebraker-1986:
+    title: "The Design of Postgres"
+    type: conference-paper
+    venue: "SIGMOD"
+    year: 1986
+    url: https://dl.acm.org/doi/10.1145/16894.16888
+  system-r-1976:
+    title: "SEQUEL: A Structured English Query Language"
+    type: conference-paper
+    venue: "SIGMOD"
+    year: 1976
+    url: https://dl.acm.org/doi/10.1145/509383.509388
+  volcano-1994:
+    title: "The Volcano Optimizer Generator"
+    type: conference-paper
+    venue: "ICDE"
+    year: 1994
+    url: https://ieeexplore.ieee.org/document/283046

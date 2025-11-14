@@ -1,0 +1,11 @@
+year,event,why_it_matters,related_concepts,citation_id
+1970,"Codd publishes the relational model","Formalizes data independence and relational algebra.","relational_model,relational_algebra",codd-1970
+1976,"System R validates SQL","Demonstrates cost-based optimization + relational performance.","sql_language,query_planning",system-r-1976
+1976,"Chen proposes ER modeling","Provides a bridge from requirements to relational schemas.","schema_design",chen-1976
+1979,"Selinger optimizer","Establishes DP-based join enumeration.","cost_models,query_planning",selinger-1979
+1986,"Postgres storage innovations","Adds write-optimized storage, time travel, and extensibility.","storage_engines",stonebraker-1986
+1992,"ARIES logging","Standardizes physiological redo/undo logging.","recovery",aries-1992
+2004,"MapReduce popularizes data-parallel batch","Simplifies large-scale ETL, inspiring modern streaming APIs.","streaming_analytics",mapreduce-2004
+2012,"Spanner deploys TrueTime","Delivers externally consistent distributed transactions.","distributed_transactions,truetime",spanner-2012
+2016,"Snowflake ships elastic warehouses","Separates storage/compute for SaaS analytics.","cloud_data_warehouses",snowflake-2016
+2017,"Aurora details HTAP replication","Blends OLTP durability with analytical replicas via log shipping.","htap",aurora-2017

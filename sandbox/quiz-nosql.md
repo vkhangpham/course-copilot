@@ -1,0 +1,1 @@
+NoSQL systems prioritize availability over SQL guarantees.

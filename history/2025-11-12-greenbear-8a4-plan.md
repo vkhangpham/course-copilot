@@ -12,3 +12,4 @@
 ## Progress
 - 2025-11-12 11:35Z – GreenBear opened ccopilot-8a4, reserved the query CLI/test files, and is anchoring the default store path to the repo root.
 - 2025-11-12 11:37Z – Anchored `DEFAULT_STORE` to the repo root and updated the regression test; `pytest tests/test_query_world_model.py -q` → 11 passed.
+- 2025-11-14 WhiteCreek: Verified the current `_resolve_repo_root`/`_resolve_default_store` implementation still anchors `DEFAULT_STORE` under the repo root, reran `pytest tests/test_query_world_model.py -q` to ensure no regressions, and prepared to close the bead.

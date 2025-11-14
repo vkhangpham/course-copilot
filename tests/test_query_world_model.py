@@ -68,6 +68,23 @@ def test_query_world_model_detects_repo_from_cwd(monkeypatch: pytest.MonkeyPatch
         importlib.reload(query_world_model)
 
 
+def test_resolve_repo_root_uses_module_root_when_cwd_outside_repo(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    module = importlib.reload(query_world_model)
+    monkeypatch.delenv("COURSEGEN_REPO_ROOT", raising=False)
+    monkeypatch.delenv("WORLD_MODEL_STORE", raising=False)
+    expected_root = Path(__file__).resolve().parents[1].resolve()
+    monkeypatch.chdir(tmp_path)
+    repo_root = module._resolve_repo_root()
+    assert repo_root == expected_root
+    default_store = module._resolve_default_store()
+    expected_store = (expected_root / "outputs" / "world_model" / "state.sqlite").resolve()
+    assert default_store == expected_store
+    importlib.reload(query_world_model)
+
+
 def test_summary_help_uses_generic_default_path(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("COURSEGEN_REPO_ROOT", raising=False)
     monkeypatch.delenv("WORLD_MODEL_STORE", raising=False)

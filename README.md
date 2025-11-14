@@ -57,7 +57,7 @@ This repository hosts the proof-of-concept for Concepedia’s “CourseGen” pi
 
 ## Running the PoC CLI
 ### Quick start (apps/orchestrator entry point)
-Use the minimal shim in `apps/orchestrator/run_poc.py` when you just want to point at constraints + concept data:
+Use the minimal shim in `apps/orchestrator/run_poc.py` when you just want to point at handcrafted constraints + concepts:
 ```bash
 python apps/orchestrator/run_poc.py \
   --constraints config/course_config.yaml \
@@ -65,10 +65,10 @@ python apps/orchestrator/run_poc.py \
   --notebook database-systems-poc \
   --ablations no_students
 ```
-The shim auto-detects the repo root, forwards everything to `ccopilot.cli.run_poc`, and keeps the flag surface to the subset documented in AGENTS.md. Add `--output-dir /tmp/coursegen-run`, `--dry-run`, `--quiet`, or `--ingest-world-model` as needed; any supplied ablations map directly to `no_world_model`, `no_students`, and/or `no_recursion`. Both this shim and the canonical `ccopilot.cli.run_poc` resolve relative paths (config, constraints, concept data, output dirs, world-model stores) against the `--repo-root` you pass, so you can launch the CLI from `/tmp` or a CI workspace without juggling `PYTHONPATH` or `cd`.
+Only `--constraints`, `--concepts`, `--notebook`, and the optional `--ablations` flag are exposed; a hidden `--repo-root` argument keeps every relative path (config, dataset, outputs, science config, etc.) anchored to the repository root so you can run the shim from anywhere. Additional knobs such as `--output-dir`, `--dry-run`, `--quiet`, `--ingest-world-model`, or `--skip-notebook-create` live on the canonical CLI described below, and every ablation name maps directly to `no_world_model`, `no_students`, or `no_recursion`.
 
 ### Full CLI (coursegen-poc)
-For advanced scenarios you can still invoke the canonical CLI exposed via the console script:
+For advanced scenarios you can still invoke the canonical CLI exposed via the console script (or by running `python -m ccopilot.cli.run_poc`):
 ```bash
 coursegen-poc --config config/pipeline.yaml --dry-run
 ```

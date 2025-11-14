@@ -545,6 +545,23 @@ def test_relative_manifest_paths_use_repo_root_for_external_files(
     assert run_item["scientific_metrics_artifact"] == "config/external-science.json"
 
 
+def test_portal_strips_absolute_paths_that_escape_repo(portal_settings: PortalSettings) -> None:
+    run_id = "20250105-000000"
+    _write_run(portal_settings.outputs_dir, run_id=run_id)
+    manifest_path = portal_settings.outputs_dir / "artifacts" / f"run-{run_id}-manifest.json"
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    payload["science_config_path"] = "/tmp/very/secret/science-config.yaml"
+    manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    client = TestClient(app)
+    detail = client.get(f"/runs/{run_id}").json()
+    assert detail["science_config_path"] == "science-config.yaml"
+
+    runs_listing = client.get("/runs").json()
+    listing = {item["run_id"]: item for item in runs_listing}
+    assert listing[run_id]["science_config_path"] == "science-config.yaml"
+
+
 def test_resolve_path_blocks_outside_outputs(tmp_path: Path) -> None:
     outputs = tmp_path / "outputs"
     outputs.mkdir(parents=True)

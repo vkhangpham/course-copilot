@@ -10,3 +10,4 @@ When manifest entries point outside `outputs/`, `_relative_manifest_path` curren
 
 ## Progress
 - 2025-11-13 00:38Z – Plan drafted.
+- 2025-11-13 00:41Z – `_relative_manifest_path` now resolves via repo root; `pytest tests/test_portal_backend.py -q` passes.

@@ -319,6 +319,8 @@ python run_poc.py --constraints ../../data/constraints/active.yaml \
                   --notebook database-systems-poc
 ```
 
+If you want to force the CLI to use a different handcrafted dataset (for example when running from a different checkout or workspace), export `COURSEGEN_DATASET_DIR=/abs/path/to/data/handcrafted/database_systems` before invoking `python run_poc.py`. The shim honors this env var after the documented `--concept` flag (which is an alias for `--concepts`), so the command above keeps working while still letting you redirect the dataset independently of flags.
+
 4. **Evaluate**
 
 ```bash

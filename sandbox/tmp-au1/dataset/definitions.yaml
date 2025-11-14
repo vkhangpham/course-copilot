@@ -1,0 +1,46 @@
+definitions:
+  - id: def-transaction
+    concept: transaction_management
+    statement: "A transaction is a sequence of operations that executes atomically and durably, appearing indivisible to other concurrent units of work."
+    citation: gray-reuter-1993
+    source_excerpt: "A transaction transforms the database from one consistent state to another, preserving ACID."
+  - id: def-serializability
+    concept: concurrency_control
+    statement: "Serializability is the isolation property whereby concurrent execution produces a result equivalent to some serial order of the same transactions."
+    citation: bernstein-1987
+    source_excerpt: "Schedules are serializable if they are conflict-equivalent to a serial schedule."
+  - id: def-wal
+    concept: recovery
+    statement: "Write-ahead logging (WAL) mandates that log records describing changes be flushed to stable storage before the corresponding data pages."
+    citation: aries-1992
+    source_excerpt: "ARIES enforces WAL to guarantee redo information is durable before dirty pages reach disk."
+  - id: def-btree
+    concept: indexing_strategies
+    statement: "A B+-tree index stores sorted keys in internal nodes and data pointers in leaves, supporting logarithmic search and range scans."
+    citation: graefe-1994
+    source_excerpt: "B+-trees remain the default choice for disk-resident indexes due to their fan-out and range efficiency."
+  - id: def-cap
+    concept: consistency_models
+    statement: "The CAP theorem states that in the presence of a network partition, a distributed system must trade off availability against strong consistency."
+    citation: brewer-cap-2000
+    source_excerpt: "You can only choose two of Consistency, Availability, and Partition tolerance."
+  - id: def-truetime
+    concept: distributed_transactions
+    statement: "TrueTime exposes bounded clock uncertainty, allowing Spanner to assign globally meaningful timestamps for external consistency."
+    citation: spanner-2012
+    source_excerpt: "Spanner waits out the uncertainty interval to ensure transactions commit in timestamp order."
+  - id: def-mvcc
+    concept: mvcc
+    statement: "MVCC maintains multiple committed versions so readers obtain snapshot-consistent data without blocking writers."
+    citation: bernstein-1987
+    source_excerpt: "Multi-version systems keep prior versions and let read-only transactions proceed without locks, cleaning up versions lazily."
+  - id: def-cost-model
+    concept: cost_models
+    statement: "Cost models approximate I/O, CPU, and memory consumption of candidate plans using statistics to guide join ordering."
+    citation: volcano-1994
+    source_excerpt: "Volcano enumerates plans using dynamic programming with estimated costs derived from histograms and cardinality formulas."
+  - id: def-governance
+    concept: governance_lineage
+    statement: "Lineage captures how datasets, transforms, and outputs relate so instructional materials can cite provenance."
+    citation: google-f1-2013
+    source_excerpt: "F1 maintains metadata for each record to provide auditability and trace query outputs back to the source tables."

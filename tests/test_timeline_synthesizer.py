@@ -46,3 +46,19 @@ def test_timeline_synthesizer_handles_missing_year(tmp_path: Path) -> None:
 
     assert len(events) == 1
     assert events[0].year is None
+
+
+def test_timeline_synthesizer_handles_comma_delimited_concepts(tmp_path: Path) -> None:
+    csv_path = tmp_path / "timeline.csv"
+    csv_path.write_text(
+        """year,event,why_it_matters,related_concepts
+1985,Prototype release,Proof of concept,"distributed_transactions, recovery"
+        """.strip(),
+        encoding="utf-8",
+    )
+
+    synth = TimelineSynthesizer()
+    events = synth.build(csv_path, concepts=["recovery"])
+
+    assert len(events) == 1
+    assert events[0].concepts == ["distributed_transactions", "recovery"]

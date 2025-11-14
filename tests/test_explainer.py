@@ -64,3 +64,31 @@ def test_explainer_handles_custom_dataset(tmp_path):
     assert "Definition" in chunk.body_md
     assert "History" in chunk.body_md
     assert chunk.citations == ["paper-xyz"]
+
+
+def test_explainer_history_line_handles_comma_delimited_concepts(tmp_path):
+    dataset = tmp_path / "dataset"
+    dataset.mkdir()
+    concepts_payload = {
+        "concepts": {
+            "relational_model": {
+                "name": "Relational Model",
+                "summary": "Foundational formalism.",
+            },
+            "relational_algebra": {
+                "name": "Relational Algebra",
+                "summary": "Operators on relations.",
+            },
+        }
+    }
+    (dataset / "concepts.yaml").write_text(yaml.safe_dump(concepts_payload), encoding="utf-8")
+    (dataset / "timeline.csv").write_text(
+        "event,year,why_it_matters,related_concepts,citation_id\n"
+        "Relational breakthrough,1970,Formalized relations,\"relational_model, relational_algebra\",paper-1\n",
+        encoding="utf-8",
+    )
+
+    explainer = Explainer(dataset_root=dataset)
+    history_line, citation = explainer._history_line("relational_algebra")
+    assert history_line is not None and "Relational breakthrough" in history_line
+    assert citation == "paper-1"

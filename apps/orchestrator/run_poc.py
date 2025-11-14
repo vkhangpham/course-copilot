@@ -12,22 +12,22 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from ccopilot.cli.run_poc import main as _cli_main
+from apps.orchestrator.ta_roles.dataset_paths import resolve_dataset_root
 
 DEFAULT_CONFIG_REL = Path("config") / "pipeline.yaml"
 DEFAULT_CONSTRAINTS_REL = Path("config") / "course_config.yaml"
 DEFAULT_CONCEPTS_REL = Path("data") / "handcrafted" / "database_systems"
 DEFAULT_SCIENCE_CONFIG_REL = Path("config") / "scientific_config.yaml"
-DEFAULT_OUTPUT_REL = Path("outputs")
 ABLATION_CHOICES = ("no_world_model", "no_students", "no_recursion")
 
 __all__ = ["build_parser", "main"]
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Return the slim CLI parser described in AGENTS.md."""
+    """Return the minimalist CourseGen CLI described in AGENTS.md."""
 
     parser = argparse.ArgumentParser(
-        description="Run the CourseGen pipeline with the minimal flag set (constraints + concepts + notebook).",
+        description="Run the CourseGen pipeline with only the required inputs.",
     )
     parser.add_argument(
         "--constraints",
@@ -36,10 +36,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--concepts",
+        "--concept",
+        dest="concepts",
         default=None,
         help=(
-            "Path to the handcrafted concept/world-model dataset "
-            f"(defaults to {DEFAULT_CONCEPTS_REL})."
+            f"Directory containing handcrafted world-model artifacts (defaults to {DEFAULT_CONCEPTS_REL}). "
+            "Supports the legacy --concept alias."
         ),
     )
     parser.add_argument(
@@ -56,45 +58,6 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
-        "--output-dir",
-        default=None,
-        help="Directory for generated artifacts (defaults to <repo>/outputs).",
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Validate config/dataset and log bootstrap info without invoking the orchestrator.",
-    )
-    parser.add_argument(
-        "--quiet",
-        action="store_true",
-        help="Suppress the CLI evaluation/highlight summaries (artifacts are still written).",
-    )
-    parser.add_argument(
-        "--ingest-world-model",
-        action="store_true",
-        help="Rebuild the SQLite world model snapshot before running (mirrors coursegen-poc flag).",
-    )
-    parser.add_argument(
-        "--skip-notebook-create",
-        action="store_true",
-        help="Skip auto-creating the Open Notebook slug before publishing.",
-    )
-    # Advanced overrides stay hidden so the help output matches the “minimal CLI” promise.
-    parser.add_argument(
-        "--config",
-        default=None,
-        help=argparse.SUPPRESS,
-    )
-    parser.add_argument(
-        "--science-config",
-        default=None,
-        help=(
-            "Scientific evaluator config file to pass through to the main CLI. "
-            "Defaults to config/scientific_config.yaml when present."
-        ),
-    )
-    parser.add_argument(
         "--repo-root",
         default=str(REPO_ROOT),
         help=argparse.SUPPRESS,
@@ -102,73 +65,65 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _resolve_path(value: str | Path | None, default: Path, *, base: Path | None = None) -> Path:
+def _resolve_path(value: str | Path, *, base: Path | None = None) -> Path:
     """Return an absolute path, anchoring relatives to ``base`` when provided."""
 
-    candidate = Path(value) if value else Path(default)
-    candidate = candidate.expanduser()
+    candidate = Path(value).expanduser()
     if candidate.is_absolute():
         return candidate.resolve()
-    base_path = Path(base).expanduser().resolve() if base is not None else Path.cwd()
-    return (base_path / candidate).resolve()
+    anchor = Path(base).expanduser().resolve() if base is not None else Path.cwd()
+    return (anchor / candidate).resolve()
 
 
 def _resolve_optional_path(value: str | Path | None, *, base: Path | None = None) -> Path | None:
     if value is None:
         return None
-    return _resolve_path(value, Path(value), base=base)
+    return _resolve_path(value, base=base)
+
+
+def _resolve_dataset_path(args: argparse.Namespace, repo_root: Path) -> Path | None:
+    explicit = _resolve_optional_path(args.concepts, base=repo_root)
+    if explicit is not None:
+        return explicit
+
+    candidate = resolve_dataset_root(repo_root=repo_root)
+    return candidate if candidate.exists() else None
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    repo_root = _resolve_path(args.repo_root, REPO_ROOT)
-    config_default = (repo_root / DEFAULT_CONFIG_REL).resolve()
+    repo_root = _resolve_path(args.repo_root)
+    config_path = (repo_root / DEFAULT_CONFIG_REL).resolve()
     constraints_default = (repo_root / DEFAULT_CONSTRAINTS_REL).resolve()
-    concepts_default = (repo_root / DEFAULT_CONCEPTS_REL).resolve()
     science_default = (repo_root / DEFAULT_SCIENCE_CONFIG_REL).resolve()
-    output_default = (repo_root / DEFAULT_OUTPUT_REL).resolve()
+    dataset_path = _resolve_dataset_path(args, repo_root)
 
-    config_path = _resolve_path(args.config, config_default, base=repo_root)
-    output_dir = _resolve_path(args.output_dir, output_default, base=repo_root)
-    constraints_path = _resolve_path(args.constraints, constraints_default, base=repo_root)
-    concepts_path = _resolve_path(args.concepts, concepts_default, base=repo_root)
-    science_config_path = (
-        _resolve_optional_path(args.science_config, base=repo_root)
-        if args.science_config is not None
-        else (science_default if science_default.exists() else None)
-    )
+    constraints_path = _resolve_optional_path(args.constraints, base=repo_root)
+    if constraints_path is None and constraints_default.exists():
+        constraints_path = constraints_default
 
-    user_supplied_constraints = args.constraints is not None
-    user_supplied_concepts = args.concepts is not None
+
+    science_config_path = science_default if science_default.exists() else None
 
     forwarded: list[str] = [
         "--config",
         str(config_path),
         "--repo-root",
         str(repo_root),
-        "--output-dir",
-        str(output_dir),
+        "--notebook",
+        args.notebook,
     ]
 
-    if user_supplied_constraints or constraints_path.exists():
+    if constraints_path is not None:
         forwarded.extend(["--constraints", str(constraints_path)])
-    if user_supplied_concepts or concepts_path.exists():
-        forwarded.extend(["--concept", str(concepts_path)])
-    forwarded.extend(["--notebook", args.notebook])
+    if dataset_path is not None:
+        forwarded.extend(["--concept", str(dataset_path)])
     if science_config_path is not None:
         forwarded.extend(["--science-config", str(science_config_path)])
     if args.ablations:
         forwarded.extend(["--ablations", args.ablations])
-    if args.dry_run:
-        forwarded.append("--dry-run")
-    if args.quiet:
-        forwarded.append("--quiet")
-    if args.ingest_world_model:
-        forwarded.append("--ingest-world-model")
-    if args.skip_notebook_create:
-        forwarded.append("--skip-notebook-create")
 
     return _cli_main(forwarded)
 

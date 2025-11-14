@@ -304,6 +304,12 @@ This mirrors Kosmos’ notion of a **structured world model shared across agents
 
 - UI, doc polish, and 3 ablations (no recursion / no students / no world model). When `no_world_model` is active, highlight exports still land in `outputs/artifacts/run-*-highlights.json` but should be marked `highlight_source="dataset"` and surfaced as such in CLI + portal so reviewers can prove the ablation took effect.
 
+#### Progress log
+
+- *2025-11-14:* `apps/orchestrator/run_poc.py` now resolves a hidden `--repo-root`, only exposes `--constraints`, `--concepts`, `--notebook`, and optional `--ablations`, and forwards the detected science-config file before calling the canonical CLI (`--concepts` / `--concept` now share a single flag). Tracked in bead `ccopilot-fcf3`.
+- *2025-11-14:* `ccopilot.cli.run_poc` defaults `--repo-root` to the repository root constant so automation can invoke the console script from any directory, the quick-start docs now explain the shim vs full CLI surface, and the parser test confirms the default path.
+- *2025-11-14:* `pytest tests/test_apps_run_poc.py tests/test_cli_run_poc.py` plus the focused `pytest tests/test_cli_run_poc.py -q` runs verify the CLI changes keep existing behaviours intact.
+
 ---
 
 ## 7) Risks & Mitigations

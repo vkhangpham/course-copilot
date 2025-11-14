@@ -12,7 +12,7 @@ from apps.orchestrator import run_poc
 
 
 class RunPocEntrypointTests(unittest.TestCase):
-    """Ensure the thin apps/orchestrator shim forwards the right args."""
+    """Ensure the thin apps/orchestrator shim forwards the minimal args."""
 
     @mock.patch("apps.orchestrator.run_poc._cli_main", return_value=0)
     def test_defaults_forward_to_primary_cli(self, mock_main: mock.Mock) -> None:
@@ -22,25 +22,29 @@ class RunPocEntrypointTests(unittest.TestCase):
         mock_main.assert_called_once()
         forwarded = mock_main.call_args[0][0]
 
-        def _value(flag: str) -> Path:
+        def _value(flag: str) -> str:
             idx = forwarded.index(flag)
-            return Path(forwarded[idx + 1])
+            return forwarded[idx + 1]
 
-        self.assertEqual(_value("--repo-root"), run_poc.REPO_ROOT)
-        self.assertEqual(_value("--config"), run_poc.REPO_ROOT / run_poc.DEFAULT_CONFIG_REL)
+        self.assertEqual(Path(_value("--repo-root")), run_poc.REPO_ROOT)
+        self.assertEqual(Path(_value("--config")), run_poc.REPO_ROOT / run_poc.DEFAULT_CONFIG_REL)
+        self.assertEqual(_value("--notebook"), "database-systems-poc")
         self.assertEqual(
-            _value("--constraints"), run_poc.REPO_ROOT / run_poc.DEFAULT_CONSTRAINTS_REL
+            Path(_value("--constraints")), run_poc.REPO_ROOT / run_poc.DEFAULT_CONSTRAINTS_REL
         )
-        self.assertEqual(_value("--output-dir"), run_poc.REPO_ROOT / run_poc.DEFAULT_OUTPUT_REL)
-        self.assertEqual(_value("--concept"), run_poc.REPO_ROOT / run_poc.DEFAULT_CONCEPTS_REL)
+        self.assertEqual(Path(_value("--concept")), run_poc.REPO_ROOT / run_poc.DEFAULT_CONCEPTS_REL)
         self.assertEqual(
-            _value("--science-config"), run_poc.REPO_ROOT / run_poc.DEFAULT_SCIENCE_CONFIG_REL
+            Path(_value("--science-config")), run_poc.REPO_ROOT / run_poc.DEFAULT_SCIENCE_CONFIG_REL
         )
+        self.assertNotIn("--ablations", forwarded)
 
     @mock.patch("apps.orchestrator.run_poc._cli_main", return_value=0)
-    def test_overrides_and_flags(self, mock_main: mock.Mock) -> None:
-        exit_code = run_poc.main(
-            [
+    def test_overrides_and_ablations(self, mock_main: mock.Mock) -> None:
+        with tempfile.TemporaryDirectory() as repo_root:
+            exit_code = run_poc.main(
+                [
+                    "--repo-root",
+                    repo_root,
                 "--constraints",
                 "/tmp/constraints.yaml",
                 "--concepts",
@@ -49,14 +53,6 @@ class RunPocEntrypointTests(unittest.TestCase):
                 "demo-notebook",
                 "--ablations",
                 "no_students",
-                "--output-dir",
-                "/tmp/outputs",
-                "--science-config",
-                "./configs/science.yaml",
-                "--dry-run",
-                "--quiet",
-                "--ingest-world-model",
-                "--skip-notebook-create",
             ]
         )
 
@@ -66,12 +62,7 @@ class RunPocEntrypointTests(unittest.TestCase):
         self.assertIn("--concept", forwarded)
         self.assertIn("--notebook", forwarded)
         self.assertIn("--ablations", forwarded)
-        self.assertIn("--output-dir", forwarded)
-        self.assertIn("--dry-run", forwarded)
-        self.assertIn("--quiet", forwarded)
-        self.assertIn("--ingest-world-model", forwarded)
-        self.assertIn("--skip-notebook-create", forwarded)
-        self.assertIn("--science-config", forwarded)
+        self.assertNotIn("--science-config", forwarded)
 
         def _value(flag: str) -> str:
             idx = forwarded.index(flag)
@@ -81,18 +72,16 @@ class RunPocEntrypointTests(unittest.TestCase):
         self.assertEqual(Path(_value("--concept")), Path("/tmp/concepts").resolve())
         self.assertEqual(_value("--notebook"), "demo-notebook")
         self.assertEqual(_value("--ablations"), "no_students")
-        self.assertEqual(Path(_value("--output-dir")), Path("/tmp/outputs").resolve())
-        self.assertEqual(Path(_value("--science-config")), Path("./configs/science.yaml").resolve())
 
     @mock.patch("apps.orchestrator.run_poc._cli_main", return_value=0)
     def test_repo_root_override_without_explicit_flags(self, mock_main: mock.Mock) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = Path(tmp)
-            config_dir = repo_root / "config"
-            config_dir.mkdir(parents=True, exist_ok=True)
-            (config_dir / run_poc.DEFAULT_CONSTRAINTS_REL.name).write_text("title: tmp\n", encoding="utf-8")
-            data_dir = repo_root / run_poc.DEFAULT_CONCEPTS_REL
-            data_dir.mkdir(parents=True, exist_ok=True)
+            (repo_root / "config").mkdir(parents=True, exist_ok=True)
+            (repo_root / "config" / run_poc.DEFAULT_CONSTRAINTS_REL.name).write_text(
+                "title: tmp\n", encoding="utf-8"
+            )
+            (repo_root / "data" / "handcrafted" / "database_systems").mkdir(parents=True, exist_ok=True)
             exit_code = run_poc.main(["--repo-root", str(repo_root)])
 
         self.assertEqual(exit_code, 0)
@@ -107,7 +96,6 @@ class RunPocEntrypointTests(unittest.TestCase):
         self.assertEqual(_path("--config"), expected_root / run_poc.DEFAULT_CONFIG_REL)
         self.assertEqual(_path("--constraints"), expected_root / run_poc.DEFAULT_CONSTRAINTS_REL)
         self.assertEqual(_path("--concept"), expected_root / run_poc.DEFAULT_CONCEPTS_REL)
-        self.assertEqual(_path("--output-dir"), expected_root / run_poc.DEFAULT_OUTPUT_REL)
         self.assertNotIn("--science-config", forwarded)
 
     @mock.patch("apps.orchestrator.run_poc._cli_main", return_value=0)
@@ -116,12 +104,10 @@ class RunPocEntrypointTests(unittest.TestCase):
             repo_root = Path(tmp)
             config_dir = repo_root / "config"
             config_dir.mkdir(parents=True, exist_ok=True)
-            constraints_path = config_dir / run_poc.DEFAULT_CONSTRAINTS_REL.name
-            constraints_path.write_text("title: tmp\n", encoding="utf-8")
+            (config_dir / run_poc.DEFAULT_CONSTRAINTS_REL.name).write_text("title: tmp\n", encoding="utf-8")
             science_path = config_dir / run_poc.DEFAULT_SCIENCE_CONFIG_REL.name
             science_path.write_text("metrics: {}\n", encoding="utf-8")
-            data_dir = repo_root / run_poc.DEFAULT_CONCEPTS_REL
-            data_dir.mkdir(parents=True, exist_ok=True)
+            (repo_root / "data" / "handcrafted" / "database_systems").mkdir(parents=True, exist_ok=True)
             exit_code = run_poc.main(["--repo-root", str(repo_root)])
 
         self.assertEqual(exit_code, 0)
@@ -138,6 +124,8 @@ class RunPocEntrypointTests(unittest.TestCase):
     def test_relative_paths_anchor_to_repo_root(self, mock_main: mock.Mock) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = Path(tmp)
+            (repo_root / "data").mkdir(parents=True, exist_ok=True)
+            (repo_root / "config").mkdir(parents=True, exist_ok=True)
             exit_code = run_poc.main(
                 [
                     "--repo-root",
@@ -146,12 +134,6 @@ class RunPocEntrypointTests(unittest.TestCase):
                     "config/custom.yaml",
                     "--concepts",
                     "data/handcrafted/custom",
-                    "--output-dir",
-                    "outputs/smoke",
-                    "--config",
-                    "config/pipeline-alt.yaml",
-                    "--science-config",
-                    "config/science-alt.yaml",
                 ]
             )
 
@@ -166,9 +148,6 @@ class RunPocEntrypointTests(unittest.TestCase):
         self.assertEqual(_path("--repo-root"), expected_root)
         self.assertEqual(_path("--constraints"), expected_root / "config" / "custom.yaml")
         self.assertEqual(_path("--concept"), expected_root / "data" / "handcrafted" / "custom")
-        self.assertEqual(_path("--output-dir"), expected_root / "outputs" / "smoke")
-        self.assertEqual(_path("--config"), expected_root / "config" / "pipeline-alt.yaml")
-        self.assertEqual(_path("--science-config"), expected_root / "config" / "science-alt.yaml")
 
     @mock.patch("apps.orchestrator.run_poc._cli_main", return_value=0)
     def test_skips_constraints_flag_when_default_missing(self, mock_main: mock.Mock) -> None:
@@ -195,11 +174,11 @@ class RunPocEntrypointTests(unittest.TestCase):
     def test_skips_science_config_flag_when_default_missing(self, mock_main: mock.Mock) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             repo_root = Path(tmp)
-            config_dir = repo_root / "config"
-            config_dir.mkdir(parents=True, exist_ok=True)
-            (config_dir / run_poc.DEFAULT_CONSTRAINTS_REL.name).write_text("title: tmp\n", encoding="utf-8")
-            data_dir = repo_root / run_poc.DEFAULT_CONCEPTS_REL
-            data_dir.mkdir(parents=True, exist_ok=True)
+            (repo_root / "config").mkdir(parents=True, exist_ok=True)
+            (repo_root / "config" / run_poc.DEFAULT_CONSTRAINTS_REL.name).write_text(
+                "title: tmp\n", encoding="utf-8"
+            )
+            (repo_root / "data" / "handcrafted" / "database_systems").mkdir(parents=True, exist_ok=True)
             exit_code = run_poc.main(["--repo-root", str(repo_root)])
 
         self.assertEqual(exit_code, 0)

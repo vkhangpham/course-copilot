@@ -1,0 +1,71 @@
+edges:
+  - source: relational_model
+    target: relational_algebra
+    relation: prerequisite
+    description: Relational algebra formalizes the operators implied by the relational model.
+    citations: [codd-1970]
+  - source: relational_algebra
+    target: query_planning
+    relation: informs
+    description: Logical rewrites enable cost-based search spaces.
+    citations: [system-r-1976, volcano-1994]
+  - source: schema_design
+    target: transaction_management
+    relation: supports
+    description: Well-normalized schemas simplify transactional invariants.
+    citations: [fagin-1977]
+  - source: storage_engines
+    target: indexing_strategies
+    relation: constrains
+    description: Access path efficiency depends on base layout and buffer policy.
+    citations: [stonebraker-1986]
+  - source: indexing_strategies
+    target: query_planning
+    relation: accelerates
+    description: Optimizers enumerate index-assisted access paths.
+    citations: [system-r-1976]
+  - source: cost_models
+    target: query_planning
+    relation: parameterizes
+    description: Cost estimation guides join ordering and physical plan selection.
+    citations: [volcano-1994]
+  - source: transaction_management
+    target: concurrency_control
+    relation: prerequisite
+    description: Transactions expose the abstraction concurrency protocols enforce.
+    citations: [gray-reuter-1993]
+  - source: concurrency_control
+    target: mvcc
+    relation: strategy
+    description: MVCC implements isolation via multi-version snapshots.
+    citations: [bernstein-1987]
+  - source: concurrency_control
+    target: locking_and_recovery
+    relation: coordinates
+    description: Lock management must align with WAL/ARIES recovery.
+    citations: [aries-1992]
+  - source: distributed_transactions
+    target: consistency_models
+    relation: enables
+    description: Commit protocols determine achievable consistency levels.
+    citations: [spanner-2012]
+  - source: replication_and_sharding
+    target: cap_theorem
+    relation: bounded_by
+    description: Replication design points choose between availability and strong consistency.
+    citations: [brewer-cap-2000]
+  - source: nosql_models
+    target: streaming_analytics
+    relation: feeds
+    description: Event streams often land in NoSQL stores for serving workloads.
+    citations: [dynamo-2007, beam-2017]
+  - source: htap
+    target: cloud_data_warehouses
+    relation: converges_with
+    description: HTAP systems increasingly feed cloud warehouses for analytics.
+    citations: [aurora-2017, snowflake-2016]
+  - source: governance_lineage
+    target: cloud_data_warehouses
+    relation: informs
+    description: Governance tooling drives lineage-aware analytics and notebook outputs.
+    citations: [google-f1-2013]

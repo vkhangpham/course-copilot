@@ -11,6 +11,8 @@ from typing import Any, Iterable, List
 
 from ccopilot.pipeline import PipelineRunArtifacts, bootstrap_pipeline, run_pipeline
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run the CourseGen PoC orchestration pipeline.")
@@ -26,8 +28,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--repo-root",
-        default=".",
-        help="Repository root (default: current directory)",
+        default=str(REPO_ROOT),
+        help=f"Repository root (default: {REPO_ROOT})",
     )
     parser.add_argument(
         "--output-dir",

@@ -1,0 +1,1 @@
+This lecture covers NoSQL systems only.
