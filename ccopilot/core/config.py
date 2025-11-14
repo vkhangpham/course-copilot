@@ -9,7 +9,7 @@ scaffolding to land. They will be imported by the eventual `run_poc` CLI.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 import yaml
 from pydantic import (
@@ -26,9 +26,7 @@ class CourseAudience(BaseModel):
     """High-level description of the intended learner."""
 
     persona: str = Field(..., description="Short label for the learner persona.")
-    prior_knowledge: List[str] = Field(
-        default_factory=list, description="List of prerequisite skills the learner is assumed to have."
-    )
+    prior_knowledge: List[str] = Field(default_factory=list, description="List of prerequisite skills the learner is assumed to have.")
     goals: List[str] = Field(default_factory=list, description="Desired outcomes for the learner.")
 
 
@@ -88,11 +86,12 @@ class ModelConfig(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    teacher: RoleModelConfig = Field(default_factory=lambda: RoleModelConfig(model="gpt-4.1"))
-    ta: RoleModelConfig = Field(default_factory=lambda: RoleModelConfig(model="gpt-4o-mini"))
-    student: RoleModelConfig = Field(default_factory=lambda: RoleModelConfig(model="gpt-4o"))
-    default_temperature: float = Field(default=0.2, ge=0.0, le=1.0)
-    default_max_tokens: int = Field(default=2048, ge=256)
+    teacher: RoleModelConfig = Field(default_factory=lambda: RoleModelConfig(model="gpt-5.1", reasoning={"effort": "high"}))
+    ta: RoleModelConfig = Field(default_factory=lambda: RoleModelConfig(model="gpt-5-mini"))
+    coder: RoleModelConfig = Field(default_factory=lambda: RoleModelConfig(model="gpt-5.1-codex-mini"))
+    student: RoleModelConfig = Field(default_factory=lambda: RoleModelConfig(model="gpt-5-mini"))
+    default_temperature: float = Field(default=1.0, ge=0.0, le=1.0)
+    default_max_tokens: int = Field(default=32000, ge=256)
 
     @model_validator(mode="before")
     @classmethod
@@ -133,9 +132,10 @@ class ModelConfig(BaseModel):
             if legacy_tokens is not None:
                 payload["default_max_tokens"] = legacy_tokens
 
-        payload.setdefault("teacher", {"provider": "openai", "model": "gpt-4.1"})
-        payload.setdefault("ta", {"provider": "openai", "model": payload["teacher"]["model"]})
+        payload.setdefault("teacher", {"provider": "openai", "model": "gpt-5.1", "reasoning": {"effort": "high"}})
+        payload.setdefault("ta", {"provider": "openai", "model": "gpt-5-mini"})
         payload.setdefault("student", {"provider": "openai", "model": payload["ta"]["model"]})
+        payload.setdefault("coder", {"provider": "openai", "model": "gpt-5.1-codex-mini"})
 
         return payload
 

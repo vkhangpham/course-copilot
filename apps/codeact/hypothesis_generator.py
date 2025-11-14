@@ -3,6 +3,7 @@
 This module integrates automated hypothesis generation and testing
 for pedagogical strategies in CourseGen.
 """
+
 from __future__ import annotations
 
 import json
@@ -95,8 +96,8 @@ class CourseGenHypothesisGenerator:
 
                 Evaluate whether this hypothesis is supported by the data.
                 Provide confidence score (0-1) and evidence.
-                """
-            }
+                """,
+            },
         }
 
     def generate_pedagogical_hypotheses(
@@ -199,12 +200,14 @@ class CourseGenHypothesisGenerator:
                 content = str(hyp)
                 category = self._infer_category(content)
 
-            parsed.append(PedagogicalHypothesis(
-                id=f"hyp_{i:03d}",
-                content=content,
-                category=category,
-                confidence=0.5,  # Initial confidence
-            ))
+            parsed.append(
+                PedagogicalHypothesis(
+                    id=f"hyp_{i:03d}",
+                    content=content,
+                    category=category,
+                    confidence=0.5,  # Initial confidence
+                )
+            )
 
         return parsed
 
@@ -233,11 +236,17 @@ class CourseGenHypothesisGenerator:
         """
         fallback_data = [
             {
-                "content": "If concepts are ordered by prerequisite dependencies, then students will show better comprehension because they build on prior knowledge",
+                "content": (
+                    "If concepts are ordered by prerequisite dependencies, "
+                    "then students will show better comprehension because they build on prior knowledge"
+                ),
                 "category": "content_ordering",
             },
             {
-                "content": "If difficulty increases gradually with explicit scaffolding, then retention rates will improve because cognitive load is managed",
+                "content": (
+                    "If difficulty increases gradually with explicit scaffolding, "
+                    "then retention rates will improve because cognitive load is managed"
+                ),
                 "category": "difficulty_progression",
             },
             {
@@ -356,8 +365,7 @@ class CourseGenHypothesisGenerator:
         # Log significant updates
         if abs(posterior - prior) > 0.1:
             LOGGER.debug(
-                f"Significant belief update: {prior:.3f} → {posterior:.3f} "
-                f"(likelihood={likelihood:.3f}, evidence={evidence_strength:.3f})"
+                f"Significant belief update: {prior:.3f} → {posterior:.3f} (likelihood={likelihood:.3f}, evidence={evidence_strength:.3f})"
             )
 
         return posterior
@@ -405,10 +413,12 @@ class CourseGenHypothesisGenerator:
 
             if total_dependencies > 0:
                 satisfaction_rate = 1 - (prerequisite_violations / total_dependencies)
-                results["evidence"].append({
-                    "type": "prerequisite_satisfaction",
-                    "rate": satisfaction_rate,
-                })
+                results["evidence"].append(
+                    {
+                        "type": "prerequisite_satisfaction",
+                        "rate": satisfaction_rate,
+                    }
+                )
 
                 # Check correlation with student performance
                 if "comprehension_score" in student_outcomes:
@@ -438,15 +448,17 @@ class CourseGenHypothesisGenerator:
 
             if len(difficulties) > 1:
                 # Calculate difficulty progression smoothness
-                gradients = [difficulties[i+1] - difficulties[i] for i in range(len(difficulties)-1)]
+                gradients = [difficulties[i + 1] - difficulties[i] for i in range(len(difficulties) - 1)]
                 avg_gradient = sum(gradients) / len(gradients)
                 gradient_variance = sum((g - avg_gradient) ** 2 for g in gradients) / len(gradients)
 
-                results["evidence"].append({
-                    "type": "difficulty_gradient",
-                    "average": avg_gradient,
-                    "variance": gradient_variance,
-                })
+                results["evidence"].append(
+                    {
+                        "type": "difficulty_gradient",
+                        "average": avg_gradient,
+                        "variance": gradient_variance,
+                    }
+                )
 
                 # Check if gradual progression correlates with retention
                 if gradient_variance < 0.1 and "retention_rate" in student_outcomes:
@@ -485,10 +497,12 @@ class CourseGenHypothesisGenerator:
                 break  # Check first lecture as sample
 
         feature_rate = engagement_features / total_features
-        results["evidence"].append({
-            "type": "engagement_features",
-            "rate": feature_rate,
-        })
+        results["evidence"].append(
+            {
+                "type": "engagement_features",
+                "rate": feature_rate,
+            }
+        )
 
         # Check correlation with engagement metrics
         if feature_rate > 0.6 and "engagement_score" in student_outcomes:
@@ -527,10 +541,12 @@ class CourseGenHypothesisGenerator:
 
             if total_assessments > 0:
                 alignment_rate = aligned_assessments / total_assessments
-                results["evidence"].append({
-                    "type": "bloom_alignment",
-                    "rate": alignment_rate,
-                })
+                results["evidence"].append(
+                    {
+                        "type": "bloom_alignment",
+                        "rate": alignment_rate,
+                    }
+                )
 
                 if alignment_rate > 0.7 and "learning_outcome_achievement" in student_outcomes:
                     if student_outcomes["learning_outcome_achievement"] > 0.75:
@@ -565,11 +581,13 @@ class CourseGenHypothesisGenerator:
                 optimal_range = (5, 7)  # Miller's magic number
 
                 is_optimal = optimal_range[0] <= avg_chunk_size <= optimal_range[1]
-                results["evidence"].append({
-                    "type": "chunk_size",
-                    "average": avg_chunk_size,
-                    "optimal": is_optimal,
-                })
+                results["evidence"].append(
+                    {
+                        "type": "chunk_size",
+                        "average": avg_chunk_size,
+                        "optimal": is_optimal,
+                    }
+                )
 
                 if is_optimal and "cognitive_load_score" in student_outcomes:
                     if student_outcomes["cognitive_load_score"] < 0.7:  # Lower is better
@@ -597,10 +615,12 @@ class CourseGenHypothesisGenerator:
             if student_outcomes["overall_score"] > 0.7:
                 results["supported"] = True
                 results["likelihood"] = 0.6
-                results["evidence"].append({
-                    "type": "overall_performance",
-                    "score": student_outcomes["overall_score"],
-                })
+                results["evidence"].append(
+                    {
+                        "type": "overall_performance",
+                        "score": student_outcomes["overall_score"],
+                    }
+                )
 
         return results
 
@@ -655,14 +675,16 @@ class CourseGenHypothesisGenerator:
 
         self.hypotheses = []
         for h_dict in data.get("hypotheses", []):
-            self.hypotheses.append(PedagogicalHypothesis(
-                id=h_dict["id"],
-                content=h_dict["content"],
-                category=h_dict["category"],
-                confidence=h_dict.get("confidence", 0.5),
-                evidence=h_dict.get("evidence", []),
-                test_results=h_dict.get("test_results", {}),
-            ))
+            self.hypotheses.append(
+                PedagogicalHypothesis(
+                    id=h_dict["id"],
+                    content=h_dict["content"],
+                    category=h_dict["category"],
+                    confidence=h_dict.get("confidence", 0.5),
+                    evidence=h_dict.get("evidence", []),
+                    test_results=h_dict.get("test_results", {}),
+                )
+            )
 
         LOGGER.info(f"Loaded {len(self.hypotheses)} hypotheses from {input_path}")
         return self.hypotheses
@@ -723,27 +745,33 @@ class CourseGenHypothesisGenerator:
         for category, contents in patterns.items():
             # Create hypothesis that combines successful elements
             if len(contents) >= 2:
-                combined = f"If {self._extract_condition(contents[0])} and {self._extract_condition(contents[1])}, " \
-                          f"then enhanced {self._extract_outcome(contents[0])}"
+                combined = (
+                    f"If {self._extract_condition(contents[0])} and {self._extract_condition(contents[1])}, "
+                    f"then enhanced {self._extract_outcome(contents[0])}"
+                )
 
-                refined.append(PedagogicalHypothesis(
-                    id=f"hyp_ref_{len(refined):03d}",
-                    content=combined,
-                    category=category,
-                    confidence=0.6,  # Higher initial confidence for refined
-                ))
+                refined.append(
+                    PedagogicalHypothesis(
+                        id=f"hyp_ref_{len(refined):03d}",
+                        content=combined,
+                        category=category,
+                        confidence=0.6,  # Higher initial confidence for refined
+                    )
+                )
 
         return refined
 
     def _extract_condition(self, hypothesis_content: str) -> str:
         """Extract condition from hypothesis."""
         import re
+
         match = re.search(r"If\s+(.*?),\s+then", hypothesis_content, re.IGNORECASE)
         return match.group(1) if match else "condition"
 
     def _extract_outcome(self, hypothesis_content: str) -> str:
         """Extract expected outcome from hypothesis."""
         import re
+
         match = re.search(r"then\s+(.*?)(?:\s+because|$)", hypothesis_content, re.IGNORECASE)
         return match.group(1) if match else "outcome"
 
@@ -851,14 +879,10 @@ def _generate_recommendations(
     recommendations = []
 
     if successful_strategies:
-        recommendations.append(
-            f"Adopt {len(successful_strategies)} validated strategies for course generation"
-        )
+        recommendations.append(f"Adopt {len(successful_strategies)} validated strategies for course generation")
 
     if failed_strategies:
-        recommendations.append(
-            f"Avoid {len(failed_strategies)} strategies that showed poor outcomes"
-        )
+        recommendations.append(f"Avoid {len(failed_strategies)} strategies that showed poor outcomes")
 
     # Category-specific recommendations
     successful_categories = set()

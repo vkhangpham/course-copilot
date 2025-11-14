@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.ingest_handcrafted import ingest
+import apps.codeact.tools.world_model as codeact_world_model
 from apps.codeact.tools.world_model import (
     append_timeline_event,
     fetch_concepts,
@@ -15,7 +15,7 @@ from apps.codeact.tools.world_model import (
     record_claim,
     search_events,
 )
-import apps.codeact.tools.world_model as codeact_world_model
+from scripts.ingest_handcrafted import ingest
 from world_model.storage import WorldModelStore
 
 # The tests expect the world-model SQLite to exist in a temp dir, so we ingest a

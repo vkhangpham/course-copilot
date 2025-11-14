@@ -2,6 +2,7 @@
 
 Provides multi-dimensional metrics aligned with learning science research.
 """
+
 from __future__ import annotations
 
 import logging
@@ -171,34 +172,24 @@ class ScientificEvaluator:
 
         # Pedagogical metrics
         if self._metric_enabled("blooms_taxonomy"):
-            metrics.blooms_alignment_score = self.assess_blooms_alignment(
-                learning_objectives, lectures
-            )
-            metrics.blooms_distribution = self.calculate_blooms_distribution(
-                learning_objectives, lectures
-            )
+            metrics.blooms_alignment_score = self.assess_blooms_alignment(learning_objectives, lectures)
+            metrics.blooms_distribution = self.calculate_blooms_distribution(learning_objectives, lectures)
         else:
             metrics.blooms_alignment_score = None
             metrics.blooms_distribution = {}
 
         if self._metric_enabled("learning_path_coherence"):
-            metrics.learning_path_coherence = self.analyze_learning_path_coherence(
-                course_plan, lectures
-            )
+            metrics.learning_path_coherence = self.analyze_learning_path_coherence(course_plan, lectures)
         else:
             metrics.learning_path_coherence = None
 
         if self._metric_enabled("concept_coverage"):
-            metrics.concept_coverage_completeness = self.measure_concept_coverage(
-                course_plan, learning_objectives
-            )
+            metrics.concept_coverage_completeness = self.measure_concept_coverage(course_plan, learning_objectives)
         else:
             metrics.concept_coverage_completeness = None
 
         if self._metric_enabled("prerequisite_satisfaction"):
-            metrics.prerequisite_satisfaction_rate = self.check_prerequisite_satisfaction(
-                course_plan
-            )
+            metrics.prerequisite_satisfaction_rate = self.check_prerequisite_satisfaction(course_plan)
         else:
             metrics.prerequisite_satisfaction_rate = None
 
@@ -225,23 +216,17 @@ class ScientificEvaluator:
 
         # Learning outcome predictions
         if self._metric_enabled("difficulty_analysis"):
-            metrics.difficulty_progression_score = self.analyze_difficulty_progression(
-                course_plan, lectures
-            )
+            metrics.difficulty_progression_score = self.analyze_difficulty_progression(course_plan, lectures)
         else:
             metrics.difficulty_progression_score = None
 
         if self._metric_enabled("engagement_prediction"):
-            metrics.predicted_engagement_score = self.predict_engagement(
-                lectures, metrics
-            )
+            metrics.predicted_engagement_score = self.predict_engagement(lectures, metrics)
         else:
             metrics.predicted_engagement_score = None
 
         if self._metric_enabled("retention_prediction"):
-            metrics.predicted_retention_rate = self.predict_retention_rate(
-                course_plan, lectures, metrics
-            )
+            metrics.predicted_retention_rate = self.predict_retention_rate(course_plan, lectures, metrics)
         else:
             metrics.predicted_retention_rate = None
 
@@ -327,10 +312,7 @@ class ScientificEvaluator:
 
         # Normalize
         if total_activities > 0:
-            distribution = {
-                level: count / total_activities
-                for level, count in level_counts.items()
-            }
+            distribution = {level: count / total_activities for level, count in level_counts.items()}
         else:
             distribution = level_counts
 
@@ -747,7 +729,7 @@ class ScientificEvaluator:
     def _extract_blooms_levels_from_content(self, content: str) -> List[BloomsTaxonomyLevel]:
         """Extract all Bloom's levels from content."""
         levels = []
-        sentences = content.split('.')
+        sentences = content.split(".")
 
         for sentence in sentences:
             level = self._detect_blooms_level(sentence)
@@ -762,7 +744,7 @@ class ScientificEvaluator:
         concepts = set()
 
         # Capitalized terms (2+ words)
-        capitalized = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b', text)
+        capitalized = re.findall(r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)+\b", text)
         concepts.update(capitalized)
 
         # Quoted terms
@@ -770,7 +752,7 @@ class ScientificEvaluator:
         concepts.update(quoted)
 
         # Technical terms (words with specific patterns)
-        technical = re.findall(r'\b(?:ACID|SQL|NoSQL|CRUD|API|REST|JSON|XML)\b', text)
+        technical = re.findall(r"\b(?:ACID|SQL|NoSQL|CRUD|API|REST|JSON|XML)\b", text)
         concepts.update(technical)
 
         return list(concepts)
@@ -798,13 +780,19 @@ class ScientificEvaluator:
 
         # Check for connecting phrases between lectures
         connecting_phrases = [
-            "building on", "as we saw", "previously", "next", "following",
-            "recall that", "extending", "now that we understand"
+            "building on",
+            "as we saw",
+            "previously",
+            "next",
+            "following",
+            "recall that",
+            "extending",
+            "now that we understand",
         ]
 
         connections_found = 0
         for lecture in lectures[1:]:  # Skip first lecture
-            first_paragraph = lecture.split('\n\n')[0] if '\n\n' in lecture else lecture[:500]
+            first_paragraph = lecture.split("\n\n")[0] if "\n\n" in lecture else lecture[:500]
             for phrase in connecting_phrases:
                 if phrase in first_paragraph.lower():
                     connections_found += 1
@@ -953,7 +941,7 @@ class ScientificEvaluator:
     def _extract_factual_claims(self, lecture: str) -> List[str]:
         """Extract factual claims from lecture."""
         # Simple heuristic: sentences with definitive statements
-        sentences = lecture.split('.')
+        sentences = lecture.split(".")
 
         claims = []
         claim_indicators = ["is", "are", "was", "were", "has", "have", "provides", "ensures"]
@@ -961,7 +949,7 @@ class ScientificEvaluator:
         for sentence in sentences:
             if any(indicator in sentence.lower() for indicator in claim_indicators):
                 # Exclude questions and examples
-                if '?' not in sentence and 'example' not in sentence.lower():
+                if "?" not in sentence and "example" not in sentence.lower():
                     claims.append(sentence.strip())
 
         return claims
@@ -974,13 +962,13 @@ class ScientificEvaluator:
             return False
 
         # Check for citation within 100 characters after claim
-        context = lecture[claim_pos:claim_pos + len(claim) + 100]
-        return bool(re.search(r'\[.*?\]|\(.*?\)', context))
+        context = lecture[claim_pos : claim_pos + len(claim) + 100]
+        return bool(re.search(r"\[.*?\]|\(.*?\)", context))
 
     def _flesch_kincaid_score(self, text: str) -> float:
         """Calculate Flesch Reading Ease score."""
         # Count sentences, words, syllables
-        sentences = text.split('.')
+        sentences = text.split(".")
         sentences = [s for s in sentences if s.strip()]
         num_sentences = len(sentences)
 
@@ -1002,7 +990,7 @@ class ScientificEvaluator:
     def _count_syllables(self, word: str) -> int:
         """Count syllables in a word (simple heuristic)."""
         word = word.lower()
-        vowels = 'aeiou'
+        vowels = "aeiou"
         syllable_count = 0
         previous_was_vowel = False
 
@@ -1013,7 +1001,7 @@ class ScientificEvaluator:
             previous_was_vowel = is_vowel
 
         # Adjust for silent 'e'
-        if word.endswith('e'):
+        if word.endswith("e"):
             syllable_count -= 1
 
         # Ensure at least one syllable
@@ -1103,7 +1091,11 @@ class ScientificEvaluator:
         concepts = self._extract_concepts(lecture)
         concept_component = min(1.0, len(concepts) / 8)
 
-        advanced_terms = re.findall(r"\b(?:ACID|serializability|normalization|sharding|replication|optimizer|transaction)\b", lecture, flags=re.IGNORECASE)
+        advanced_terms = re.findall(
+            r"\b(?:ACID|serializability|normalization|sharding|replication|optimizer|transaction)\b",
+            lecture,
+            flags=re.IGNORECASE,
+        )
         terminology_component = min(1.0, len(advanced_terms) / 5)
 
         score = bloom_component * 0.5 + concept_component * 0.3 + terminology_component * 0.2

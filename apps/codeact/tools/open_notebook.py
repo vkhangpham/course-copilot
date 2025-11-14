@@ -1,4 +1,5 @@
 """Open Notebook helper surfaced to CodeAct tools."""
+
 from __future__ import annotations
 
 import json
@@ -9,7 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
-from apps.codeact.tools_open_notebook import OpenNotebookClient as _OpenNotebookClient, OpenNotebookConfig
+from apps.codeact.tools_open_notebook import OpenNotebookClient as _OpenNotebookClient
+from apps.codeact.tools_open_notebook import OpenNotebookConfig
 
 _REAL_OPEN_NOTEBOOK_CLIENT = _OpenNotebookClient
 OpenNotebookClient = _OpenNotebookClient
@@ -74,10 +76,7 @@ def ensure_notebook_exists(
     token = api_key or os.getenv("OPEN_NOTEBOOK_API_KEY")
 
     if not base_url:
-        raise ValueError(
-            "Open Notebook API base required (set OPEN_NOTEBOOK_API_BASE or pass api_base) "
-            "to create notebooks."
-        )
+        raise ValueError("Open Notebook API base required (set OPEN_NOTEBOOK_API_BASE or pass api_base) to create notebooks.")
 
     cache_key = _cache_key(base_url, slug)
     config = OpenNotebookConfig(base_url=base_url, api_key=token)

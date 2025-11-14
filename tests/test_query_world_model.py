@@ -1,13 +1,12 @@
 import importlib
-from pathlib import Path
-
 import json
+from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
-from scripts.ingest_handcrafted import ingest
 import scripts.query_world_model as query_world_model
+from scripts.ingest_handcrafted import ingest
 
 DATASET = Path(__file__).resolve().parents[1] / "data" / "handcrafted" / "database_systems"
 
@@ -39,7 +38,7 @@ def test_query_world_model_repo_override(monkeypatch: pytest.MonkeyPatch, tmp_pa
 
 
 def test_query_world_model_store_env_override(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    custom_store = (tmp_path / "alt" / "custom.sqlite")
+    custom_store = tmp_path / "alt" / "custom.sqlite"
     monkeypatch.setenv("WORLD_MODEL_STORE", str(custom_store))
     monkeypatch.setenv("COURSEGEN_REPO_ROOT", str(tmp_path / "repo"))
     module = importlib.reload(query_world_model)
@@ -184,10 +183,7 @@ def test_query_graph_edges_filters_on_concept(tmp_path: Path) -> None:
     store = _build_store(tmp_path)
     rows = query_world_model.query_graph_edges(store, concept_id="relational_model")
     assert rows
-    assert all(
-        row["source"] == "relational_model" or row["target"] == "relational_model"
-        for row in rows
-    )
+    assert all(row["source"] == "relational_model" or row["target"] == "relational_model" for row in rows)
 
 
 def test_query_artifacts_filters_by_type(tmp_path: Path) -> None:

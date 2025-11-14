@@ -1,0 +1,79 @@
+{
+  "mode": "simulation",
+  "prompt": "/Users/kylepham/Cazoodle/code/ccopilot/prompts/teacher_seed.txt",
+  "actions": [
+    {
+      "action": "spawn_ta",
+      "target": "SyllabusDesigner",
+      "payload": {
+        "task": {
+          "focus_areas": [
+            "relational model",
+            "transactions and concurrency control",
+            "distributed database design"
+          ],
+          "dataset": {
+            "concept_count": 30,
+            "paper_count": 22,
+            "timeline_count": 10,
+            "quiz_count": 10,
+            "top_domains": [
+              "Foundations & Modeling",
+              "Execution & Storage",
+              "Transactions, Concurrency, and Resilience"
+            ]
+          }
+        }
+      },
+      "result": {
+        "outline": null,
+        "task": {
+          "focus_areas": [
+            "relational model",
+            "transactions and concurrency control",
+            "distributed database design"
+          ],
+          "dataset": {
+            "concept_count": 30,
+            "paper_count": 22,
+            "timeline_count": 10,
+            "quiz_count": 10,
+            "top_domains": [
+              "Foundations & Modeling",
+              "Execution & Storage",
+              "Transactions, Concurrency, and Resilience"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "action": "spawn_ta",
+      "target": "LectureAuthor",
+      "payload": {
+        "task": {
+          "module": 1
+        }
+      },
+      "result": {
+        "section": null,
+        "task": {
+          "module": 1
+        }
+      }
+    },
+    {
+      "action": "log_event",
+      "target": "teacher_summary",
+      "payload": {
+        "prompt_preview": [
+          "You are the Teacher Orchestrator for the CourseGen proof of concept. Work through the runbook below.",
+          ""
+        ],
+        "step_count": 2
+      },
+      "result": null
+    }
+  ],
+  "summary": "spawn_ta:SyllabusDesigner; spawn_ta:LectureAuthor; log_event:teacher_summary"
+}

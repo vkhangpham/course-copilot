@@ -25,11 +25,18 @@ course:
     - "Design normalized schemas and discuss trade-offs"
     - "Contrast concurrency control techniques"
 models:
-  teacher_model: gpt-4.1
-  ta_model: gpt-4o-mini
-  student_model: gpt-4o
-  temperature: 0.25
-  max_tokens: 2048
+  default_temperature: 1.0
+  default_max_tokens: 32000
+  teacher:
+    model: gpt-5.1
+    reasoning:
+      effort: high
+  ta:
+    model: gpt-5-mini
+  coder:
+    model: gpt-5.1-codex-mini
+  student:
+    model: gpt-5-mini
 notebook:
   api_base: http://localhost:5055
   notebook_slug: database-systems-poc

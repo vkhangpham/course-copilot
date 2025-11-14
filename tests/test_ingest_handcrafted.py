@@ -1,7 +1,6 @@
-from pathlib import Path
-
 import shutil
 import sqlite3
+from pathlib import Path
 
 import pytest
 
@@ -20,21 +19,15 @@ def _write_minimal_dataset(
     dataset_dir.mkdir(parents=True, exist_ok=True)
 
     (dataset_dir / "authors.csv").write_text(
-        "id,full_name,affiliation\n"
-        "author_a,Test Author,Test Lab\n",
+        "id,full_name,affiliation\nauthor_a,Test Author,Test Lab\n",
         encoding="utf-8",
     )
     (dataset_dir / "papers.csv").write_text(
-        "id,title,venue,year,url,authors\n"
-        "paper_a,Test Paper,TestConf,2024,http://example.com,author_a\n",
+        "id,title,venue,year,url,authors\npaper_a,Test Paper,TestConf,2024,http://example.com,author_a\n",
         encoding="utf-8",
     )
     (dataset_dir / "concepts.yaml").write_text(
-        "concepts:\n"
-        "  concept_a:\n"
-        "    name: Concept A\n"
-        "    summary: Sample\n"
-        "    canonical_sources: [paper_a]\n",
+        "concepts:\n  concept_a:\n    name: Concept A\n    summary: Sample\n    canonical_sources: [paper_a]\n",
         encoding="utf-8",
     )
     (dataset_dir / "taxonomy.yaml").write_text("domains: []\n", encoding="utf-8")
@@ -50,9 +43,7 @@ def _write_minimal_dataset(
         citation_header,
     ]
     (dataset_dir / "timeline.csv").write_text(
-        ",".join(timeline_columns)
-        + "\n"
-        + f"1970,Milestone,Matters,concept_a,paper_a\n",
+        ",".join(timeline_columns) + "\n" + "1970,Milestone,Matters,concept_a,paper_a\n",
         encoding="utf-8",
     )
     return dataset_dir
@@ -61,8 +52,7 @@ def _write_minimal_dataset(
 def test_ingest_load_csv_preserves_rows_without_ids(tmp_path: Path) -> None:
     csv_path = tmp_path / "timeline.csv"
     csv_path.write_text(
-        "year,event_label,why_it_matters\n"
-        "1970,Relational revolution,Formalizes relational algebra.\n",
+        "year,event_label,why_it_matters\n1970,Relational revolution,Formalizes relational algebra.\n",
         encoding="utf-8",
     )
 
@@ -75,9 +65,7 @@ def test_ingest_load_csv_preserves_rows_without_ids(tmp_path: Path) -> None:
 def test_ingest_load_csv_skips_empty_rows(tmp_path: Path) -> None:
     csv_path = tmp_path / "timeline.csv"
     csv_path.write_text(
-        "year,event_label,why_it_matters\n"
-        " , , \n"
-        "1980,,\n",
+        "year,event_label,why_it_matters\n , , \n1980,,\n",
         encoding="utf-8",
     )
 
@@ -178,8 +166,7 @@ def test_ingest_preserves_existing_store_on_failure(tmp_path: Path) -> None:
     broken_dir = _write_minimal_dataset(tmp_path / "broken")
     timeline_path = broken_dir / "timeline.csv"
     timeline_path.write_text(
-        "year,event,why_it_matters,related_concepts,citation_id\n"
-        "1970,Broken,Matters,unknown_concept,paper_a\n",
+        "year,event,why_it_matters,related_concepts,citation_id\n1970,Broken,Matters,unknown_concept,paper_a\n",
         encoding="utf-8",
     )
 

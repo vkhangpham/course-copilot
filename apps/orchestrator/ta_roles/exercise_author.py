@@ -6,7 +6,7 @@ import json
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Sequence
+from typing import Dict, List, Sequence
 
 import yaml
 
@@ -43,11 +43,7 @@ class ExerciseAuthor:
             if filter_set and not filter_set.intersection(tag.lower() for tag in lo_tags):
                 continue
 
-            summary_parts = [
-                concept_summaries.get(tag.lower(), "Reinforce core concepts")
-                for tag in lo_tags
-                if isinstance(tag, str)
-            ]
+            summary_parts = [concept_summaries.get(tag.lower(), "Reinforce core concepts") for tag in lo_tags if isinstance(tag, str)]
             if not summary_parts:
                 summary_parts = ["Reinforce core concepts"]
 
@@ -82,7 +78,9 @@ class ExerciseAuthor:
         concepts = data.get("concepts") if isinstance(data, dict) else None
         if not isinstance(concepts, dict):
             return defaultdict(lambda: "Apply the concept in practice")
-        mapping = {key.lower(): value.get("summary", "Apply the concept in practice") for key, value in concepts.items() if isinstance(value, dict)}
+        mapping = {
+            key.lower(): value.get("summary", "Apply the concept in practice") for key, value in concepts.items() if isinstance(value, dict)
+        }
         default_map: Dict[str, str] = defaultdict(lambda: "Apply the concept in practice")
         default_map.update(mapping)
         return default_map

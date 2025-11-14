@@ -10,8 +10,9 @@ from typing import Dict, Iterable, List, Sequence
 
 import yaml
 
-from .dataset_paths import resolve_dataset_root
 from ccopilot.utils.split_fields import split_fields
+
+from .dataset_paths import resolve_dataset_root
 
 
 @dataclass
@@ -64,12 +65,7 @@ class Explainer:
 
         definition = self._definitions.get(concept_id)
         if definition:
-            definition_text = str(
-                definition.get("text")
-                or definition.get("definition")
-                or definition.get("body")
-                or ""
-            ).strip()
+            definition_text = str(definition.get("text") or definition.get("definition") or definition.get("body") or "").strip()
             if definition_text:
                 body_lines.append(f"*Definition.* {definition_text}")
 
@@ -195,8 +191,7 @@ class Explainer:
         module_name = module.strip() or "Course Module"
         return ExplanationChunk(
             heading=f"{module_name} (draft)",
-            body_md="Detailed explanations will be generated once the dataset loads."
-            "\n\n" "Use the handcrafted assets to seed this section.",
+            body_md="Detailed explanations will be generated once the dataset loads.\n\nUse the handcrafted assets to seed this section.",
             citations=[],
         )
 

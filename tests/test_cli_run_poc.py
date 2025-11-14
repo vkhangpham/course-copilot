@@ -12,11 +12,13 @@ from unittest.mock import patch
 import yaml
 
 from ccopilot.cli.run_poc import (
+    REPO_ROOT,
     _print_artifact_summary,
     _print_highlight_hint,
     _print_scientific_summary,
-    REPO_ROOT,
     build_parser,
+)
+from ccopilot.cli.run_poc import (
     main as cli_main,
 )
 from tests.mocks.notebook_api import NotebookAPIMock
@@ -119,7 +121,7 @@ notebook:
 world_model:
   schema_path: "{schema_path}"
   dataset_dir: "{dataset_dir}"
-  sqlite_path: "{self.repo_root / 'world_model' / 'state.sqlite'}"
+  sqlite_path: "{self.repo_root / "world_model" / "state.sqlite"}"
 evaluation:
   rubrics_path: "{rubrics_path}"
   quiz_bank_path: "{quiz_bank}"
@@ -153,13 +155,11 @@ evaluation:
 
     def _seed_dataset(self, dataset_dir: Path, quiz_bank: Path) -> None:
         (dataset_dir / "authors.csv").write_text(
-            "id,full_name,affiliation\n"
-            "author_a,Test Author,Test Lab\n",
+            "id,full_name,affiliation\nauthor_a,Test Author,Test Lab\n",
             encoding="utf-8",
         )
         (dataset_dir / "papers.csv").write_text(
-            "id,title,venue,year,url,authors\n"
-            "paper_a,Test Paper,TestConf,2024,http://example.com,author_a\n",
+            "id,title,venue,year,url,authors\npaper_a,Test Paper,TestConf,2024,http://example.com,author_a\n",
             encoding="utf-8",
         )
         concepts_yaml = {
@@ -192,8 +192,7 @@ evaluation:
             encoding="utf-8",
         )
         (dataset_dir / "timeline.csv").write_text(
-            "event,year,why_it_matters,related_concepts,citation_id\n"
-            "\"Launch\",2024,\"Kickoff\",\"concept_a\",\"paper_a\"\n",
+            'event,year,why_it_matters,related_concepts,citation_id\n"Launch",2024,"Kickoff","concept_a","paper_a"\n',
             encoding="utf-8",
         )
         quiz_bank.write_text('[{"id": "quiz_a", "learning_objectives": ["concept_a"]}]', encoding="utf-8")
@@ -286,10 +285,14 @@ evaluation:
         self.assertIn("science_config=", output)
 
     def test_cli_no_recursion_skips_teacher_trace_hint(self) -> None:
-        exit_code, output, _ = self._run_cli(["--ablations", "no_recursion"])
+        exit_code, output, output_dir = self._run_cli(["--ablations", "no_recursion"])
         self.assertEqual(exit_code, 0)
         self.assertIn("[artifacts]", output)
         self.assertNotIn("[teacher] trace", output)
+
+        manifest_path = next((output_dir / "artifacts").glob("run-*-manifest.json"))
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        self.assertIsNone(manifest.get("teacher_trace"))
 
     def test_cli_dry_run_skips_artifacts(self) -> None:
         exit_code, output, output_dir = self._run_cli(["--dry-run"])
@@ -355,6 +358,7 @@ evaluation:
         highlight_data = highlight_payload["world_model_highlights"]
         self.assertIn("syllabus_modules", highlight_data)
         self.assertNotIn("concepts", highlight_data)
+        self.assertFalse(manifest.get("world_model_store_exists"))
 
     def test_cli_highlight_hint_mentions_source_without_artifact(self) -> None:
         artifacts = SimpleNamespace(highlights=None, highlight_source="dataset")
@@ -602,9 +606,12 @@ evaluation:
 
         fake_exports = [{"title": "Section", "response": {"id": "note-1"}}]
 
-        with patch("apps.orchestrator.teacher.TeacherOrchestrator._run_codeact_program", side_effect=_fake_program), patch(
-            "apps.orchestrator.teacher.TeacherOrchestrator._publish_notebook_sections",
-            return_value=fake_exports,
+        with (
+            patch("apps.orchestrator.teacher.TeacherOrchestrator._run_codeact_program", side_effect=_fake_program),
+            patch(
+                "apps.orchestrator.teacher.TeacherOrchestrator._publish_notebook_sections",
+                return_value=fake_exports,
+            ),
         ):
             exit_code, _, output_dir = self._run_cli(["--ablations", "no_recursion"])
         self.assertEqual(exit_code, 0)
@@ -662,13 +669,15 @@ evaluation:
             with tempfile.TemporaryDirectory() as tmp_dir:
                 os.chdir(tmp_dir)
                 try:
-                    exit_code, _, _ = self._run_cli([
-                        "--repo-root",
-                        str(self.repo_root),
-                        "--config",
-                        "config/pipeline.yaml",
-                        "--dry-run",
-                    ])
+                    exit_code, _, _ = self._run_cli(
+                        [
+                            "--repo-root",
+                            str(self.repo_root),
+                            "--config",
+                            "config/pipeline.yaml",
+                            "--dry-run",
+                        ]
+                    )
                 finally:
                     os.chdir(cwd_before)
 

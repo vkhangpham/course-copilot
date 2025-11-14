@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 import re
-from typing import Iterable, List
+from collections.abc import Sequence
+from typing import List
 
 DEFAULT_DELIMITERS = r"[;,]"
 

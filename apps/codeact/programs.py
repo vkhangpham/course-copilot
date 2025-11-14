@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import dspy
-
 from typing import Sequence
+
+import dspy
 
 from apps.codeact.signatures import DraftLectureSection, EnforceCitations, PlanCourse
 from apps.codeact.tools import (
@@ -35,14 +35,18 @@ def build_plan_course_program(
 ) -> dspy.Module:
     """Return a PlanCourse CodeAct program wired with safe tools."""
 
-    toolset = list(tools) if tools is not None else [
-        fetch_concepts,
-        load_dataset_asset,
-        search_events,
-        lookup_paper,
-        run_sql_query,
-        persist_outline,
-    ]
+    toolset = (
+        list(tools)
+        if tools is not None
+        else [
+            fetch_concepts,
+            load_dataset_asset,
+            search_events,
+            lookup_paper,
+            run_sql_query,
+            persist_outline,
+        ]
+    )
     program = dspy.CodeAct(
         PlanCourse,
         tools=toolset,
@@ -59,19 +63,23 @@ def build_draft_lecture_program(
 ) -> dspy.Module:
     """Return a DraftLectureSection CodeAct program."""
 
-    toolset = list(tools) if tools is not None else [
-        fetch_concepts,
-        search_events,
-        lookup_paper,
-        record_claim,
-        list_relationships,
-        list_claims,
-        run_sql_query,
-        link_concepts,
-        append_timeline_event,
-        persist_outline,
-        push_notebook_section,
-    ]
+    toolset = (
+        list(tools)
+        if tools is not None
+        else [
+            fetch_concepts,
+            search_events,
+            lookup_paper,
+            record_claim,
+            list_relationships,
+            list_claims,
+            run_sql_query,
+            link_concepts,
+            append_timeline_event,
+            persist_outline,
+            push_notebook_section,
+        ]
+    )
     program = dspy.CodeAct(
         DraftLectureSection,
         tools=toolset,

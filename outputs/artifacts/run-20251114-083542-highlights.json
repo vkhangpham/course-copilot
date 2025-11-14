@@ -1,0 +1,222 @@
+{
+  "timestamp": "20251114-083542",
+  "ablations": "world-model, student-evals, recursion",
+  "dataset_summary": {
+    "concept_count": 30,
+    "paper_count": 22,
+    "timeline_count": 10,
+    "quiz_count": 10,
+    "top_domains": [
+      "Foundations & Modeling",
+      "Execution & Storage",
+      "Transactions, Concurrency, and Resilience"
+    ]
+  },
+  "world_model_highlights": {
+    "syllabus_modules": [
+      {
+        "week": 1,
+        "title": "Relational Thinking & Data Modeling",
+        "outcomes": [
+          "Introduce relational abstractions, relational algebra, and SQL basics."
+        ],
+        "readings": [
+          "codd-1970",
+          "system-r-1976"
+        ]
+      },
+      {
+        "week": 2,
+        "title": "Schema Quality & Functional Dependencies",
+        "outcomes": [
+          "Use FDs, normal forms, and trade-offs between normalization and denormalization."
+        ],
+        "readings": [
+          "fagin-1977"
+        ]
+      },
+      {
+        "week": 3,
+        "title": "Storage Engines, Indexes, and Cost Models",
+        "outcomes": [
+          "Connect physical layout choices to indexing and cost-based optimization."
+        ],
+        "readings": [
+          "stonebraker-1986",
+          "volcano-1994"
+        ]
+      },
+      {
+        "week": 4,
+        "title": "Transactions, ACID, and Concurrency Control",
+        "outcomes": [
+          "ACID guarantees, two-phase locking, deadlock handling, and isolation levels."
+        ],
+        "readings": [
+          "gray-reuter-1993",
+          "bernstein-1987"
+        ]
+      }
+    ],
+    "reading_list": [
+      {
+        "identifier": "aries-1992",
+        "title": "ARIES: A Transaction Recovery Method Supporting Fine-Granularity Locking and Partial Rollbacks Using Write-Ahead Logging",
+        "why_it_matters": "Physiological logging, steal/no-force",
+        "citation": "mohan, (1992), ARIES: A Transaction Recovery Method Supporting Fine-Granularity Locking and Partial Rollbacks Using Write-Ahead Logging, ACM TODS"
+      },
+      {
+        "identifier": "aurora-2017",
+        "title": "Amazon Aurora: An On-Demand Relational Database Service",
+        "why_it_matters": "Log-based replication + HTAP",
+        "citation": "verbitski, (2017), Amazon Aurora: An On-Demand Relational Database Service, SIGMOD"
+      },
+      {
+        "identifier": "bailis-2013",
+        "title": "Highly Available Transactions: Virtues and Limitations",
+        "why_it_matters": "Discusses weak consistency taxonomies",
+        "citation": "bailis, (2013), Highly Available Transactions: Virtues and Limitations, VLDB"
+      },
+      {
+        "identifier": "beam-2017",
+        "title": "The World Beyond Batch: Streaming 101",
+        "why_it_matters": "Defines unifying streaming/batch model",
+        "citation": "akidau, (2017), The World Beyond Batch: Streaming 101, Communications of the ACM"
+      },
+      {
+        "identifier": "bernstein-1987",
+        "title": "Concurrency Control and Recovery in Database Systems",
+        "why_it_matters": "Review foundational ideas.",
+        "citation": "bernstein, (1987), Concurrency Control and Recovery in Database Systems, Addison-Wesley"
+      }
+    ],
+    "timeline": [
+      {
+        "year": 1970,
+        "event": "Codd publishes the relational model",
+        "summary": "Formalizes data independence and relational algebra.",
+        "concept_id": "relational_model",
+        "citation_id": "codd-1970"
+      },
+      {
+        "year": 1970,
+        "event": "Codd publishes the relational model",
+        "summary": "Formalizes data independence and relational algebra.",
+        "concept_id": "relational_algebra",
+        "citation_id": "codd-1970"
+      },
+      {
+        "year": 1976,
+        "event": "System R validates SQL",
+        "summary": "Demonstrates cost-based optimization + relational performance.",
+        "concept_id": "sql_language",
+        "citation_id": "system-r-1976"
+      }
+    ],
+    "exercise_ideas": [
+      {
+        "title": "Exercise \u00b7 Quiz-Sql-Group",
+        "description": "Given Relations Orders(order_id, customer_id, total) and Customers(customer_id, region), write SQL to return each region with average order total for customers placing >=5 orders.",
+        "expected_outcome": "Declarative data definition/manipulation statements derived from relational algebra.; Cost models, statistics, and plan enumeration via Selinger- and Volcano-style search.",
+        "difficulty": "medium"
+      },
+      {
+        "title": "Exercise \u00b7 Quiz-Normalization",
+        "description": "A table Campaign(channel, campaign_id, region, manager, region_manager_email) exhibits repeated manager info. Show how to reach BCNF and justify the functional dependencies you used.",
+        "expected_outcome": "Attribute determinism rules that shape candidate keys and decomposition choices.; 1NF through BCNF plus practical heuristics for when to denormalize.",
+        "difficulty": "medium"
+      },
+      {
+        "title": "Exercise \u00b7 Quiz-Locking",
+        "description": "Explain how strict two-phase locking prevents dirty reads yet can deadlock. Provide a concrete deadlock example and mitigation.",
+        "expected_outcome": "Two-phase locking, timestamp ordering, optimistic control, and conflict handling.; ACID semantics, atomic commit boundaries, and application-facing APIs.",
+        "difficulty": "hard"
+      }
+    ],
+    "explanations": [
+      {
+        "heading": "Distributed & Replicated Systems (distributed)",
+        "body_md": "Scale-out topologies, consensus, and geo-distributed SQL.",
+        "citations": [
+          "bigtable-2006",
+          "spanner-2012"
+        ]
+      },
+      {
+        "heading": "Hybrid Transactional/Analytical Processing (HTAP) (htap)",
+        "body_md": "Systems blending OLTP + analytics via log-based replication and materialized views.\n\n*History.* 2017: Aurora details HTAP replication. Blends OLTP durability with analytical replicas via log shipping.",
+        "citations": [
+          "aurora-2017"
+        ]
+      },
+      {
+        "heading": "CAP Theorem (cap_theorem)",
+        "body_md": "Under partitions, systems trade availability against consistency.",
+        "citations": [
+          "brewer-cap-2000"
+        ]
+      },
+      {
+        "heading": "Replication & Sharding (replication_and_sharding)",
+        "body_md": "Leader/follower, multi-leader, and partitioning schemes for scale and resilience.",
+        "citations": [
+          "bigtable-2006",
+          "dynamo-2007"
+        ]
+      }
+    ],
+    "concepts": [
+      {
+        "id": "foundations",
+        "name": "Foundations & Modeling",
+        "summary": "Canonical abstractions (ER diagrams, relations, relational algebra) that separate logical from physical design.",
+        "children": [
+          "relational_model",
+          "relational_algebra",
+          "sql_language",
+          "schema_design"
+        ],
+        "prerequisites": []
+      },
+      {
+        "id": "execution",
+        "name": "Execution & Storage",
+        "summary": "Physical layout, indexing, and query processing internals.",
+        "children": [
+          "storage_engines",
+          "indexing_strategies",
+          "query_planning",
+          "cost_models",
+          "recovery"
+        ],
+        "prerequisites": []
+      },
+      {
+        "id": "concurrency",
+        "name": "Transactions & Concurrency",
+        "summary": "Guarantees that keep shared data correct when multiple writers/readers interact.",
+        "children": [
+          "transaction_management",
+          "concurrency_control",
+          "mvcc",
+          "locking_and_recovery"
+        ],
+        "prerequisites": []
+      }
+    ],
+    "spotlight_paper": {
+      "id": "codd-1970",
+      "title": "A Relational Model of Data for Large Shared Data Banks",
+      "venue": "CACM",
+      "year": 1970,
+      "url": "https://dl.acm.org/doi/10.1145/362384.362685",
+      "authors": [
+        {
+          "id": "codd",
+          "name": "Edgar F. Codd",
+          "affiliation": "IBM Research"
+        }
+      ]
+    }
+  }
+}

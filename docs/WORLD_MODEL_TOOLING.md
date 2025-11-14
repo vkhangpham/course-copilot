@@ -16,7 +16,7 @@ data/handcrafted/database_systems/
 ├── timeline.csv             # Milestones referencing concepts + citations
 ├── papers.csv / authors.csv # Bibliography used for grounding
 ├── quiz_bank.json           # Rubric-aligned quiz items
-├── course_outline.yaml      # Optional outline used by the Teacher RLM
+├── course_outline.yaml      # Optional outline sample (ingested for tooling; teacher now derives plans from taxonomy)
 └── manifest.yaml            # (Optional) helper metadata for ops tooling
 ```
 

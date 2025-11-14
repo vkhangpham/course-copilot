@@ -104,6 +104,8 @@ class CodeActRegistry:
             return getattr(self._dspy_handles, "ta", None)
         if normalized in {"student", "grader"}:
             return getattr(self._dspy_handles, "student", None)
+        if normalized in {"coder", "code", "codex"}:
+            return getattr(self._dspy_handles, "coder", getattr(self._dspy_handles, "ta", None))
         # Fall back to attribute lookup so custom roles (e.g., "critic") can be added later.
         if hasattr(self._dspy_handles, normalized):
             return getattr(self._dspy_handles, normalized)

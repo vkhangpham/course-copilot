@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from typing import Any, Dict, List, Optional
+from unittest import mock
 
 import anyio
 import httpx
 from fastapi import FastAPI, Header, HTTPException
 from httpx import ASGITransport, BaseTransport
 from pydantic import BaseModel, Field
-from unittest import mock
+
 
 class _SyncASGITransport(BaseTransport):
     """Bridge ASGI apps into sync httpx clients."""

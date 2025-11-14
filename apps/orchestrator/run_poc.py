@@ -11,8 +11,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from ccopilot.cli.run_poc import main as _cli_main
 from apps.orchestrator.ta_roles.dataset_paths import resolve_dataset_root
+from ccopilot.cli.run_poc import main as _cli_main
 
 DEFAULT_CONFIG_REL = Path("config") / "pipeline.yaml"
 DEFAULT_CONSTRAINTS_REL = Path("config") / "course_config.yaml"
@@ -53,8 +53,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--ablations",
         default=None,
         help=(
-            "Comma-separated list of ablations to enable "
-            f"({', '.join(ABLATION_CHOICES)}). Leave empty to run with all subsystems enabled."
+            f"Comma-separated list of ablations to enable ({', '.join(ABLATION_CHOICES)}). Leave empty to run with all subsystems enabled."
         ),
     )
     parser.add_argument(
@@ -103,7 +102,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     constraints_path = _resolve_optional_path(args.constraints, base=repo_root)
     if constraints_path is None and constraints_default.exists():
         constraints_path = constraints_default
-
 
     science_config_path = science_default if science_default.exists() else None
 

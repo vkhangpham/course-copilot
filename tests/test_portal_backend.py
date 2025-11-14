@@ -6,16 +6,15 @@ from pathlib import Path
 from typing import Iterator
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from fastapi import HTTPException
-
 from apps.portal_backend.main import (
+    PortalSettings,
     _derive_highlight_source,
     _derive_world_model_store_exists,
     app,
     get_settings,
-    PortalSettings,
 )
 
 
@@ -73,7 +72,7 @@ def _write_run(
     provenance_dir = outputs_dir / "provenance"
     provenance_dir.mkdir(parents=True, exist_ok=True)
     provenance_path = provenance_dir / f"run-{run_id}.jsonl"
-    provenance_path.write_text("{\"stage\": \"test\"}", encoding="utf-8")
+    provenance_path.write_text('{"stage": "test"}', encoding="utf-8")
 
     trace_dir = outputs_dir / "traces"
     trace_dir.mkdir(parents=True, exist_ok=True)
@@ -88,9 +87,7 @@ def _write_run(
             {
                 "summary": "Simulated teacher loop",
                 "prompt": "prompts/teacher_seed.txt",
-                "actions": [
-                    {"action": "plan", "target": "SyllabusDesigner", "payload": {"week": 1}, "result": "ok"}
-                ],
+                "actions": [{"action": "plan", "target": "SyllabusDesigner", "payload": {"week": 1}, "result": "ok"}],
             }
         ),
         encoding="utf-8",
@@ -578,9 +575,7 @@ def test_run_detail_falls_back_to_response_id(portal_settings: PortalSettings) -
     assert export["path"] == expected_relative
 
 
-def test_relative_manifest_paths_use_repo_root_for_external_files(
-    portal_settings: PortalSettings, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_relative_manifest_paths_use_repo_root_for_external_files(portal_settings: PortalSettings, monkeypatch: pytest.MonkeyPatch) -> None:
     _write_run(portal_settings.outputs_dir, include_notebook=False)
     repo_config_dir = portal_settings.repo_root / "config"
     repo_config_dir.mkdir(parents=True, exist_ok=True)

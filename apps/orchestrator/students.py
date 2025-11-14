@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
-import re
 from pathlib import Path
 from typing import Dict, Iterable, List, Sequence, Tuple
 
@@ -64,9 +64,7 @@ class StudentGraderPool:
                     name=name,
                     description=str(payload.get("description", "")),
                     pass_threshold=(
-                        float(payload["pass_threshold"])
-                        if "pass_threshold" in payload and payload["pass_threshold"] is not None
-                        else None
+                        float(payload["pass_threshold"]) if "pass_threshold" in payload and payload["pass_threshold"] is not None else None
                     ),
                     checklist=[str(item) for item in checklist],
                 )
@@ -97,11 +95,7 @@ class StudentGraderPool:
                 }
             )
 
-        overall = (
-            round(sum(item["score"] for item in rubric_results) / len(rubric_results), 3)
-            if rubric_results
-            else 1.0
-        )
+        overall = round(sum(item["score"] for item in rubric_results) / len(rubric_results), 3) if rubric_results else 1.0
 
         return {
             "evaluated_at": datetime.now(timezone.utc).isoformat(),

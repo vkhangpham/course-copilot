@@ -21,6 +21,7 @@ class DSPyModelHandles:
 
     teacher: object
     ta: object
+    coder: object | None = None
     student: object
 
 
@@ -83,16 +84,12 @@ def _build_model_for_role(
     override_key: str | None,
 ) -> object:
     if role_cfg.provider != "openai":
-        raise DSPyConfigurationError(
-            f"Unsupported provider '{role_cfg.provider}' for role '{role_name}'"
-        )
+        raise DSPyConfigurationError(f"Unsupported provider '{role_cfg.provider}' for role '{role_name}'")
 
     api_key = override_key or _resolve_api_key(role_cfg, role_name)
     if not api_key:
         expected_env = role_cfg.api_key_env or f"OPENAI_API_KEY_{role_name.upper()}"
-        raise DSPyConfigurationError(
-            f"Missing API key for {role_name} models; set {expected_env} or OPENAI_API_KEY."
-        )
+        raise DSPyConfigurationError(f"Missing API key for {role_name} models; set {expected_env} or OPENAI_API_KEY.")
 
     api_base = _resolve_api_base(role_cfg, role_name)
     temperature = role_cfg.temperature if role_cfg.temperature is not None else model_cfg.default_temperature
@@ -109,15 +106,16 @@ def _build_model_for_role(
 
 
 def configure_dspy_models(model_cfg: ModelConfig, *, api_key: str | None = None) -> DSPyModelHandles:
-    """Instantiate DSPy OpenAI LMs for the teacher, TAs, and students."""
+    """Instantiate DSPy OpenAI LMs for the teacher, TA dialog, coder CodeAct runs, and students."""
 
     teacher = _build_model_for_role(model_cfg.teacher, "teacher", model_cfg, api_key)
     ta = _build_model_for_role(model_cfg.ta, "ta", model_cfg, api_key)
+    coder = _build_model_for_role(model_cfg.coder, "coder", model_cfg, api_key)
     student = _build_model_for_role(model_cfg.student, "student", model_cfg, api_key)
 
     dspy.settings.configure(lm=teacher)
 
-    return DSPyModelHandles(teacher=teacher, ta=ta, student=student)
+    return DSPyModelHandles(teacher=teacher, ta=ta, coder=coder, student=student)
 
 
 __all__ = [

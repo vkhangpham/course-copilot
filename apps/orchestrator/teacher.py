@@ -1,9 +1,10 @@
 """Teacher orchestrator that drives the CourseGen CodeAct programs."""
+
 from __future__ import annotations
 
+import inspect
 import json
 import logging
-import inspect
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -11,7 +12,6 @@ from typing import Any, Callable, Dict, List
 
 from agents.ta_roles import DEFAULT_ROLES, TARoleSpec
 from agents.teacher_rlm import (
-    TeacherActionRecord,
     TeacherRLM,
     TeacherRLMRun,
     TeacherRLMTask,
@@ -155,9 +155,7 @@ class TeacherOrchestrator:
                     "dataset_summary": dataset_summary,
                     "world_model_store": str(world_model_store),
                     "world_model_store_exists": snapshot_exists,
-                    "codeact_programs": (
-                        self.registry.describe()["programs"] if self.registry else {}
-                    ),
+                    "codeact_programs": (self.registry.describe()["programs"] if self.registry else {}),
                 },
             )
         )
@@ -451,9 +449,7 @@ class TeacherOrchestrator:
             handle.write(f"- Timeline events: {dataset_summary['timeline_count']}\n")
             handle.write(f"- Quiz items: {dataset_summary['quiz_count']}\n")
             if dataset_summary.get("top_domains"):
-                handle.write(
-                    f"- Domains: {', '.join(dataset_summary['top_domains'])}\n"
-                )
+                handle.write(f"- Domains: {', '.join(dataset_summary['top_domains'])}\n")
             handle.write("\n")
             if codeact_outline:
                 handle.write("## AI-generated Outline (CodeAct)\n")
@@ -483,10 +479,7 @@ class TeacherOrchestrator:
             spotlight = highlights.get("spotlight_paper")
             if spotlight:
                 handle.write("## Citation Spotlight\n")
-                handle.write(
-                    f"- {spotlight.get('title')} ({spotlight.get('year')}) — "
-                    f"{spotlight.get('venue') or 'venue tbd'}\n\n"
-                )
+                handle.write(f"- {spotlight.get('title')} ({spotlight.get('year')}) — {spotlight.get('venue') or 'venue tbd'}\n\n")
             syllabus = highlights.get("syllabus_modules") or []
             if syllabus:
                 handle.write("## Syllabus Snapshot\n")
@@ -502,18 +495,13 @@ class TeacherOrchestrator:
             if readings:
                 handle.write("## Suggested Readings\n")
                 for rec in readings[:3]:
-                    handle.write(
-                        f"- {rec.get('title')}: {rec.get('why_it_matters')} ({rec.get('citation')})\n"
-                    )
+                    handle.write(f"- {rec.get('title')}: {rec.get('why_it_matters')} ({rec.get('citation')})\n")
                 handle.write("\n")
             exercises = highlights.get("exercise_ideas") or []
             if exercises:
                 handle.write("## Practice Ideas\n")
                 for exercise in exercises[:3]:
-                    handle.write(
-                        f"- {exercise.get('title')} ({exercise.get('difficulty')}): "
-                        f"{exercise.get('description')}\n"
-                    )
+                    handle.write(f"- {exercise.get('title')} ({exercise.get('difficulty')}): {exercise.get('description')}\n")
                 handle.write("\n")
             explainer_chunks = highlights.get("explanations") or []
             if explainer_chunks:
@@ -539,31 +527,19 @@ class TeacherOrchestrator:
             if codeact_section:
                 handle.write(codeact_section.strip() + "\n\n")
             else:
-                handle.write(
-                    "This stub is generated while the TA CodeAct loop is under construction.\n"
-                )
+                handle.write("This stub is generated while the TA CodeAct loop is under construction.\n")
                 handle.write("Each real run will include citations, examples, and student prompts.\n")
             focus = (dataset_summary.get("top_domains") or ["Database Systems"])[0]
             handle.write(f"\n_Current dataset focus: {focus}_\n")
             handle.write("\n## Learning Objectives & Assessments\n")
             handle.write("- Learning objective: Explain the relational model, SQL, and why normalization matters.\n")
-            handle.write(
-                "- Assessment strategy: short concept quizzes plus a transactional lab on locking and recovery.\n\n"
-            )
+            handle.write("- Assessment strategy: short concept quizzes plus a transactional lab on locking and recovery.\n\n")
             handle.write("## Concept Coverage\n")
-            handle.write(
-                "We revisit relational algebra and SQL before contrasting concurrency control mechanisms,"
-            )
-            handle.write(
-                " recovery logs, and distributed systems such as Spanner and resilient NewSQL engines.\n\n"
-            )
+            handle.write("We revisit relational algebra and SQL before contrasting concurrency control mechanisms,")
+            handle.write(" recovery logs, and distributed systems such as Spanner and resilient NewSQL engines.\n\n")
             handle.write("## Worked Example\n")
-            handle.write(
-                "Consider a banking workload: a transaction debits one account and credits another. "
-            )
-            handle.write(
-                "We trace how two-phase locking prevents lost updates while recovery replays committed entries.\n\n"
-            )
+            handle.write("Consider a banking workload: a transaction debits one account and credits another. ")
+            handle.write("We trace how two-phase locking prevents lost updates while recovery replays committed entries.\n\n")
             handle.write("## Review Questions\n")
             handle.write(
                 "1. Why does strict two-phase locking guarantee serializability?\n"
@@ -573,17 +549,12 @@ class TeacherOrchestrator:
             if exercises:
                 handle.write("\n## Suggested Practice\n")
                 for exercise in exercises[:2]:
-                    handle.write(
-                        f"- {exercise.get('title')} ({exercise.get('difficulty')}): "
-                        f"{exercise.get('description')}\n"
-                    )
+                    handle.write(f"- {exercise.get('title')} ({exercise.get('difficulty')}): {exercise.get('description')}\n")
             readings = (world_model_highlights or {}).get("reading_list") or []
             if readings:
                 handle.write("\n## Reading Starter Pack\n")
                 for rec in readings[:2]:
-                    handle.write(
-                        f"- {rec.get('title')} – {rec.get('why_it_matters')}\n"
-                    )
+                    handle.write(f"- {rec.get('title')} – {rec.get('why_it_matters')}\n")
             explainer_chunks = (world_model_highlights or {}).get("explanations") or []
             if explainer_chunks:
                 handle.write("\n## Background Explainers\n")
@@ -594,31 +565,21 @@ class TeacherOrchestrator:
                 if citations:
                     handle.write(f"Citations: {', '.join(citations)}\n")
             handle.write("\n## Sources & Citations\n")
-            handle.write(
-                "- Codd (1970) formalized the relational model and relational algebra [`codd-1970`].\n"
-            )
-            handle.write(
-                "- System R (1976) demonstrated cost-based SQL optimization and transactions [`system-r-1976`].\n"
-            )
-            handle.write(
-                "- Postgres, ARIES, and Spanner extend these ideas to modern distributed databases.\n"
-            )
+            handle.write("- Codd (1970) formalized the relational model and relational algebra [`codd-1970`].\n")
+            handle.write("- System R (1976) demonstrated cost-based SQL optimization and transactions [`system-r-1976`].\n")
+            handle.write("- Postgres, ARIES, and Spanner extend these ideas to modern distributed databases.\n")
             highlights = world_model_highlights or {}
             concept_highlights = highlights.get("concepts") or []
             if concept_highlights:
                 concept = concept_highlights[0]
                 handle.write("\n### Spotlight Concept\n")
-                handle.write(
-                    f"{concept.get('name')} ({concept.get('id')}): "
-                    f"{(concept.get('summary') or 'Summary pending.').strip()}\n"
-                )
+                handle.write(f"{concept.get('name')} ({concept.get('id')}): {(concept.get('summary') or 'Summary pending.').strip()}\n")
             timeline_highlights = highlights.get("timeline") or []
             if timeline_highlights:
                 event = timeline_highlights[0]
                 handle.write("\n### Timeline Anchor\n")
                 handle.write(
-                    f"{event.get('year') or 'n.d.'} – {event.get('event') or 'Milestone'} "
-                    f"(related concept `{event.get('concept_id')}`)\n"
+                    f"{event.get('year') or 'n.d.'} – {event.get('event') or 'Milestone'} (related concept `{event.get('concept_id')}`)\n"
                 )
                 summary = (event.get("summary") or "").strip()
                 if summary:
@@ -626,10 +587,7 @@ class TeacherOrchestrator:
             spotlight = highlights.get("spotlight_paper")
             if spotlight:
                 handle.write("\n### Citation Preview\n")
-                handle.write(
-                    f"{spotlight.get('title')} ({spotlight.get('year')}) — "
-                    f"{spotlight.get('venue') or 'venue tbd'}\n"
-                )
+                handle.write(f"{spotlight.get('title')} ({spotlight.get('year')}) — {spotlight.get('venue') or 'venue tbd'}\n")
         return lecture_path
 
     def _emit_eval_report(self, eval_dir: Path, ts: str, payload: Dict[str, Any]) -> Path:
@@ -705,9 +663,7 @@ class TeacherOrchestrator:
             "teacher_trace": str(teacher_trace) if teacher_trace else None,
             "notebook_exports": notebook_exports,
             "notebook_export_summary": notebook_export_summary,
-            "science_config_path": (
-                str(self.ctx.science_config_path) if self.ctx.science_config_path else None
-            ),
+            "science_config_path": (str(self.ctx.science_config_path) if self.ctx.science_config_path else None),
         }
         with path.open("w", encoding="utf-8") as handle:
             json.dump(manifest, handle, indent=2)
@@ -750,7 +706,7 @@ class TeacherOrchestrator:
             "PlanCourse",
             constraints=json.dumps(payload, indent=2),
             role="SyllabusDesigner",
-            lm_role="ta",
+            lm_role="coder",
         )
         outline = getattr(result, "outline", None) if result else None
         if outline:
@@ -781,7 +737,7 @@ class TeacherOrchestrator:
             module=json.dumps(module_payload, indent=2),
             claims=json.dumps(claims_payload, indent=2),
             role="LectureAuthor",
-            lm_role="ta",
+            lm_role="coder",
         )
         section = getattr(lecture_result, "section", None) if lecture_result else None
         if not section:
@@ -790,7 +746,7 @@ class TeacherOrchestrator:
             "EnforceCitations",
             md_section=str(section),
             role="LectureAuthor",
-            lm_role="ta",
+            lm_role="coder",
         )
         corrected = getattr(enforcement, "corrected_section", None) if enforcement else None
         final_section = str(corrected or section)
@@ -847,6 +803,9 @@ class TeacherOrchestrator:
             return handles.ta
         if normalized == "student":
             return handles.student
+        if normalized in {"coder", "code", "codex"}:
+            fallback = getattr(handles, "ta", None)
+            return getattr(handles, "coder", fallback)
         self.logger.debug("Unknown lm_role %s; falling back to default handle", lm_role)
         return None
 
@@ -1100,9 +1059,7 @@ class TeacherOrchestrator:
         stem = lecture.stem.replace("_", " ").strip() or "lecture"
         return f"Lecture – {stem.title()}"
 
-    def _summarize_notebook_exports(
-        self, exports: List[Dict[str, Any]] | None
-    ) -> Dict[str, Any] | None:
+    def _summarize_notebook_exports(self, exports: List[Dict[str, Any]] | None) -> Dict[str, Any] | None:
         if not exports:
             return None
         summary = {

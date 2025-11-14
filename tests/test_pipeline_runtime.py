@@ -9,8 +9,8 @@ from unittest import mock
 
 import yaml
 
-from ccopilot.core.dspy_runtime import DSPyModelHandles
 from ccopilot.core.config import read_yaml_file
+from ccopilot.core.dspy_runtime import DSPyModelHandles
 from ccopilot.pipeline import bootstrap_pipeline, run_pipeline
 from tests.mocks.notebook_api import NotebookAPIMock
 
@@ -153,7 +153,7 @@ notebook:
 world_model:
   schema_path: "{schema_path}"
   dataset_dir: "{dataset_dir}"
-  sqlite_path: "{wm_dir / 'state.sqlite'}"
+  sqlite_path: "{wm_dir / "state.sqlite"}"
 evaluation:
   rubrics_path: "{rubrics_path}"
   quiz_bank_path: "{quiz_bank}"
@@ -165,13 +165,11 @@ evaluation:
 
     def _seed_dataset(self, dataset_dir: Path) -> None:
         (dataset_dir / "authors.csv").write_text(
-            "id,full_name,affiliation\n"
-            "author_a,Author A,Lab\n",
+            "id,full_name,affiliation\nauthor_a,Author A,Lab\n",
             encoding="utf-8",
         )
         (dataset_dir / "papers.csv").write_text(
-            "id,title,venue,year,url,authors\n"
-            "paper_a,Title,Conf,2024,http://example.com,author_a\n",
+            "id,title,venue,year,url,authors\npaper_a,Title,Conf,2024,http://example.com,author_a\n",
             encoding="utf-8",
         )
         concepts_yaml = {
@@ -200,8 +198,7 @@ evaluation:
             encoding="utf-8",
         )
         (dataset_dir / "timeline.csv").write_text(
-            "event,year,why_it_matters,related_concepts,citation_id\n"
-            "\"Milestone\",2024,\"Matters\",\"concept_a\",\"paper_a\"\n",
+            'event,year,why_it_matters,related_concepts,citation_id\n"Milestone",2024,"Matters","concept_a","paper_a"\n',
             encoding="utf-8",
         )
         (dataset_dir / "quiz_bank.json").write_text(

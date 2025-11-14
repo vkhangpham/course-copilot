@@ -8,17 +8,15 @@ from pathlib import Path
 from typing import Dict
 
 import yaml
-
 from dotenv import load_dotenv
 
 from ccopilot.core.ablation import AblationConfig, parse_ablation_flag
 from ccopilot.core.config import PipelineConfig, load_course_constraints, load_pipeline_config
 from ccopilot.core.dspy_runtime import DSPyConfigurationError, configure_dspy_models
 from ccopilot.core.provenance import ProvenanceEvent, ProvenanceLogger
-
-from .context import PipelineContext, PipelinePaths
 from scripts import ingest_handcrafted
 
+from .context import PipelineContext, PipelinePaths
 
 DEFAULT_CONFIG_PATH = Path("config/pipeline.yaml")
 DEFAULT_OUTPUT_DIR = Path("outputs")
@@ -216,8 +214,7 @@ def _ensure_dataset_exists(dataset_dir: Path) -> None:
     resolved = dataset_dir.expanduser().resolve()
     if not resolved.exists():
         raise FileNotFoundError(
-            f"Handcrafted dataset not found at {resolved}. "
-            "Run scripts/ingest_handcrafted.py or pass --dataset-dir with a valid path."
+            f"Handcrafted dataset not found at {resolved}. Run scripts/ingest_handcrafted.py or pass --dataset-dir with a valid path."
         )
     os.environ["COURSEGEN_DATASET_DIR"] = str(resolved)
 

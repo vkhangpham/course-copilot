@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, List, Sequence
+from typing import List, Sequence
 
 from ccopilot.utils.split_fields import split_fields
 
@@ -42,10 +42,7 @@ class TimelineSynthesizer:
             event = TimelineEvent(
                 year=self._parse_year(row.get("year")),
                 event=event_label,
-                impact=row.get("why_it_matters")
-                or row.get("summary")
-                or row.get("impact")
-                or "",
+                impact=row.get("why_it_matters") or row.get("summary") or row.get("impact") or "",
                 concepts=related,
             )
             events.append(event)

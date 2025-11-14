@@ -6,7 +6,7 @@ import csv
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Sequence
+from typing import Any, Dict, List, Sequence
 
 import yaml
 
@@ -75,17 +75,13 @@ def validate_dataset(dataset: HandcraftedDataset) -> tuple[list[str], list[str]]
         authors = split_fields(raw)
         missing = [aid for aid in authors if aid not in author_ids]
         if missing:
-            errors.append(
-                f"Paper {paper.get('id')} references unknown author IDs: {', '.join(missing)}"
-            )
+            errors.append(f"Paper {paper.get('id')} references unknown author IDs: {', '.join(missing)}")
 
     # Concepts -> canonical sources
     for concept_id, payload in dataset.concepts.items():
         for source_id in payload.get("canonical_sources", []) or []:
             if source_id not in paper_ids:
-                errors.append(
-                    f"Concept {concept_id} references unknown paper {source_id}"
-                )
+                errors.append(f"Concept {concept_id} references unknown paper {source_id}")
 
     # Taxonomy references
     domains = dataset.taxonomy.get("domains", []) if isinstance(dataset.taxonomy, dict) else []
@@ -107,9 +103,7 @@ def validate_dataset(dataset: HandcraftedDataset) -> tuple[list[str], list[str]]
             if citation in paper_ids or citation in missing_citations:
                 continue
             missing_citations.add(citation)
-            errors.append(
-                f"Graph edge ({src}->{tgt}) references unknown paper {citation}"
-            )
+            errors.append(f"Graph edge ({src}->{tgt}) references unknown paper {citation}")
 
     # Definitions
     for definition in dataset.definitions:
@@ -157,9 +151,7 @@ def validate_dataset(dataset: HandcraftedDataset) -> tuple[list[str], list[str]]
                 errors.append(f"Course outline module {module_id} references unknown concept {concept}")
         for paper in module.get("required_readings", []):
             if paper not in paper_ids:
-                errors.append(
-                    f"Course outline module {module_id} references unknown paper {paper}"
-                )
+                errors.append(f"Course outline module {module_id} references unknown paper {paper}")
 
     return errors, warnings
 

@@ -7,10 +7,17 @@ from types import SimpleNamespace
 import pytest
 
 from agents.ta_roles import DEFAULT_ROLES
-from apps.orchestrator.teacher import TeacherOrchestrator
 from apps.orchestrator.student_loop import MutationReason
+from apps.orchestrator.teacher import TeacherOrchestrator
 from ccopilot.core.ablation import AblationConfig
-from ccopilot.core.config import CourseConstraints, ModelConfig, NotebookConfig, PipelineConfig, WorldModelConfig, EvaluationConfig
+from ccopilot.core.config import (
+    CourseConstraints,
+    EvaluationConfig,
+    ModelConfig,
+    NotebookConfig,
+    PipelineConfig,
+    WorldModelConfig,
+)
 from ccopilot.core.dspy_runtime import DSPyModelHandles
 from ccopilot.core.provenance import ProvenanceLogger
 from ccopilot.pipeline.context import PipelineContext, PipelinePaths
@@ -218,9 +225,7 @@ def test_world_model_highlights_source_falls_back(monkeypatch: pytest.MonkeyPatc
     assert highlights.get("syllabus_modules")
 
 
-def test_world_model_highlights_empty_dataset_fallback_marks_source(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_world_model_highlights_empty_dataset_fallback_marks_source(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     ctx = _make_context(tmp_path)
     orch = TeacherOrchestrator(ctx)
 
@@ -235,9 +240,7 @@ def test_world_model_highlights_empty_dataset_fallback_marks_source(
     assert source == "dataset"
 
 
-def test_notebook_placeholder_reason_explains_missing_slug(
-    tmp_path: Path, dataset_summary: dict[str, object]
-) -> None:
+def test_notebook_placeholder_reason_explains_missing_slug(tmp_path: Path, dataset_summary: dict[str, object]) -> None:
     ctx = _make_context(tmp_path)
     ctx.ablations = AblationConfig(use_world_model=False, use_students=False, allow_recursion=False)
     notebook_cfg = ctx.config.notebook.model_copy(update={"notebook_slug": ""})
@@ -270,9 +273,7 @@ def test_world_model_highlights_source_reports_world_model(monkeypatch: pytest.M
 
     monkeypatch.setattr(
         "apps.orchestrator.teacher.fetch_concepts",
-        lambda **_kwargs: [
-            {"id": "c1", "name": "Concept", "summary": "Summary", "children": [], "prerequisites": []}
-        ],
+        lambda **_kwargs: [{"id": "c1", "name": "Concept", "summary": "Summary", "children": [], "prerequisites": []}],
     )
     monkeypatch.setattr(
         "apps.orchestrator.teacher.search_events",

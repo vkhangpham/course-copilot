@@ -1,19 +1,16 @@
 import json
-from pathlib import Path
 import tempfile
 import unittest
+from pathlib import Path
 
 from ccopilot.core.ablation import AblationConfig, parse_ablation_flag
 from ccopilot.core.config import (
-    CourseAudience,
     CourseConstraints,
-    NotebookConfig,
     PipelineConfig,
-    WorldModelConfig,
     load_course_constraints,
     load_pipeline_config,
 )
-from ccopilot.core.provenance import ProvenanceEvent, ProvenanceLogger
+from ccopilot.core.provenance import ProvenanceLogger
 
 
 class ConfigParsingTests(unittest.TestCase):

@@ -5,10 +5,9 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Sequence
+from typing import Dict, List, Sequence
 
 from apps.codeact.tools.open_notebook import ensure_notebook_exists, push_notebook_section
-
 
 _CITATION_PATTERN = re.compile(r"\[([^\]]+)\]")
 _ZERO_WIDTH_PREFIXES = "\ufeff\u200b\u200c\u200d\u2060\u202a\u202b\u202c\u202d\u202e"

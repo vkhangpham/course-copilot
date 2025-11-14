@@ -63,9 +63,7 @@ class TeacherRLM:
             setattr(repl, name, func)
         self._repl = repl
         self._bootstrapped = True
-        self.console.log(
-            f"[teacher] Injected {len(self.tool_namespace)} hooks into the REPL namespace"
-        )
+        self.console.log(f"[teacher] Injected {len(self.tool_namespace)} hooks into the REPL namespace")
 
     def register_hook(self, name: str, func: Callable[..., Any]) -> None:
         """Expose a Python helper to the eventual REPL namespace."""
@@ -88,7 +86,7 @@ class TeacherRLM:
         prompt_text = prompt_path.read_text(encoding="utf-8")
         self.console.log(
             "[teacher] Starting loop",
-            extra={"prompt": str(prompt_path), "tasks": len(tasks or [])},
+            {"prompt": str(prompt_path), "tasks": len(tasks or [])},
         )
         try:
             if hasattr(self, "_repl") and hasattr(self._repl, "completion"):
@@ -99,8 +97,8 @@ class TeacherRLM:
         except Exception as exc:  # pragma: no cover - guardrail
             self.console.log(
                 "[teacher] Falling back to deterministic simulation",
+                f"reason={exc}",
                 style="yellow",
-                extra={"reason": str(exc)},
             )
 
         actions = self._simulate_run(tasks or [], prompt_text)
@@ -132,8 +130,8 @@ class TeacherRLM:
         except Exception as exc:  # pragma: no cover - defensive
             self.console.log(
                 "[teacher] Vendor RLM unavailable; using stub",
+                f"reason={exc}",
                 style="yellow",
-                extra={"reason": str(exc)},
             )
 
             class _StubRLM:

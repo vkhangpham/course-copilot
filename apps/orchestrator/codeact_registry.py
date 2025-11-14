@@ -132,7 +132,7 @@ def build_default_registry(*, dspy_handles=None) -> CodeActRegistry:
             tools=tools,
             lm=lm,
         ),
-        default_lm_role="ta",
+        default_lm_role="coder",
     )
     registry.register_program(
         "DraftLectureSection",
@@ -153,7 +153,7 @@ def build_default_registry(*, dspy_handles=None) -> CodeActRegistry:
             tools=tools,
             lm=lm,
         ),
-        default_lm_role="ta",
+        default_lm_role="coder",
     )
     registry.register_program(
         "EnforceCitations",
@@ -162,7 +162,7 @@ def build_default_registry(*, dspy_handles=None) -> CodeActRegistry:
             tools=tools,
             lm=lm,
         ),
-        default_lm_role="ta",
+        default_lm_role="coder",
     )
 
     return registry

@@ -1,8 +1,8 @@
-import yaml
 from pathlib import Path
 
-from apps.orchestrator.ta_roles.explainer import Explainer
+import yaml
 
+from apps.orchestrator.ta_roles.explainer import Explainer
 
 DATASET_ROOT = Path("data/handcrafted/database_systems")
 
@@ -52,8 +52,7 @@ def test_explainer_handles_custom_dataset(tmp_path):
         encoding="utf-8",
     )
     (dataset / "timeline.csv").write_text(
-        "event,year,why_it_matters,related_concepts,citation_id\n"
-        "ACID published,1983,Established transaction guarantees,acid,paper-xyz\n",
+        "event,year,why_it_matters,related_concepts,citation_id\nACID published,1983,Established transaction guarantees,acid,paper-xyz\n",
         encoding="utf-8",
     )
 
@@ -84,7 +83,7 @@ def test_explainer_history_line_handles_comma_delimited_concepts(tmp_path):
     (dataset / "concepts.yaml").write_text(yaml.safe_dump(concepts_payload), encoding="utf-8")
     (dataset / "timeline.csv").write_text(
         "event,year,why_it_matters,related_concepts,citation_id\n"
-        "Relational breakthrough,1970,Formalized relations,\"relational_model, relational_algebra\",paper-1\n",
+        'Relational breakthrough,1970,Formalized relations,"relational_model, relational_algebra",paper-1\n',
         encoding="utf-8",
     )
 

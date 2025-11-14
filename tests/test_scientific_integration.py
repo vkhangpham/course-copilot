@@ -3,12 +3,12 @@
 Tests the interaction between hypothesis generation, scientific evaluation,
 and belief network components in realistic course generation scenarios.
 """
+
 import unittest
-import yaml
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any, Dict, List
-from unittest.mock import MagicMock, patch
+
+import yaml
 
 # Import scientific modules
 from apps.codeact.hypothesis_generator import (
@@ -21,7 +21,6 @@ from apps.orchestrator.scientific_evaluator import (
 )
 from world_model.belief_network import (
     BayesianBeliefNetwork,
-    BeliefState,
     create_default_belief_network,
 )
 
@@ -77,13 +76,9 @@ class TestScientificIntegration(unittest.TestCase):
         self._create_test_course_artifacts()
 
         # Initialize components
-        self.hypothesis_generator = CourseGenHypothesisGenerator(
-            config_path=self.config_path
-        )
+        self.hypothesis_generator = CourseGenHypothesisGenerator(config_path=self.config_path)
         self.evaluator = ScientificEvaluator(config=self.config)
-        self.belief_network = create_default_belief_network(
-            self.config.get("world_model", {})
-        )
+        self.belief_network = create_default_belief_network(self.config.get("world_model", {}))
 
     def tearDown(self):
         """Clean up test fixtures."""
@@ -215,10 +210,7 @@ Implement a simple transaction manager with 2PL.
                 {"name": "Query Optimization", "order": 2},
                 {"name": "Transaction Management", "order": 3},
             ],
-            "lectures": [
-                {"path": str(p), "content": p.read_text()}
-                for p in self.lecture_paths
-            ],
+            "lectures": [{"path": str(p), "content": p.read_text()} for p in self.lecture_paths],
         }
 
         # Mock student outcomes
@@ -480,9 +472,7 @@ Implement a simple transaction manager with 2PL.
     def test_hypothesis_refinement_iteration(self):
         """Test hypothesis refinement over multiple iterations."""
         # Generate initial hypotheses
-        initial_hypotheses = (
-            self.hypothesis_generator.generate_pedagogical_hypotheses()
-        )
+        initial_hypotheses = self.hypothesis_generator.generate_pedagogical_hypotheses()
 
         # Prepare test data
         course_data = {"modules": [], "lectures": []}

@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Sequence
 
-from .students import StudentGraderPool
 from .student_qa import StudentQuizEvaluator
+from .students import StudentGraderPool
 
 
 @dataclass(slots=True)
@@ -102,23 +102,15 @@ class StudentLoopRunner:
         overall_score = float(rubric_results.get("overall_score", 0.0) or 0.0)
         rubric_entries = rubric_results.get("rubrics", []) or []
         has_rubrics = bool(rubric_entries)
-        rubric_failures = [
-            entry.get("name", "")
-            for entry in rubric_entries
-            if not entry.get("passed")
-        ]
+        rubric_failures = [entry.get("name", "") for entry in rubric_entries if not entry.get("passed")]
         aggregate_pass = overall_score >= self.config.rubric_threshold
         rubric_pass = aggregate_pass and not rubric_failures if has_rubrics else True
 
-        questions = (quiz_results.get("questions") or [])
+        questions = quiz_results.get("questions") or []
         has_quiz = bool(questions)
         quiz_pass_rate = float(quiz_results.get("pass_rate", 0.0) or 0.0)
         quiz_pass = quiz_pass_rate >= self.config.quiz_threshold if has_quiz else True
-        failing_questions = [
-            question.get("id", "")
-            for question in questions
-            if not question.get("passed")
-        ]
+        failing_questions = [question.get("id", "") for question in questions if not question.get("passed")]
 
         grounding_configured, grounding_pass = self._grounding_status(rubric_results)
 

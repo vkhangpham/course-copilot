@@ -37,11 +37,17 @@ validate-handcrafted = "scripts.validate_handcrafted:app"
 worldmodel-ingest = "scripts.ingest_handcrafted:main"
 
 [tool.ruff]
-line-length = 100
+line-length = 140
 target-version = "py311"
+extend-exclude = ["vendor/"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
+ignore = [
+    "E722",  # Allow bare except in specific cases
+    "E402",  # Module level import not at top (some scripts need sys.path manipulation)
+    "F841",  # Allow unused variables (common in tests and data structure setup)
+]
 
 [tool.pytest.ini_options]
 testpaths = [
