@@ -1,7 +1,9 @@
 from pathlib import Path
 from typing import Any, Dict
 
-from apps.orchestrator.student_loop import StudentLoopConfig, StudentLoopRunner
+import pytest
+
+from apps.orchestrator.student_loop import MutationReason, StudentLoopConfig, StudentLoopRunner
 from apps.orchestrator.student_qa import QuizEvaluation, StudentQuizEvaluator
 from apps.orchestrator.students import StudentGraderPool
 
@@ -23,7 +25,7 @@ Learning objectives: explain the relational model and SQL fundamentals.
 Assessment: create SQL queries that respect transactions and recovery steps while explaining concurrency.
 We contrast distributed databases like Spanner with legacy System R deployments to highlight modern design.
 Example: students normalize a schema and answer a review question on locking.
-This lecture cites foundational work by Codd (1970) and [System R].
+This lecture cites foundational work by Codd (1970) and [System R], explicitly referencing codd-1970 and system-r-1976.
         """.strip(),
     )
 
@@ -79,9 +81,7 @@ def test_default_keyword_check_respects_word_boundaries() -> None:
     assert not passed, "Keyword detection should not match substrings within larger words"
 
     positive_text = "Normalization discussion covers locking and transaction control."
-    passed_positive, evidence = StudentGraderPool._default_keyword_check(
-        "locking control", positive_text.lower()
-    )
+    passed_positive, evidence = StudentGraderPool._default_keyword_check("locking control", positive_text.lower())
     assert passed_positive
     assert evidence in {"locking", "control"}
 
@@ -189,6 +189,90 @@ def test_student_quiz_evaluator_handles_short_acronyms(tmp_path: Path) -> None:
 
     assert result["questions"][0]["matched_keywords"] == ["sql"]
     assert result["questions"][0]["passed"] is True
+
+
+def test_student_grader_pool_uses_llm(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    artifact = _write_artifact(tmp_path, "# Lecture\nContent referencing sources.")
+    grader = StudentGraderPool.from_yaml(RUBRICS, lm=object())
+
+    def fake_grade(self, rubric, excerpt):
+        return {
+            "overall_score": 0.88,
+            "items": [{"item": rubric.name, "passed": True, "score": 0.88, "evidence": "deterministic evidence"}],
+        }
+
+    monkeypatch.setattr(StudentGraderPool, "_grade_rubric_with_llm", fake_grade, raising=True)
+    results = grader.evaluate(artifact)
+    assert results["overall_score"] == pytest.approx(0.88)
+    assert all(item["passed"] for item in results["rubrics"])
+    assert grader.uses_llm is True
+    assert results["engine"] == "llm"
+
+
+def test_student_quiz_evaluator_uses_llm(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    quiz_bank = tmp_path / "quiz.json"
+    quiz_bank.write_text(
+        """
+[
+  {
+    "id": "quiz-llm",
+    "prompt": "Explain transactions",
+    "answer_sketch": "ACID overview",
+    "learning_objectives": ["transactions"],
+    "difficulty": "easy"
+  }
+]
+        """.strip(),
+        encoding="utf-8",
+    )
+    lecture = _write_artifact(tmp_path, "Transactions and ACID properties are covered thoroughly.")
+    evaluator = StudentQuizEvaluator(quiz_bank_path=quiz_bank, pass_threshold=0.6, question_limit=1, lm=object())
+
+    def fake_grade(self, question, excerpt):
+        return {"passed": True, "score": 0.92, "evidence": "LLM evidence", "answer": "deterministic"}
+
+    monkeypatch.setattr(StudentQuizEvaluator, "_grade_question_with_llm", fake_grade, raising=True)
+    result = evaluator.evaluate_path(lecture).as_dict()
+
+    assert result["pass_rate"] == 1.0
+    assert result["questions"][0]["passed"] is True
+    assert result["engine"] == "llm"
+
+
+def test_student_grader_respects_disable_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("COURSEGEN_DISABLE_LLM_STUDENTS", "1")
+    artifact = _write_artifact(tmp_path, "# Lecture\nFallback text")
+    grader = StudentGraderPool.from_yaml(RUBRICS, lm=object())
+    results = grader.evaluate(artifact)
+
+    assert grader.uses_llm is False
+    assert results["engine"] == "heuristic"
+
+
+def test_student_quiz_respects_disable_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("COURSEGEN_DISABLE_LLM_STUDENTS", "true")
+    quiz_bank = tmp_path / "quiz.json"
+    quiz_bank.write_text(
+        """
+[
+  {
+    "id": "quiz-disable",
+    "prompt": "Define ACID",
+    "answer_sketch": "Atomicity Consistency Isolation Durability",
+    "learning_objectives": ["transactions"],
+    "difficulty": "medium"
+  }
+]
+        """.strip(),
+        encoding="utf-8",
+    )
+    lecture = _write_artifact(tmp_path, "Transactions and ACID guarantees are covered.")
+    evaluator = StudentQuizEvaluator(quiz_bank_path=quiz_bank, pass_threshold=0.5, question_limit=1, lm=object())
+
+    payload = evaluator.evaluate_path(lecture).as_dict()
+
+    assert evaluator.uses_llm is False
+    assert payload["engine"] == "heuristic"
 
 
 def test_student_loop_runner_triggers_mutation(tmp_path: Path) -> None:
@@ -422,3 +506,84 @@ def test_student_loop_mutates_when_quiz_fails_without_rubrics(tmp_path: Path) ->
     final_reason = result["attempts"][-1]["triggered_mutation"]
     assert final_reason is not None
     assert final_reason["failing_questions"] == ["quiz-1"]
+
+
+def test_student_loop_reports_grader_errors(tmp_path: Path) -> None:
+    lecture = _write_artifact(tmp_path, "Seed lecture text")
+
+    class FailingGrader:
+        def evaluate(self, _path: Path) -> Dict[str, Any]:  # type: ignore[override]
+            raise RuntimeError("grader boom")
+
+    class StubQuiz:
+        def evaluate_path(self, _path: Path) -> QuizEvaluation:  # type: ignore[override]
+            return QuizEvaluation(questions=[])
+
+    runner = StudentLoopRunner(
+        grader=FailingGrader(),  # type: ignore[arg-type]
+        quiz_evaluator=StubQuiz(),  # type: ignore[arg-type]
+        config=StudentLoopConfig(rubric_threshold=0.8, quiz_threshold=0.75, max_mutations=1),
+        mutation_callback=lambda path, _iteration, _reason: path,
+    )
+
+    result = runner.run(lecture)
+    assert result["status"] == "grader_error"
+    assert result["errors"]
+    assert result["errors"][0]["stage"] == "grader"
+
+
+def test_student_loop_reports_quiz_errors(tmp_path: Path) -> None:
+    lecture = _write_artifact(tmp_path, "Seed lecture text")
+
+    class StubGrader:
+        def evaluate(self, _path: Path) -> Dict[str, Any]:  # type: ignore[override]
+            return {"overall_score": 1.0, "rubrics": []}
+
+    class FailingQuiz:
+        def evaluate_path(self, _path: Path) -> QuizEvaluation:  # type: ignore[override]
+            raise RuntimeError("quiz boom")
+
+    runner = StudentLoopRunner(
+        grader=StubGrader(),  # type: ignore[arg-type]
+        quiz_evaluator=FailingQuiz(),  # type: ignore[arg-type]
+        config=StudentLoopConfig(rubric_threshold=0.8, quiz_threshold=0.75, max_mutations=1),
+        mutation_callback=lambda path, _iteration, _reason: path,
+    )
+
+    result = runner.run(lecture)
+    assert result["status"] == "quiz_error"
+    assert result["errors"]
+    assert result["errors"][0]["stage"] == "quiz"
+
+
+def test_student_loop_reports_mutation_errors(tmp_path: Path) -> None:
+    lecture = _write_artifact(tmp_path, "Seed lecture text")
+
+    class StubGrader:
+        def evaluate(self, _path: Path) -> Dict[str, Any]:  # type: ignore[override]
+            return {
+                "overall_score": 0.0,
+                "rubrics": [
+                    {"name": "coverage", "passed": False},
+                ],
+                "engine": "heuristic",
+            }
+
+    class StubQuiz:
+        def evaluate_path(self, _path: Path) -> QuizEvaluation:  # type: ignore[override]
+            return QuizEvaluation(questions=[{"id": "q1", "passed": False}])
+
+    def failing_mutation(_path: Path, _iteration: int, _reason: MutationReason) -> Path:
+        raise RuntimeError("mutation boom")
+
+    runner = StudentLoopRunner(
+        grader=StubGrader(),  # type: ignore[arg-type]
+        quiz_evaluator=StubQuiz(),  # type: ignore[arg-type]
+        config=StudentLoopConfig(rubric_threshold=0.8, quiz_threshold=0.75, max_mutations=1),
+        mutation_callback=failing_mutation,
+    )
+
+    result = runner.run(lecture)
+    assert result["status"] == "mutation_error"
+    assert result["errors"]
+    assert result["errors"][0]["stage"] == "mutation"
