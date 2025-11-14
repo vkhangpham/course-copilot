@@ -5,6 +5,7 @@
 **End-to-end outcome.** One CLI entry point should run the full pipeline—from ingesting YAML/CSV concept graphs through Notebook export—and emit (a) a multi-week course plan, (b) at least one fully cited lecture module, (c) evaluation artifacts (grader scores, agent trace, provenance), and (d) toggles for ablations (disable recursion, students, or world model) to prove each subsystem’s impact (`docs/PLAN.md`, “Goal & Success Criteria”).
 
 **System pillars.**
+
 - **Recursive Language Model (RLM) teacher loop.** The orchestrator treats prompts as mutable state, can spawn depth-1 subcalls, and interacts with an external REPL to inspect arbitrarily large contexts, letting us dodge context-rot while coordinating TA roles (`docs/PLAN.md` §1; `docs/PoC.md` “System Overview”; `docs/Recursive Language Models (RLM)_ Concept, Applications, and Implementation.pdf`). The default REPL lives under `vendor/rlm`, but you can point the teacher loop at another checkout by exporting `COURSEGEN_VENDOR_RLM_PATH=/absolute/path/to/rlm` before running the CLI.
 - **DSPy CodeAct sandbox.** Every “think with code” action runs through CodeAct signatures that wrap pure tool functions (world-model CRUD, DuckDB/SQLite queries, Open Notebook client). CodeAct’s iterative code→execute→reflect loop is detailed in `docs/__CodeAct Module (DSPy)__ – Technical & Strategic Analysis.pdf` and underpins TA autonomy.
 - **Symbolic world model.** A structured concept graph (entities, relationships, provenance) is the coordination bus for agents, inspired by Kosmos-style research loops and the symbolic world-model blueprint in `docs/Symbolic World Models in a Sandboxed Academic Knowledge Domain.pdf`. Agents read/write it via CodeAct tools to keep long-horizon coherence.
@@ -15,7 +16,7 @@
 
 - **Operational expectations.**
 - Tooling: Python 3.11+, Node 18+, Deno (for DSPy), plus local `.env` wiring for OpenAI, OpenAlex, arXiv, and Open Notebook endpoints (`docs/PoC.md` §1–2). DSPy now prefers role-specific keys when present (`OPENAI_API_KEY_TEACHER`, `OPENAI_API_KEY_TA`, etc.) and falls back to the global `OPENAI_API_KEY`. CodeAct automatically uses the TA handle for Plan/Lecture/Citation programs, so **do not** reconfigure `dspy.settings` manually in agent code—set the env vars instead. Set `COURSEGEN_VENDOR_RLM_PATH` if you need the teacher REPL to load from somewhere other than `vendor/rlm`. **Important:** `.env` in the repo already contains real credentials—never edit or commit changes to it; consume the values as-is and keep secrets out of version control.
-- Workflow: initialize submodules (`vendor/rlm`, `vendor/open-notebook`), seed the dataset from `docs/samples/`, run `python apps/orchestrator/run_poc.py ...`, then evaluate via `python apps/orchestrator/eval_loop.py ...` (`docs/PoC.md` “Execution Plan”).
+- Workflow: initialize submodules (`vendor/rlm`, `vendor/open-notebook`), rely on the handcrafted dataset in `data/handcrafted/database_systems`, run `python apps/orchestrator/run_poc.py ...`, then evaluate via `python apps/orchestrator/eval_loop.py ...` (`docs/PoC.md` “Execution Plan”).
 - Logging & artifacts: persist world-model snapshots, agent traces, grader outputs, and Notebook IDs alongside the generated content for reproducibility (`docs/PLAN.md` “What “done” looks like”).
 - CLI: keep the initial `apps/orchestrator/run_poc.py` interface minimal—only accept the constraint file, concept data path, notebook name, and an optional ablation flag per `docs/PLAN.md` toggles. Add richer model overrides later once the core loop works. Both this shim and the canonical `ccopilot.cli.run_poc` resolve every relative flag against the supplied `--repo-root`, so automation can invoke them from any working directory without juggling `cd` or symlinks.
 
@@ -165,6 +166,8 @@ For more details, see README.md and QUICKSTART.md.
 
 ## Overall rule
 
+- Before doing anything else, read ALL of AGENTS dot md and register with agent mail and introduce yourself to the other agents. Then coordinate on the remaining tasks left in beads progress with the other agents and come up with a game plan for splitting and reviewing the work. Coordinate via MCP Agent Mail: check inboxes at the start/end of each session and after major updates, and send timely status messages so other agents stay aligned on shared work.
+- Commit code regularly—at minimum once per bead—and include the bead id in each commit message so the audit trail stays aligned with bd. Break long sessions into incremental commits instead of batching everything at the end.
 - Delete unused or obsolete files when your changes make them irrelevant (refactors, feature removals, etc.), and revert files only when the change is yours or explicitly requested. If a git operation leaves you unsure about other agents' in-flight work, stop and coordinate instead of deleting.
 - **Before attempting to delete a file to resolve a local type/lint failure, stop and ask the user.** Other agents are often editing adjacent files; deleting their work to silence an error is never acceptable without explicit approval.
 - NEVER edit `.env` or any environment variable files—only the user may change them.
@@ -180,8 +183,6 @@ For more details, see README.md and QUICKSTART.md.
 - Run long running tasks with tmux. Watch and read the logs regularly.
 - DO NOT define functions or variables whose names start with an underscore unless they are Python dunder methods (e.g., `__init__`).
 - Prefer Pydantic models over frozen dataclasses, especially within LLM/DSPy integrations.
-- Before doing anything else, read ALL of AGENTS dot md and register with agent mail and introduce yourself to the other agents. Then coordinate on the remaining tasks left in beads progress with the other agents and come up with a game plan for splitting and reviewing the work. Coordinate via MCP Agent Mail: check inboxes at the start/end of each session and after major updates, and send timely status messages so other agents stay aligned on shared work.
-- Commit code regularly—at minimum once per bead—and include the bead id in each commit message so the audit trail stays aligned with bd. Break long sessions into incremental commits instead of batching everything at the end.
 
 ## Agent Tool
 

@@ -303,12 +303,15 @@ docker compose up -d
 # Confirm API on http://localhost:5055
 ```
 
-2. **Seed dataset**
+2. **Validate handcrafted dataset + constraints**
+
+The repository already contains the handcrafted Database Systems world model under `data/handcrafted/database_systems` and the default constraints under `config/course_config.yaml`. Run the validation/ingest helpers to make sure your checkout is healthy before orchestrating:
 
 ```bash
-cp -r docs/samples/database-systems/* data/concept/
-cp docs/samples/constraints_undergrad.yaml data/constraints/active.yaml
+python scripts/ingest_handcrafted.py data/handcrafted/database_systems outputs/world_model/state.sqlite --jsonl outputs/world_model/snapshot.jsonl
 ```
+
+> Skip the `--jsonl` flag if you only need the SQLite snapshot. To supply alternative constraints, pass `--constraints /path/to/constraints.yaml` to the CLI instead of copying sample files.
 
 3. **Generate plan & lectures**
 
