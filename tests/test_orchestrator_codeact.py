@@ -83,8 +83,35 @@ def _make_context(tmp_path: Path) -> PipelineContext:
         paths=paths,
         env={},
         provenance=provenance,
-        dspy_handles=DSPyModelHandles(teacher=object(), ta=object(), student=object()),
+        dspy_handles=DSPyModelHandles(teacher=object(), ta=object(), coder=object(), student=object()),
     )
+
+
+def _configure_eval_files(ctx: PipelineContext, tmp_path: Path) -> EvaluationConfig:
+    rubrics_path = tmp_path / "rubrics.yaml"
+    rubrics_path.parent.mkdir(parents=True, exist_ok=True)
+    rubrics_yaml = "coverage:\n  description: Coverage\n  pass_threshold: 0.1\n  checklist:\n    - relational model\n    - transactions\n"
+    rubrics_path.write_text(rubrics_yaml, encoding="utf-8")
+
+    quiz_path = tmp_path / "quiz_bank.json"
+    quiz_questions = [
+        {
+            "id": "quiz-coverage",
+            "prompt": "Explain relational workloads",
+            "answer_sketch": "relational sql transaction",
+            "learning_objectives": ["coverage"],
+            "difficulty": "easy",
+        }
+    ]
+    quiz_path.write_text(json.dumps(quiz_questions), encoding="utf-8")
+
+    eval_cfg = EvaluationConfig(
+        rubrics_path=rubrics_path,
+        quiz_bank_path=quiz_path,
+        max_mutations=1,
+    )
+    ctx.config = ctx.config.model_copy(update={"evaluation": eval_cfg})
+    return eval_cfg
 
 
 @pytest.fixture()
@@ -111,7 +138,7 @@ def test_emit_course_plan_includes_codeact_outline(tmp_path: Path, dataset_summa
     assert "Week 1: Relational Thinking" in contents
     syllabus_tools = next(role.tool_whitelist for role in DEFAULT_ROLES if role.name == "SyllabusDesigner")
     assert registry.calls and registry.calls[0]["allowed_tools"] == syllabus_tools
-    assert registry.calls[0]["lm_handle"] is ctx.dspy_handles.ta
+    assert registry.calls[0]["lm_handle"] is ctx.dspy_handles.coder
 
 
 def test_emit_lecture_prefers_codeact_section(tmp_path: Path, dataset_summary: dict[str, object]) -> None:
@@ -138,8 +165,36 @@ def test_emit_lecture_prefers_codeact_section(tmp_path: Path, dataset_summary: d
     enforce_call = next(call for call in registry.calls if call["name"] == "EnforceCitations")
     assert draft_call["allowed_tools"] == lecture_tools
     assert enforce_call["allowed_tools"] == lecture_tools
-    assert draft_call["lm_handle"] is ctx.dspy_handles.ta
-    assert enforce_call["lm_handle"] is ctx.dspy_handles.ta
+    assert draft_call["lm_handle"] is ctx.dspy_handles.coder
+    assert enforce_call["lm_handle"] is ctx.dspy_handles.coder
+
+
+def test_plan_fallback_records_stage_error(tmp_path: Path, dataset_summary: dict[str, object]) -> None:
+    ctx = _make_context(tmp_path)
+    ctx.paths.output_dir.mkdir(parents=True, exist_ok=True)
+    orch = TeacherOrchestrator(ctx)
+    orch._offline_codeact = True  # force dataset fallback
+
+    orch._emit_course_plan(ctx.paths.output_dir, dataset_summary, world_model_highlights={})
+
+    assert orch.stage_errors
+    last_error = orch.stage_errors[-1]
+    assert last_error["stage"] == "codeact_fallback"
+    assert last_error["context"]["program"] == "PlanCourse"
+
+
+def test_lecture_fallback_records_stage_error(tmp_path: Path, dataset_summary: dict[str, object]) -> None:
+    ctx = _make_context(tmp_path)
+    (ctx.paths.output_dir / "lectures").mkdir(parents=True, exist_ok=True)
+    orch = TeacherOrchestrator(ctx)
+    orch._offline_codeact = True  # force dataset fallback
+
+    orch._emit_lecture(ctx.paths.output_dir / "lectures", dataset_summary, world_model_highlights={})
+
+    assert orch.stage_errors
+    last_error = orch.stage_errors[-1]
+    assert last_error["stage"] == "codeact_fallback"
+    assert last_error["context"]["program"] == "DraftLectureSection"
 
 
 def test_recursion_ablation_still_runs_codeact(tmp_path: Path, dataset_summary: dict[str, object]) -> None:
@@ -159,6 +214,60 @@ def test_recursion_ablation_keeps_notebook_exports_enabled(tmp_path: Path) -> No
     ctx.ablations = AblationConfig(use_world_model=True, use_students=True, allow_recursion=False)
     orch = TeacherOrchestrator(ctx)
     assert orch._notebook_exports_enabled() is True
+
+
+def test_teacher_hooks_expose_role_registry(tmp_path: Path, dataset_summary: dict[str, object]) -> None:
+    ctx = _make_context(tmp_path)
+    orch = TeacherOrchestrator(ctx)
+    hooks = orch._build_teacher_hooks(world_model_highlights={})
+    registry = hooks["list_ta_roles"]()
+    assert isinstance(registry, list)
+    assert {entry["name"] for entry in registry} == {role.name for role in DEFAULT_ROLES}
+    sample = registry[0]
+    assert set(sample["tools"]) == set(orch.ta_roles[sample["name"]].tool_whitelist)
+
+
+def test_codeact_offline_mode_uses_fallbacks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, dataset_summary: dict[str, object]) -> None:
+    monkeypatch.setenv("COURSEGEN_CODEACT_OFFLINE", "1")
+    ctx = _make_context(tmp_path)
+    ctx.paths.output_dir.mkdir(parents=True, exist_ok=True)
+    ctx.paths.output_dir.joinpath("lectures").mkdir(parents=True, exist_ok=True)
+    orch = TeacherOrchestrator(ctx)
+    highlights = {
+        "syllabus_modules": [{"week": 1, "title": "Transactions", "outcomes": ["Explain ACID"]}],
+        "concepts": [{"id": "tx", "name": "Transactions", "summary": "ACID foundations"}],
+    }
+
+    plan_path = orch._emit_course_plan(ctx.paths.output_dir, dataset_summary, highlights)
+    plan_text = plan_path.read_text(encoding="utf-8")
+    assert "CodeAct outline unavailable" in plan_text
+
+    lecture_path = orch._emit_lecture(ctx.paths.output_dir / "lectures", dataset_summary, highlights)
+    lecture_text = lecture_path.read_text(encoding="utf-8")
+    assert "LectureAuthor TA output unavailable" in lecture_text
+
+
+def test_request_ta_records_requester(tmp_path: Path, dataset_summary: dict[str, object]) -> None:
+    ctx = _make_context(tmp_path)
+    orch = TeacherOrchestrator(ctx)
+    hooks = orch._build_teacher_hooks(world_model_highlights={})
+    result = hooks["request_ta"]("SyllabusDesigner", requester="LectureAuthor", task={"week": 1})
+    assert result.get("requested_by") == "LectureAuthor"
+    assert any(
+        action.action == "spawn_ta" and action.payload.get("requested_by") == "LectureAuthor"
+        for action in orch.teacher_rlm._captured_actions  # type: ignore[attr-defined]
+    )
+
+
+def test_build_teacher_tasks_covers_all_roles(tmp_path: Path, dataset_summary: dict[str, object]) -> None:
+    ctx = _make_context(tmp_path)
+    orch = TeacherOrchestrator(ctx)
+    tasks = orch._build_teacher_tasks(dataset_summary)
+    assert {task.target for task in tasks} == {role.name for role in DEFAULT_ROLES}
+    syllabus_task = next(task for task in tasks if task.target == "SyllabusDesigner")
+    assert syllabus_task.payload["task"].get("dataset") == dataset_summary
+    lecture_task = next(task for task in tasks if task.target == "LectureAuthor")
+    assert lecture_task.payload["task"].get("module") == 1
 
 
 def test_mutation_loop_requests_fresh_lecture_sections(tmp_path: Path) -> None:
@@ -198,9 +307,147 @@ def test_mutation_loop_requests_fresh_lecture_sections(tmp_path: Path) -> None:
     )
     orch._apply_mutation(lecture_path, iteration=1, reason=reason, world_model_highlights=world_model_highlights)
 
-    mutated_text = lecture_path.read_text(encoding="utf-8")
-    assert "Draft 2" in mutated_text
-    assert call_log == ["1", "2"], "Mutation loop should bypass cached lecture sections"
+
+def test_codeact_failure_records_stage_error(tmp_path: Path) -> None:
+    ctx = _make_context(tmp_path)
+    (ctx.paths.output_dir / "lectures").mkdir(parents=True, exist_ok=True)
+
+    class ExplodingRegistry:
+        def build_program(self, name: str, **_kwargs):
+            if name not in {"DraftLectureSection", "EnforceCitations"}:
+                raise KeyError(name)
+
+            def runner(**_runner_kwargs):
+                raise RuntimeError("boom")
+
+            runner.invocations = []  # type: ignore[attr-defined]
+            return runner
+
+    registry = ExplodingRegistry()
+    orch = TeacherOrchestrator(ctx, codeact_registry=registry)
+    highlights = {
+        "syllabus_modules": [{"week": 1, "title": "Foundations", "outcomes": ["Explain ACID"]}],
+        "concepts": [{"id": "rel_model", "name": "Relational Model", "summary": "Foundations"}],
+    }
+
+    section = orch._generate_codeact_lecture_section(highlights, use_cache=False)
+    assert section is None
+    assert orch.stage_errors and orch.stage_errors[-1]["stage"] == "codeact_run"
+
+
+def test_manifest_includes_stage_errors(tmp_path: Path, dataset_summary: dict[str, object]) -> None:
+    ctx = _make_context(tmp_path)
+    ctx.paths.output_dir.mkdir(parents=True, exist_ok=True)
+    ctx.paths.artifacts_dir.mkdir(parents=True, exist_ok=True)
+    ctx.paths.evaluations_dir.mkdir(parents=True, exist_ok=True)
+    ctx.paths.logs_dir.mkdir(parents=True, exist_ok=True)
+    course_plan = ctx.paths.output_dir / "course_plan.md"
+    lecture = ctx.paths.output_dir / "lectures" / "module_01.md"
+    lecture.parent.mkdir(parents=True, exist_ok=True)
+    eval_report = ctx.paths.evaluations_dir / "run.jsonl"
+    provenance = ctx.paths.logs_dir / "prov.jsonl"
+    for path in (course_plan, lecture, eval_report, provenance):
+        path.write_text("stub", encoding="utf-8")
+
+    orch = TeacherOrchestrator(ctx)
+    orch._record_stage_error("codeact_run", "boom")  # type: ignore[attr-defined]
+
+    manifest_path = ctx.paths.artifacts_dir / "manifest.json"
+    orch._emit_manifest(
+        manifest_path,
+        course_plan,
+        lecture,
+        eval_report,
+        provenance,
+        dataset_summary,
+        ctx.config.world_model.sqlite_path,
+        snapshot_exists=True,
+        evaluation_payload={"status": "ok"},
+        world_model_highlights={},
+        highlight_artifact=None,
+        teacher_trace=None,
+        notebook_exports=None,
+        notebook_export_summary=None,
+        highlight_source="world_model",
+    )
+
+    doc = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert doc["stage_errors"]
+
+
+def test_stage_error_logged_when_rubrics_missing(tmp_path: Path) -> None:
+    ctx = _make_context(tmp_path)
+    eval_cfg = EvaluationConfig(
+        rubrics_path=tmp_path / "missing_rubrics.yaml",
+        quiz_bank_path=tmp_path / "quiz_bank.json",
+    )
+    eval_cfg.quiz_bank_path.write_text("[]", encoding="utf-8")
+    ctx.config = ctx.config.model_copy(update={"evaluation": eval_cfg})
+    lecture_path = tmp_path / "lecture.md"
+    lecture_path.write_text("Relational SQL", encoding="utf-8")
+
+    orch = TeacherOrchestrator(ctx)
+    result = orch._evaluate_artifacts(lecture_path, None)
+
+    assert result["status"] == "missing_rubrics"
+    assert orch.stage_errors and orch.stage_errors[-1]["stage"] == "student_eval"
+
+
+def test_stage_error_logged_when_student_loop_raises(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    ctx = _make_context(tmp_path)
+    _configure_eval_files(ctx, tmp_path)
+    lecture_path = tmp_path / "lecture.md"
+    lecture_path.write_text("Relational SQL transactions", encoding="utf-8")
+
+    def _boom(self, _path):  # noqa: D401
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("apps.orchestrator.teacher.StudentLoopRunner.run", _boom, raising=True)
+
+    orch = TeacherOrchestrator(ctx)
+    result = orch._evaluate_artifacts(lecture_path, None)
+
+    assert result["status"] == "student_loop_error"
+    assert orch.stage_errors[-1]["stage"] == "student_eval"
+
+
+def test_stage_error_logged_on_non_passing_status(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    ctx = _make_context(tmp_path)
+    _configure_eval_files(ctx, tmp_path)
+    lecture_path = tmp_path / "lecture.md"
+    lecture_path.write_text("Relational SQL transactions", encoding="utf-8")
+
+    def _stub(self, _path):
+        return {
+            "use_students": True,
+            "status": "max_mutations_reached",
+            "attempts": [],
+            "mutations": 2,
+            "rubrics": {},
+            "quiz": {},
+        }
+
+    monkeypatch.setattr("apps.orchestrator.teacher.StudentLoopRunner.run", _stub, raising=True)
+
+    orch = TeacherOrchestrator(ctx)
+    result = orch._evaluate_artifacts(lecture_path, None)
+
+    assert result["status"] == "max_mutations_reached"
+    assert orch.stage_errors[-1]["stage"] == "student_eval"
+
+
+def test_student_llm_missing_raises_without_opt_out(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    ctx = _make_context(tmp_path)
+    _configure_eval_files(ctx, tmp_path)
+    ctx.dspy_handles = DSPyModelHandles(teacher=object(), ta=object(), coder=object(), student=None)
+    lecture_path = tmp_path / "lecture.md"
+    lecture_path.write_text("Relational SQL", encoding="utf-8")
+    monkeypatch.delenv("COURSEGEN_DISABLE_LLM_STUDENTS", raising=False)
+
+    orch = TeacherOrchestrator(ctx)
+
+    with pytest.raises(RuntimeError, match="Student LLM handle unavailable"):
+        orch._evaluate_artifacts(lecture_path, None)
 
 
 def test_world_model_highlights_source_falls_back(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

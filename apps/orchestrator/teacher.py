@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 import json
 import logging
+import os
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -35,10 +36,18 @@ from ccopilot.core.provenance import ProvenanceEvent
 from ccopilot.pipeline.context import PipelineContext
 
 from .shared_state import SharedStateHandles
+from .student_settings import DISABLE_LLM_ENV, students_llm_disabled
 from .students import StudentGraderPool
 
 LOGGER_NAME = "coursegen.orchestrator"
 WORLD_MODEL_PROGRAMS = {"PlanCourse", "DraftLectureSection", "EnforceCitations"}
+
+
+def _truthy_env(name: str) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return False
+    return raw.strip().lower() not in {"", "0", "false", "no"}
 
 
 @dataclass(slots=True)
@@ -53,6 +62,8 @@ class TeacherArtifacts:
     teacher_trace: Path | None = None
     notebook_exports: List[Dict[str, Any]] | None = None
     notebook_export_summary: Dict[str, Any] | None = None
+    teacher_rlm_mode: str | None = None
+    teacher_rlm_reason: str | None = None
 
 
 class TeacherOrchestrator:
@@ -77,7 +88,14 @@ class TeacherOrchestrator:
         self.teacher_rlm = teacher_rlm or TeacherRLM()
         self.logger = logger or logging.getLogger(LOGGER_NAME)
         self._teacher_cache: Dict[str, Any] = {}
+        self._stage_errors: List[Dict[str, Any]] = []
         self.ta_roles: Dict[str, TARoleSpec] = {role.name: role for role in DEFAULT_ROLES}
+        self._offline_codeact = _truthy_env("COURSEGEN_CODEACT_OFFLINE")
+        self._latest_dataset_summary: Dict[str, Any] | None = None
+
+    @property
+    def stage_errors(self) -> List[Dict[str, Any]]:
+        return list(self._stage_errors)
 
     def run_coursegen(
         self,
@@ -91,6 +109,8 @@ class TeacherOrchestrator:
             self.registry = codeact_registry
         self.shared_state.ensure_dirs()
         self._teacher_cache = {}
+        self._stage_errors = []
+        self._latest_dataset_summary = dataset_summary
         ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
         output_dir = self.ctx.paths.output_dir
         lecture_dir = output_dir / "lectures"
@@ -101,6 +121,7 @@ class TeacherOrchestrator:
         for path in (output_dir, lecture_dir, eval_dir, prov_dir, manifest_dir):
             path.mkdir(parents=True, exist_ok=True)
 
+        highlight_artifact: Path | None = None
         highlight_source: str | None = None
         if self.ctx.ablations.use_world_model:
             (
@@ -108,27 +129,17 @@ class TeacherOrchestrator:
                 highlight_source,
             ) = self._collect_world_model_highlights(world_model_store)
             manifest_world_model_highlights = world_model_highlights
-            highlight_artifact = self._emit_world_model_highlights_artifact(
-                manifest_dir,
-                ts,
-                world_model_highlights,
-                dataset_summary,
-            )
         else:
             world_model_highlights = self._collect_dataset_highlights()
             manifest_world_model_highlights = world_model_highlights
             highlight_source = "dataset"
-            highlight_artifact = self._emit_world_model_highlights_artifact(
-                manifest_dir,
-                ts,
-                world_model_highlights,
-                dataset_summary,
-            )
             self.logger.info("World-model ablation enabled; using dataset highlight fallback only.")
 
         teacher_trace: Path | None = None
+        teacher_rlm_mode: str | None = None
+        teacher_rlm_reason: str | None = None
         if self.ctx.ablations.allow_recursion:
-            teacher_trace = self._run_teacher_loop(
+            teacher_trace, teacher_rlm_mode, teacher_rlm_reason = self._run_teacher_loop(
                 ts,
                 dataset_summary=dataset_summary,
                 world_model_highlights=world_model_highlights,
@@ -179,6 +190,13 @@ class TeacherOrchestrator:
             {"lecture": str(lecture)},
         )
         evaluation_payload = self._evaluate_artifacts(lecture, world_model_highlights)
+        highlight_artifact = self._emit_world_model_highlights_artifact(
+            manifest_dir,
+            ts,
+            manifest_world_model_highlights,
+            dataset_summary,
+            evaluation_engines=self._extract_evaluation_engines(evaluation_payload),
+        )
         eval_report = self._emit_eval_report(eval_dir, ts, evaluation_payload)
         self._log_stage(
             "evaluate",
@@ -220,6 +238,8 @@ class TeacherOrchestrator:
             notebook_exports,
             notebook_export_summary,
             highlight_source=highlight_source,
+            teacher_rlm_mode=teacher_rlm_mode,
+            teacher_rlm_reason=teacher_rlm_reason,
         )
 
         self.ctx.provenance.log(
@@ -252,6 +272,8 @@ class TeacherOrchestrator:
             teacher_trace=teacher_trace,
             notebook_exports=notebook_exports,
             notebook_export_summary=notebook_export_summary,
+            teacher_rlm_mode=teacher_rlm_mode,
+            teacher_rlm_reason=teacher_rlm_reason,
         )
 
     def _log_stage(self, stage_name: str, payload: Dict[str, Any]) -> None:
@@ -264,6 +286,27 @@ class TeacherOrchestrator:
             )
         )
 
+    def _record_stage_error(
+        self,
+        stage_name: str,
+        message: str,
+        *,
+        context: Dict[str, Any] | None = None,
+    ) -> None:
+        serializable_context = None
+        if context:
+            serializable_context = {
+                key: (value if isinstance(value, (str, int, float, bool, type(None))) else str(value)) for key, value in context.items()
+            }
+        entry: Dict[str, Any] = {"stage": stage_name, "message": message}
+        if serializable_context:
+            entry["context"] = serializable_context
+        self._stage_errors.append(entry)
+        if serializable_context:
+            self.logger.warning("Stage %s error: %s", stage_name, message, extra={"context": serializable_context})
+        else:
+            self.logger.warning("Stage %s error: %s", stage_name, message)
+
     # ------------------------------------------------------------------
 
     def _run_teacher_loop(
@@ -272,14 +315,14 @@ class TeacherOrchestrator:
         *,
         dataset_summary: Dict[str, Any],
         world_model_highlights: Dict[str, Any] | None,
-    ) -> Path | None:
+    ) -> tuple[Path | None, str | None, str | None]:
         if not self.ctx.ablations.allow_recursion:
             self.logger.debug("Recursion disabled; teacher loop skipped.")
-            return None
+            return None, None, None
         prompt_path = self.ctx.paths.repo_root / "prompts" / "teacher_seed.txt"
         if not prompt_path.exists():
             self.logger.debug("Teacher prompt missing at %s; skipping RLM run", prompt_path)
-            return None
+            return None, None, None
 
         hooks = self._build_teacher_hooks(world_model_highlights)
         for name, func in hooks.items():
@@ -297,7 +340,12 @@ class TeacherOrchestrator:
             )
         except TeacherRLMUnavailable as exc:
             self.logger.warning("Teacher RLM unavailable: %s", exc)
-            return None
+            self._record_stage_error(
+                "teacher_rlm_unavailable",
+                "Teacher RLM unavailable; falling back to offline simulation",
+                context={"reason": str(exc)},
+            )
+            return None, "unavailable", str(exc)
 
         for record in run.actions:
             if record.action == "spawn_ta" and isinstance(record.result, dict):
@@ -307,6 +355,15 @@ class TeacherOrchestrator:
                     self._teacher_cache["lecture_section"] = record.result["section"]
 
         trace_path = self._persist_teacher_trace(ts, run)
+        if run.mode != "rlm":
+            reason = run.reason or "fallback"
+            message = f"Teacher RLM executed in fallback mode ({reason})"
+            self.logger.warning(message)
+            self._record_stage_error(
+                "teacher_rlm_fallback",
+                message,
+                context={"mode": run.mode, "reason": reason},
+            )
         self.ctx.provenance.log(
             ProvenanceEvent(
                 stage="teacher_rlm",
@@ -314,39 +371,36 @@ class TeacherOrchestrator:
                 agent="apps.orchestrator.teacher",
                 payload={
                     "mode": run.mode,
+                    "reason": run.reason,
                     "prompt_path": str(prompt_path),
                     "actions": len(run.actions),
                     "trace_path": str(trace_path) if trace_path else None,
                 },
             )
         )
-        return trace_path
+        return trace_path, run.mode, run.reason
 
     def _build_teacher_tasks(self, dataset_summary: Dict[str, Any]) -> List[TeacherRLMTask]:
         tasks: List[TeacherRLMTask] = []
-        tasks.append(
-            TeacherRLMTask(
-                kind="spawn_ta",
-                target="SyllabusDesigner",
-                payload={
-                    "task": {
-                        "focus_areas": getattr(self.ctx.config.course, "focus_areas", []),
-                        "dataset": dataset_summary,
-                    }
-                },
+        for spec in self.ta_roles.values():
+            payload: Dict[str, Any] = {
+                "mandate": spec.mandate,
+                "task": {},
+            }
+            if spec.name == "SyllabusDesigner":
+                payload["task"] = {
+                    "focus_areas": getattr(self.ctx.config.course, "focus_areas", []),
+                    "dataset": dataset_summary,
+                }
+            elif spec.name == "LectureAuthor":
+                payload["task"] = {"module": 1}
+            tasks.append(
+                TeacherRLMTask(
+                    kind="spawn_ta",
+                    target=spec.name,
+                    payload=payload,
+                )
             )
-        )
-        tasks.append(
-            TeacherRLMTask(
-                kind="spawn_ta",
-                target="LectureAuthor",
-                payload={
-                    "task": {
-                        "module": 1,
-                    }
-                },
-            )
-        )
         return tasks
 
     def _build_teacher_hooks(
@@ -356,22 +410,49 @@ class TeacherOrchestrator:
         def use_codeact(program_name: str, **kwargs: Any) -> Dict[str, Any]:
             lm_role = kwargs.pop("lm_role", "teacher")
             result = self._run_codeact_program(program_name, lm_role=lm_role, **kwargs)
-            return self._summarize_codeact_result(program_name, result)
+            payload = {"kwargs": kwargs, "lm_role": lm_role}
+            summary = self._summarize_codeact_result(program_name, result)
+            self.teacher_rlm.record_action("use_codeact", program_name, payload, summary)
+            return summary
 
         def spawn_ta(role_name: str, **kwargs: Any) -> Dict[str, Any]:
             task = kwargs.get("task") or {}
-            return self._execute_ta_role(role_name, task, world_model_highlights)
+            requested_by = kwargs.get("requested_by")
+            return self._execute_ta_role(role_name, task, world_model_highlights, requested_by=requested_by)
+
+        def request_ta(role_name: str, requester: str, **kwargs: Any) -> Dict[str, Any]:
+            task = kwargs.get("task") or {}
+            return self._execute_ta_role(role_name, task, world_model_highlights, requested_by=requester)
+
+        def list_ta_roles() -> List[Dict[str, Any]]:
+            registry: List[Dict[str, Any]] = []
+            for spec in self.ta_roles.values():
+                registry.append(
+                    {
+                        "name": spec.name,
+                        "mandate": spec.mandate,
+                        "prompt_path": spec.prompt_path,
+                        "tools": list(spec.tool_whitelist),
+                    }
+                )
+            self.teacher_rlm.record_action("list_ta_roles", "registry", {}, registry)
+            return registry
 
         def log_event(target: str, **payload: Any) -> Dict[str, Any]:
             entry = {"target": target, **payload}
+            self.teacher_rlm.record_action("log_event", target, payload, None)
             return entry
 
         def wm_snapshot(_: str = "wm_snapshot", **_kwargs: Any) -> Dict[str, Any]:
-            return world_model_highlights or {}
+            snapshot = world_model_highlights or {}
+            self.teacher_rlm.record_action("wm_snapshot", "world_model", {}, snapshot)
+            return snapshot
 
         return {
             "use_codeact": use_codeact,
             "spawn_ta": spawn_ta,
+            "request_ta": request_ta,
+            "list_ta_roles": list_ta_roles,
             "log_event": log_event,
             "wm_snapshot": wm_snapshot,
         }
@@ -413,18 +494,27 @@ class TeacherOrchestrator:
         role_name: str,
         task: Dict[str, Any],
         world_model_highlights: Dict[str, Any] | None,
+        *,
+        requested_by: str | None = None,
     ) -> Dict[str, Any]:
+        origin = requested_by or "Teacher"
         if role_name == "SyllabusDesigner":
             outline = self._generate_codeact_plan_outline()
             if outline:
                 self._teacher_cache["outline"] = outline
-            return {"outline": outline, "task": task}
+            result = {"outline": outline, "task": task, "requested_by": origin}
+            self.teacher_rlm.record_action("spawn_ta", role_name, {"task": task, "requested_by": origin}, result)
+            return result
         if role_name == "LectureAuthor":
             section = self._generate_codeact_lecture_section(world_model_highlights)
             if section:
                 self._teacher_cache["lecture_section"] = section
-            return {"section": section, "task": task}
-        return {"status": "unknown_role", "role": role_name}
+            result = {"section": section, "task": task, "requested_by": origin}
+            self.teacher_rlm.record_action("spawn_ta", role_name, {"task": task, "requested_by": origin}, result)
+            return result
+        result = {"status": "unknown_role", "role": role_name, "requested_by": origin}
+        self.teacher_rlm.record_action("spawn_ta", role_name, {"task": task, "requested_by": origin}, result)
+        return result
 
     # ------------------------------------------------------------------
 
@@ -437,6 +527,31 @@ class TeacherOrchestrator:
         course = self.ctx.config.course
         plan_path = output_dir / "course_plan.md"
         codeact_outline = self._generate_codeact_plan_outline()
+        if not codeact_outline:
+            if self.ctx.ablations.use_world_model and not self._offline_codeact:
+                self.logger.error("PlanCourse CodeAct program returned no outline; failing plan emission.")
+                self._record_stage_error(
+                    "codeact_run",
+                    "PlanCourse returned no outline",
+                    context={"program": "PlanCourse"},
+                )
+                raise RuntimeError("PlanCourse CodeAct program returned no outline; unable to emit course plan.")
+            self.logger.info("PlanCourse outline unavailable; using dataset highlights instead.")
+            self._record_stage_error(
+                "codeact_fallback",
+                "PlanCourse outline unavailable; using dataset fallback",
+                context={
+                    "program": "PlanCourse",
+                    "world_model_enabled": self.ctx.ablations.use_world_model,
+                    "offline_codeact": self._offline_codeact,
+                },
+            )
+            dataset_summary_local = self._latest_dataset_summary or dataset_summary
+            codeact_outline = self._dataset_outline_from_highlights(
+                world_model_highlights or {},
+                course,
+                dataset_summary_local,
+            )
         with plan_path.open("w", encoding="utf-8") as handle:
             handle.write(f"# {course.title}\n\n")
             handle.write(f"**Duration:** {course.duration_weeks} weeks\n\n")
@@ -451,9 +566,8 @@ class TeacherOrchestrator:
             if dataset_summary.get("top_domains"):
                 handle.write(f"- Domains: {', '.join(dataset_summary['top_domains'])}\n")
             handle.write("\n")
-            if codeact_outline:
-                handle.write("## AI-generated Outline (CodeAct)\n")
-                handle.write(codeact_outline.strip() + "\n\n")
+            handle.write("## AI-generated Outline (CodeAct)\n")
+            handle.write(codeact_outline.strip() + "\n\n")
             highlights = world_model_highlights or {}
             concepts = highlights.get("concepts") or []
             if concepts:
@@ -511,8 +625,33 @@ class TeacherOrchestrator:
                     summary_line = first_line[0] if first_line else "See explainer section for details."
                     handle.write(f"- **{chunk.get('heading')}** — {summary_line}\n")
                 handle.write("\n")
-            handle.write("\n> Placeholder plan – replace once Teacher RLM is wired.\n")
         return plan_path
+
+    def _dataset_outline_from_highlights(
+        self,
+        highlights: Dict[str, Any],
+        course: Any,
+        dataset_summary: Dict[str, Any],
+    ) -> str:
+        modules = highlights.get("syllabus_modules") or []
+        lines = ["_CodeAct outline unavailable; using dataset syllabus snapshot._", ""]
+        if modules:
+            lines.append("### Module Sequence (dataset highlights)")
+            lines.append("")
+            for module in modules[: course.duration_weeks]:
+                week = module.get("week") or len(lines)
+                title = module.get("title") or f"Week {week}"
+                outcomes = module.get("outcomes") or []
+                detail = "; ".join(outcomes) or "See dataset highlight."
+                lines.append(f"{week}. **{title}** — {detail}")
+            lines.append("")
+        else:
+            lines.append(
+                f"- Dataset includes {dataset_summary.get('concept_count', 0)} concepts and "
+                f"{dataset_summary.get('timeline_count', 0)} timeline events to seed the outline."
+            )
+        lines.append("_(Re-run with world model enabled to regenerate this section via CodeAct.)_")
+        return "\n".join(lines)
 
     def _emit_lecture(
         self,
@@ -521,74 +660,218 @@ class TeacherOrchestrator:
         world_model_highlights: Dict[str, Any] | None = None,
     ) -> Path:
         lecture_path = lecture_dir / "module_01.md"
+        module_meta = self._select_module_payload(world_model_highlights)
+        heading = module_meta.get("title") or "Foundations of Database Systems"
+        module_week = module_meta.get("week") or 1
         codeact_section = self._generate_codeact_lecture_section(world_model_highlights)
-        with lecture_path.open("w", encoding="utf-8") as handle:
-            handle.write("# Module 1 · Foundations of Database Systems\n\n")
-            if codeact_section:
-                handle.write(codeact_section.strip() + "\n\n")
-            else:
-                handle.write("This stub is generated while the TA CodeAct loop is under construction.\n")
-                handle.write("Each real run will include citations, examples, and student prompts.\n")
-            focus = (dataset_summary.get("top_domains") or ["Database Systems"])[0]
-            handle.write(f"\n_Current dataset focus: {focus}_\n")
-            handle.write("\n## Learning Objectives & Assessments\n")
-            handle.write("- Learning objective: Explain the relational model, SQL, and why normalization matters.\n")
-            handle.write("- Assessment strategy: short concept quizzes plus a transactional lab on locking and recovery.\n\n")
-            handle.write("## Concept Coverage\n")
-            handle.write("We revisit relational algebra and SQL before contrasting concurrency control mechanisms,")
-            handle.write(" recovery logs, and distributed systems such as Spanner and resilient NewSQL engines.\n\n")
-            handle.write("## Worked Example\n")
-            handle.write("Consider a banking workload: a transaction debits one account and credits another. ")
-            handle.write("We trace how two-phase locking prevents lost updates while recovery replays committed entries.\n\n")
-            handle.write("## Review Questions\n")
-            handle.write(
-                "1. Why does strict two-phase locking guarantee serializability?\n"
-                "2. Which SQL query would expose a partial failure in the example above?\n"
-            )
-            exercises = (world_model_highlights or {}).get("exercise_ideas") or []
-            if exercises:
-                handle.write("\n## Suggested Practice\n")
-                for exercise in exercises[:2]:
-                    handle.write(f"- {exercise.get('title')} ({exercise.get('difficulty')}): {exercise.get('description')}\n")
-            readings = (world_model_highlights or {}).get("reading_list") or []
-            if readings:
-                handle.write("\n## Reading Starter Pack\n")
-                for rec in readings[:2]:
-                    handle.write(f"- {rec.get('title')} – {rec.get('why_it_matters')}\n")
-            explainer_chunks = (world_model_highlights or {}).get("explanations") or []
-            if explainer_chunks:
-                handle.write("\n## Background Explainers\n")
-                chunk = explainer_chunks[0]
-                handle.write(f"### {chunk.get('heading')}\n")
-                handle.write(f"{chunk.get('body_md')}\n")
-                citations = chunk.get("citations") or []
-                if citations:
-                    handle.write(f"Citations: {', '.join(citations)}\n")
-            handle.write("\n## Sources & Citations\n")
-            handle.write("- Codd (1970) formalized the relational model and relational algebra [`codd-1970`].\n")
-            handle.write("- System R (1976) demonstrated cost-based SQL optimization and transactions [`system-r-1976`].\n")
-            handle.write("- Postgres, ARIES, and Spanner extend these ideas to modern distributed databases.\n")
-            highlights = world_model_highlights or {}
-            concept_highlights = highlights.get("concepts") or []
-            if concept_highlights:
-                concept = concept_highlights[0]
-                handle.write("\n### Spotlight Concept\n")
-                handle.write(f"{concept.get('name')} ({concept.get('id')}): {(concept.get('summary') or 'Summary pending.').strip()}\n")
-            timeline_highlights = highlights.get("timeline") or []
-            if timeline_highlights:
-                event = timeline_highlights[0]
-                handle.write("\n### Timeline Anchor\n")
-                handle.write(
-                    f"{event.get('year') or 'n.d.'} – {event.get('event') or 'Milestone'} (related concept `{event.get('concept_id')}`)\n"
+        if not codeact_section:
+            if self.ctx.ablations.use_world_model and not self._offline_codeact:
+                self.logger.error("DraftLectureSection CodeAct program returned no lecture section; failing lecture emission.")
+                self._record_stage_error(
+                    "codeact_run",
+                    "DraftLectureSection returned no lecture section",
+                    context={"program": "DraftLectureSection"},
                 )
-                summary = (event.get("summary") or "").strip()
-                if summary:
-                    handle.write(f"{summary}\n")
-            spotlight = highlights.get("spotlight_paper")
-            if spotlight:
-                handle.write("\n### Citation Preview\n")
-                handle.write(f"{spotlight.get('title')} ({spotlight.get('year')}) — {spotlight.get('venue') or 'venue tbd'}\n")
+                raise RuntimeError("DraftLectureSection CodeAct program returned no lecture section; unable to emit lecture.")
+            self.logger.info("DraftLectureSection output unavailable; using dataset highlights instead.")
+            self._record_stage_error(
+                "codeact_fallback",
+                "DraftLectureSection output unavailable; using dataset fallback",
+                context={
+                    "program": "DraftLectureSection",
+                    "world_model_enabled": self.ctx.ablations.use_world_model,
+                    "offline_codeact": self._offline_codeact,
+                },
+            )
+            dataset_summary_local = self._latest_dataset_summary or dataset_summary
+            codeact_section = self._dataset_lecture_from_highlights(
+                module_meta,
+                world_model_highlights or {},
+                dataset_summary_local,
+            )
+        highlights = world_model_highlights or {}
+        assembled_sections = [codeact_section.strip()]
+        dynamic_sections = [
+            self._render_module_overview(module_meta, dataset_summary),
+            self._render_learning_objectives(module_meta, dataset_summary),
+            self._render_reading_pack(module_meta, highlights),
+            self._render_concept_highlights(highlights),
+            self._render_timeline_section(highlights),
+            self._render_exercises_section(highlights),
+            self._render_explainer_section(highlights),
+            self._render_sources_section(module_meta, highlights),
+        ]
+        assembled_sections.extend(section for section in dynamic_sections if section)
+        final_body = "\n\n".join(section.strip() for section in assembled_sections if section and section.strip()).strip()
+        with lecture_path.open("w", encoding="utf-8") as handle:
+            handle.write(f"# Module {module_week} · {heading}\n\n")
+            if final_body:
+                handle.write(final_body + "\n")
         return lecture_path
+
+    def _dataset_lecture_from_highlights(
+        self,
+        module_meta: Dict[str, Any],
+        highlights: Dict[str, Any],
+        dataset_summary: Dict[str, Any],
+    ) -> str:
+        outcomes = module_meta.get("outcomes") or []
+        readings = highlights.get("reading_list") or []
+        concepts = highlights.get("concepts") or []
+        parts = [
+            "_LectureAuthor TA output unavailable; synthesizing dataset notes instead._",
+            "",
+        ]
+        if outcomes:
+            parts.append(f"**Focus outcomes:** {', '.join(outcomes)}")
+        if readings:
+            rec = readings[0]
+            parts.append(f"**Primary reading:** {rec.get('title')} — {rec.get('why_it_matters')}")
+        if concepts:
+            concept = concepts[0]
+            parts.append(f"**Concept spotlight:** {concept.get('name')} — {concept.get('summary')}")
+        if not outcomes:
+            focus = (dataset_summary.get("top_domains") or ["Database Systems"])[0]
+            parts.append(f"**Focus outcomes:** Reinforces foundational themes from the `{focus}` domain.")
+        parts.append("_(Re-run with world model enabled to restore generated lecture sections.)_")
+        return "\n".join(parts)
+
+    def _render_module_overview(self, module_meta: Dict[str, Any], dataset_summary: Dict[str, Any]) -> str | None:
+        lines = ["## Module Overview"]
+        week = module_meta.get("week")
+        if week:
+            lines.append(f"- **Week:** {week}")
+        title = module_meta.get("title")
+        if title:
+            lines.append(f"- **Focus:** {title}")
+        focus_areas = module_meta.get("focus_areas") or []
+        if focus_areas:
+            areas = ", ".join(str(area) for area in focus_areas[:3])
+            lines.append(f"- **Focus areas:** {areas}")
+        dataset_focus = dataset_summary.get("top_domains") or []
+        if dataset_focus:
+            lines.append(f"- **Dataset lens:** {dataset_focus[0]}")
+        return "\n".join(lines) if len(lines) > 1 else None
+
+    def _render_learning_objectives(self, module_meta: Dict[str, Any], dataset_summary: Dict[str, Any]) -> str | None:
+        objectives = module_meta.get("outcomes") or module_meta.get("learning_objectives") or []
+        if not objectives:
+            dataset_focus = (dataset_summary.get("top_domains") or ["Database Systems"])[0]
+            objectives = [f"Reinforce core skills in {dataset_focus}."]
+        lines = ["## Learning Objectives"]
+        lines.extend(f"- {objective}" for objective in objectives)
+        return "\n".join(lines)
+
+    def _render_reading_pack(self, module_meta: Dict[str, Any], highlights: Dict[str, Any]) -> str | None:
+        module_readings = module_meta.get("readings") or []
+        curated = (highlights.get("reading_list") or [])[:3]
+        if not module_readings and not curated:
+            return None
+        lines = ["## Reading Starter Pack"]
+        for reading in module_readings:
+            normalized = str(reading).strip()
+            if normalized:
+                lines.append(f"- Module reading: {normalized}")
+        for entry in curated:
+            title = entry.get("title") or entry.get("identifier") or "Reading"
+            reason = entry.get("why_it_matters") or "Context forthcoming"
+            identifier = entry.get("identifier") or "reference"
+            lines.append(f"- {title} (`{identifier}`) – {reason}")
+        return "\n".join(lines)
+
+    def _render_concept_highlights(self, highlights: Dict[str, Any]) -> str | None:
+        concepts = (highlights.get("concepts") or [])[:3]
+        if not concepts:
+            return None
+        lines = ["## Concept Highlights"]
+        for concept in concepts:
+            name = concept.get("name") or concept.get("id") or "Concept"
+            summary = (concept.get("summary") or "Details forthcoming.").strip()
+            lines.append(f"- **{name}** — {summary}")
+        return "\n".join(lines)
+
+    def _render_timeline_section(self, highlights: Dict[str, Any]) -> str | None:
+        timeline = (highlights.get("timeline") or [])[:3]
+        if not timeline:
+            return None
+        lines = ["## Timeline Signals"]
+        for entry in timeline:
+            year = entry.get("year") or "n.d."
+            label = entry.get("event") or "Milestone"
+            concept_id = entry.get("concept_id") or entry.get("related_concept")
+            summary = (entry.get("summary") or "").strip()
+            bullet = f"- {year}: {label}"
+            if concept_id:
+                bullet += f" (concept `{concept_id}`)"
+            if summary:
+                bullet += f" — {summary}"
+            lines.append(bullet)
+        return "\n".join(lines)
+
+    def _render_exercises_section(self, highlights: Dict[str, Any]) -> str | None:
+        exercises = (highlights.get("exercise_ideas") or [])[:2]
+        if not exercises:
+            return None
+        lines = ["## Suggested Practice"]
+        for exercise in exercises:
+            title = exercise.get("title") or "Exercise"
+            difficulty = exercise.get("difficulty") or "medium"
+            description = exercise.get("description") or "Apply the concept in practice."
+            lines.append(f"- {title} ({difficulty}): {description}")
+            outcome = exercise.get("expected_outcome")
+            if outcome:
+                lines.append(f"  - Outcome: {outcome}")
+        return "\n".join(lines)
+
+    def _render_explainer_section(self, highlights: Dict[str, Any]) -> str | None:
+        chunks = (highlights.get("explanations") or [])[:2]
+        if not chunks:
+            return None
+        segments: List[str] = ["## Background Explainers"]
+        for chunk in chunks:
+            heading = chunk.get("heading") or "Explainer"
+            body = (chunk.get("body_md") or "Explanation forthcoming.").strip()
+            citations = chunk.get("citations") or []
+            segments.append(f"### {heading}\n{body}")
+            if citations:
+                segments.append(f"Citations: {', '.join(str(cite) for cite in citations)}")
+        return "\n\n".join(segments)
+
+    def _render_sources_section(self, module_meta: Dict[str, Any], highlights: Dict[str, Any]) -> str | None:
+        sources: List[str] = []
+        seen: set[str] = set()
+
+        for reading in module_meta.get("readings") or []:
+            normalized = str(reading).strip()
+            if normalized and normalized not in seen:
+                seen.add(normalized)
+                sources.append(f"Module reading: {normalized}")
+
+        for entry in (highlights.get("reading_list") or [])[:5]:
+            label = entry.get("citation") or entry.get("title") or entry.get("identifier")
+            why = entry.get("why_it_matters")
+            source_line = label or "Dataset reading"
+            if why:
+                source_line = f"{source_line} — {why}"
+            if source_line not in seen:
+                seen.add(source_line)
+                sources.append(source_line)
+
+        spotlight = highlights.get("spotlight_paper") or {}
+        if spotlight:
+            title = spotlight.get("title") or spotlight.get("id") or "Spotlight"
+            year = spotlight.get("year") or "n.d."
+            venue = spotlight.get("venue") or "venue tbd"
+            spotlight_line = f"{title} ({year}) — {venue}"
+            if spotlight_line not in seen:
+                seen.add(spotlight_line)
+                sources.append(spotlight_line)
+
+        if not sources:
+            return None
+        lines = ["## Sources & Citations"]
+        lines.extend(f"- {source}" for source in sources)
+        return "\n".join(lines)
 
     def _emit_eval_report(self, eval_dir: Path, ts: str, payload: Dict[str, Any]) -> Path:
         eval_path = eval_dir / f"run-{ts}.jsonl"
@@ -618,6 +901,7 @@ class TeacherOrchestrator:
                 "dataset_summary": dataset_summary,
                 "world_model_highlights": world_model_highlights,
                 "notebook_export_summary": notebook_export_summary,
+                "stage_errors": list(self._stage_errors),
             },
         }
         with path.open("w", encoding="utf-8") as handle:
@@ -642,6 +926,8 @@ class TeacherOrchestrator:
         notebook_export_summary: Dict[str, Any] | None = None,
         *,
         highlight_source: str | None = None,
+        teacher_rlm_mode: str | None = None,
+        teacher_rlm_reason: str | None = None,
     ) -> Path:
         manifest: Dict[str, Any] = {
             "course_plan": str(course_plan),
@@ -664,10 +950,26 @@ class TeacherOrchestrator:
             "notebook_exports": notebook_exports,
             "notebook_export_summary": notebook_export_summary,
             "science_config_path": (str(self.ctx.science_config_path) if self.ctx.science_config_path else None),
+            "stage_errors": list(self._stage_errors),
+            "teacher_rlm": {
+                "mode": teacher_rlm_mode,
+                "reason": teacher_rlm_reason,
+            },
         }
         with path.open("w", encoding="utf-8") as handle:
             json.dump(manifest, handle, indent=2)
         return path
+
+    @staticmethod
+    def _extract_evaluation_engines(payload: Dict[str, Any]) -> Dict[str, str] | None:
+        engines: Dict[str, str] = {}
+        rubric_engine = str(payload.get("rubric_engine") or "").strip()
+        quiz_engine = str(payload.get("quiz_engine") or "").strip()
+        if rubric_engine:
+            engines["rubric"] = rubric_engine
+        if quiz_engine:
+            engines["quiz"] = quiz_engine
+        return engines or None
 
     def _emit_world_model_highlights_artifact(
         self,
@@ -675,6 +977,7 @@ class TeacherOrchestrator:
         ts: str,
         world_model_highlights: Dict[str, Any] | None,
         dataset_summary: Dict[str, Any],
+        evaluation_engines: Dict[str, str] | None = None,
     ) -> Path | None:
         """Persist highlight slices so other scripts can diff/inspect them."""
 
@@ -688,6 +991,8 @@ class TeacherOrchestrator:
             "dataset_summary": dataset_summary,
             "world_model_highlights": world_model_highlights,
         }
+        if evaluation_engines:
+            payload["evaluation_engines"] = evaluation_engines
         with artifact_path.open("w", encoding="utf-8") as handle:
             json.dump(payload, handle, indent=2)
         return artifact_path
@@ -695,6 +1000,8 @@ class TeacherOrchestrator:
     def _generate_codeact_plan_outline(self) -> str | None:
         if not self.ctx.ablations.use_world_model:
             self.logger.debug("World-model ablation enabled; skipping CodeAct plan outline.")
+            return None
+        if self._offline_codeact:
             return None
         cached = self._teacher_cache.get("outline")
         if cached:
@@ -731,10 +1038,22 @@ class TeacherOrchestrator:
         if not self.registry:
             return None
         module_payload = self._select_module_payload(world_model_highlights)
+        if self._offline_codeact:
+            fallback_summary = self._latest_dataset_summary or {
+                "top_domains": [self.ctx.config.course.title or "Database Systems"],
+            }
+            lecture = self._dataset_lecture_from_highlights(
+                module_payload,
+                world_model_highlights or {},
+                fallback_summary,
+            )
+            if use_cache:
+                self._teacher_cache["lecture_section"] = lecture
+            return lecture
         claims_payload = self._build_claim_payload(world_model_highlights)
         lecture_result = self._run_codeact_program(
             "DraftLectureSection",
-            module=json.dumps(module_payload, indent=2),
+            module_payload=json.dumps(module_payload, indent=2),
             claims=json.dumps(claims_payload, indent=2),
             role="LectureAuthor",
             lm_role="coder",
@@ -765,6 +1084,9 @@ class TeacherOrchestrator:
     ) -> Any | None:
         if not self.registry:
             return None
+        if self._offline_codeact:
+            self.logger.debug("COURSEGEN_CODEACT_OFFLINE set; skipping %s", name)
+            return None
         if not self.ctx.ablations.use_world_model and name in WORLD_MODEL_PROGRAMS:
             self.logger.info("World-model ablation enabled; skipping CodeAct program %s", name)
             return None
@@ -780,14 +1102,29 @@ class TeacherOrchestrator:
             program = self.registry.build_program(name, **build_kwargs)
         except KeyError:
             self.logger.debug("CodeAct program %s not registered.", name)
+            self._record_stage_error(
+                "codeact_build",
+                f"Program {name} not registered",
+                context={"program": name},
+            )
             return None
         except ValueError as exc:
             self.logger.warning("CodeAct program %s misconfigured: %s", name, exc)
+            self._record_stage_error(
+                "codeact_build",
+                f"Program {name} misconfigured",
+                context={"program": name, "error": str(exc)},
+            )
             return None
         try:
             return program(**kwargs)
         except Exception as exc:  # pragma: no cover - defensive
             self.logger.warning("CodeAct program %s failed: %s", name, exc)
+            self._record_stage_error(
+                "codeact_run",
+                f"Program {name} execution failed",
+                context={"program": name, "error": str(exc)},
+            )
             return None
 
     def _lm_handle_for_role(self, lm_role: str | None) -> object | None:
@@ -1014,6 +1351,11 @@ class TeacherOrchestrator:
             return results or None
         except ValueError as exc:
             self.logger.warning("Notebook export skipped: %s", exc)
+            self._record_stage_error(
+                "notebook_export",
+                "Notebook export skipped",
+                context={"error": str(exc)},
+            )
             return [
                 {
                     "title": "notebook_export",
@@ -1023,6 +1365,11 @@ class TeacherOrchestrator:
             ]
         except Exception as exc:  # pragma: no cover - defensive
             self.logger.warning("Notebook export failed: %s", exc)
+            self._record_stage_error(
+                "notebook_export",
+                "Notebook export failed",
+                context={"error": str(exc)},
+            )
             return [
                 {
                     "title": "notebook_export",
@@ -1145,18 +1492,30 @@ class TeacherOrchestrator:
 
         evaluation_cfg = self.ctx.config.evaluation
         rubrics_path = evaluation_cfg.rubrics_path
+        student_lm = getattr(self.ctx.dspy_handles, "student", None)
         try:
             grader = StudentGraderPool.from_yaml(
                 rubrics_path,
                 required_sources=self.ctx.config.course.required_sources,
+                lm=student_lm,
             )
         except FileNotFoundError:
+            self._record_stage_error(
+                "student_eval",
+                "Rubrics file missing",
+                context={"rubrics_path": str(rubrics_path)},
+            )
             return {
                 "use_students": False,
                 "status": "missing_rubrics",
                 "rubrics_path": str(rubrics_path),
             }
         except ValueError as exc:
+            self._record_stage_error(
+                "student_eval",
+                "Rubrics file invalid",
+                context={"rubrics_path": str(rubrics_path), "error": str(exc)},
+            )
             return {
                 "use_students": False,
                 "status": "invalid_rubrics",
@@ -1169,20 +1528,58 @@ class TeacherOrchestrator:
                 evaluation_cfg.quiz_bank_path,
                 pass_threshold=evaluation_cfg.quiz_pass_threshold,
                 question_limit=evaluation_cfg.quiz_question_limit,
+                lm=student_lm,
             )
         except FileNotFoundError:
+            self._record_stage_error(
+                "student_eval",
+                "Quiz bank missing",
+                context={"quiz_bank_path": str(evaluation_cfg.quiz_bank_path)},
+            )
             return {
                 "use_students": False,
                 "status": "missing_quiz_bank",
                 "quiz_bank_path": str(evaluation_cfg.quiz_bank_path),
             }
         except ValueError as exc:
+            self._record_stage_error(
+                "student_eval",
+                "Quiz bank invalid",
+                context={"quiz_bank_path": str(evaluation_cfg.quiz_bank_path), "error": str(exc)},
+            )
             return {
                 "use_students": False,
                 "status": "invalid_quiz_bank",
                 "error": str(exc),
                 "quiz_bank_path": str(evaluation_cfg.quiz_bank_path),
             }
+
+        llm_disabled = students_llm_disabled()
+        if llm_disabled:
+            self.ctx.provenance.log(
+                ProvenanceEvent(
+                    stage="student_eval",
+                    message="Student LLM disabled via environment; using heuristic graders",
+                    agent="apps.orchestrator.teacher",
+                    payload={"env": DISABLE_LLM_ENV},
+                )
+            )
+
+        grader_llm = getattr(grader, "uses_llm", False)
+        quiz_llm = getattr(quiz_engine, "uses_llm", False)
+        if not llm_disabled and (not grader_llm or not quiz_llm):
+            context = {
+                "grader_uses_llm": grader_llm,
+                "quiz_uses_llm": quiz_llm,
+            }
+            self._record_stage_error(
+                "student_eval",
+                "Student LLM handle unavailable",
+                context=context,
+            )
+            raise RuntimeError(
+                f"Student LLM handle unavailable; configure the student DSPy model or set {DISABLE_LLM_ENV}=1 to force heuristics."
+            )
 
         loop_runner = StudentLoopRunner(
             grader=grader,
@@ -1199,11 +1596,32 @@ class TeacherOrchestrator:
                 world_model_highlights,
             ),
         )
-        results = loop_runner.run(lecture_path)
+        try:
+            results = loop_runner.run(lecture_path)
+        except Exception as exc:  # pragma: no cover - defensive
+            self._record_stage_error(
+                "student_eval",
+                "Student loop failed",
+                context={"error": str(exc)},
+            )
+            return {
+                "use_students": True,
+                "status": "student_loop_error",
+                "error": str(exc),
+            }
         results.update(
             {
                 "rubrics_path": str(rubrics_path),
                 "quiz_bank_path": str(evaluation_cfg.quiz_bank_path),
             }
         )
+        if results.get("status") not in ("passing", "students_disabled"):
+            self._record_stage_error(
+                "student_eval",
+                "Student loop returned non-passing status",
+                context={
+                    "status": results.get("status"),
+                    "mutations": results.get("mutations"),
+                },
+            )
         return results
