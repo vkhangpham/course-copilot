@@ -26,6 +26,7 @@ from apps.orchestrator.notebook_publisher import (
     NotebookSectionInput,
     build_sections_from_markdown,
 )
+from apps.orchestrator.runtime_quiz import generate_quiz_questions
 from apps.orchestrator.student_loop import MutationReason, StudentLoopConfig, StudentLoopRunner
 from apps.orchestrator.student_qa import StudentQuizEvaluator
 from apps.orchestrator.ta_roles.exercise_author import ExerciseAuthor
@@ -1678,13 +1679,40 @@ class TeacherOrchestrator:
                 "rubrics_path": str(rubrics_path),
             }
 
+        runtime_questions = None
+        if evaluation_cfg.generate_runtime_quiz:
+            try:
+                runtime_limit = evaluation_cfg.runtime_quiz_limit or evaluation_cfg.quiz_question_limit
+                runtime_questions = generate_quiz_questions(
+                    self.ctx.config.world_model.dataset_dir,
+                    limit=runtime_limit,
+                )
+            except Exception as exc:  # pragma: no cover - defensive
+                self._record_stage_error(
+                    "student_eval",
+                    "Runtime quiz generation failed",
+                    context={"error": str(exc)},
+                )
+                runtime_questions = None
+
+        quiz_kwargs = {
+            "pass_threshold": evaluation_cfg.quiz_pass_threshold,
+            "question_limit": evaluation_cfg.quiz_question_limit,
+            "lm": student_lm,
+        }
+
         try:
-            quiz_engine = StudentQuizEvaluator(
-                evaluation_cfg.quiz_bank_path,
-                pass_threshold=evaluation_cfg.quiz_pass_threshold,
-                question_limit=evaluation_cfg.quiz_question_limit,
-                lm=student_lm,
-            )
+            if runtime_questions is not None:
+                quiz_engine = StudentQuizEvaluator(
+                    quiz_bank_path=None,
+                    questions=runtime_questions,
+                    **quiz_kwargs,
+                )
+            else:
+                quiz_engine = StudentQuizEvaluator(
+                    evaluation_cfg.quiz_bank_path,
+                    **quiz_kwargs,
+                )
         except FileNotFoundError:
             self._record_stage_error(
                 "student_eval",

@@ -69,7 +69,7 @@ def _make_context(tmp_path: Path) -> PipelineContext:
             dataset_dir=tmp_path / "dataset",
             sqlite_path=tmp_path / "world_model.sqlite",
         ),
-        evaluation=EvaluationConfig(),
+        evaluation=EvaluationConfig(generate_runtime_quiz=False),
     )
     paths = PipelinePaths(
         repo_root=tmp_path,
@@ -122,6 +122,7 @@ def _configure_eval_files(ctx: PipelineContext, tmp_path: Path) -> EvaluationCon
         rubrics_path=rubrics_path,
         quiz_bank_path=quiz_path,
         max_mutations=1,
+        generate_runtime_quiz=False,
     )
     ctx.config = ctx.config.model_copy(update={"evaluation": eval_cfg})
     return eval_cfg
@@ -472,6 +473,7 @@ def test_stage_error_logged_when_rubrics_missing(tmp_path: Path) -> None:
     eval_cfg = EvaluationConfig(
         rubrics_path=tmp_path / "missing_rubrics.yaml",
         quiz_bank_path=tmp_path / "quiz_bank.json",
+        generate_runtime_quiz=False,
     )
     eval_cfg.quiz_bank_path.write_text("[]", encoding="utf-8")
     ctx.config = ctx.config.model_copy(update={"evaluation": eval_cfg})

@@ -43,6 +43,7 @@ def _make_stub_context(tmp_path: Path) -> PipelineContext:
         evaluation=EvaluationConfig(
             rubrics_path=tmp_path / "rubrics.yaml",
             quiz_bank_path=tmp_path / "quiz_bank.json",
+            generate_runtime_quiz=False,
         ),
     )
     output_dir = tmp_path / "outputs"
@@ -94,9 +95,7 @@ def test_stub_orchestrator_marks_dataset_highlight_source_when_world_model_disab
     assert summary["skipped"] == 1
 
 
-def test_stub_orchestrator_marks_dataset_source_when_world_model_store_missing(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_stub_orchestrator_marks_dataset_source_when_world_model_store_missing(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     ctx = _make_stub_context(tmp_path)
     ctx.ablations = AblationConfig(use_world_model=True, use_students=False, allow_recursion=False)
     orchestrator = Orchestrator(ctx)

@@ -115,9 +115,9 @@ class ModelConfig(BaseModel):
 
         # Transform legacy flat fields
         if "teacher" not in payload and any(key in payload for key in ("teacher_model", "ta_model", "student_model")):
-            teacher_model = payload.pop("teacher_model", None) or "gpt-4.1"
-            ta_model = payload.pop("ta_model", None) or "gpt-4o-mini"
-            student_model = payload.pop("student_model", None) or "gpt-4o"
+            teacher_model = payload.pop("teacher_model", None) or "gpt-5.1"
+            ta_model = payload.pop("ta_model", None) or "gpt-5-mini"
+            student_model = payload.pop("student_model", None) or ta_model or "gpt-5-mini"
             legacy_temp = payload.pop("temperature", None)
             legacy_tokens = payload.pop("max_tokens", None)
             payload.update(
@@ -198,6 +198,8 @@ class EvaluationConfig(BaseModel):
     quiz_pass_threshold: float = Field(default=0.75, ge=0.0, le=1.0)
     rubric_pass_threshold: float = Field(default=0.8, ge=0.0, le=1.0)
     quiz_question_limit: int | None = Field(default=3, ge=1)
+    generate_runtime_quiz: bool = Field(default=False)
+    runtime_quiz_limit: int | None = Field(default=5, ge=1)
 
     @field_validator("rubrics_path", "quiz_bank_path", mode="before")
     @classmethod

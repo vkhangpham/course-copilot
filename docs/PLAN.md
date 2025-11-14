@@ -11,7 +11,7 @@
   - **Lecture/study guide** (at least one module rendered with sources/citations).
   - **Artifacts & logs:** world‑model graph snapshot, agent execution trace, student scores, and provenance.
 
-- **Reproducibility:** one seed/config produces the same outline and ≥80% “student” comprehension on a fixed quiz bank.
+- **Reproducibility:** one seed/config produces the same outline and ≥80% “student” comprehension on a runtime-generated quiz bank.
 - **Ablation toggles:** can disable (a) recursive sub‑agents, (b) students, or (c) world‑model memory to show each component’s effect.
 
 ---
@@ -70,7 +70,7 @@ vendor/
 
 **Inputs.**
 
-- **World data (hand‑engineered)** for _Database Systems_: taxonomy, concepts, relationships, key papers (Codd 1970; System R; Postgres; ARIES; CAP; Spanner…), authors, timeline; course constraints (level, focus), plus a small **quiz bank** aligned with LOs.
+- **World data (hand‑engineered)** for _Database Systems_: taxonomy, concepts, relationships, key papers (Codd 1970; System R; Postgres; ARIES; CAP; Spanner…), authors, timeline; course constraints (level, focus), plus optional reference artifacts (e.g., a starter **quiz bank** or sample course outline) aligned with LOs. These JSON/YAML files seed the world model but **must not** replace runtime generation—the Teacher/TA stack still synthesizes the delivered plan, lecture, and quizzes each run.
 - **Tools** (CodeAct‑wrapped): world‑model CRUD, paper lookups (from local CSV), timeline queries, SQL runners (via DuckDB/SQLite), outline validators, citation verifier.
 
 **Outputs.**
@@ -182,7 +182,7 @@ This mirrors Kosmos’ notion of a **structured world model shared across agents
 
 **Pattern from Self‑Evolving Agents.** Implement _students_ that read the draft, attempt quizzes, and grade with rubrics; _mutators_ revise content accordingly; iterate to a stop criterion. ([OpenAI Cookbook][4])
 
-- **Student‑QA:** given module text + quiz bank, answers questions; we score exact/regex or simple heuristic.
+- **Student‑QA:** given module text + runtime-generated quiz prompts, answers questions; we score exact/regex or heuristic.
 - **Student‑Explainer:** attempts to re‑teach the section; grader checks **coherence**, **coverage of LOs**, **reading level**, and **citation grounding**.
 - **Mutators (TA‑Author with a different “mutation” instruction set):**
   - _Refine‑clarity_, _Add‑worked‑example_, _Strengthen‑grounding_ (ensure every claim ties to `Paper` nodes), _Reorder‑for‑prereqs_.
@@ -239,7 +239,7 @@ This mirrors Kosmos’ notion of a **structured world model shared across agents
 
 ### 4.4 Students & Mutation
 
-- [ ] Implement **Student‑QA**: generates answers, scores against `quiz_bank.json`.
+- [ ] Implement **Student‑QA**: synthesizes quiz questions from the world model and scores answers (no dependency on `quiz_bank.json`).
 - [ ] Implement **LLM graders** with rubrics (`/evals/rubrics.yaml`).
 - [ ] Implement **mutations** (operator prompts) and loop orchestration (max 2 passes).
 

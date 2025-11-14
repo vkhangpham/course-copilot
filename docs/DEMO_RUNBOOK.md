@@ -26,7 +26,8 @@ _Tip:_ If you only have a single `OPENAI_API_KEY` in `.env`, every role will aut
 Run this once per repo refresh or whenever `data/handcrafted/database_systems` changes. **Never** source inputs from
 `docs/samples/` or any pre-authored plan/lecture markdown—the demo must derive everything from the handcrafted YAML/CSV
 world model plus `config/course_config.yaml` constraints. The bundled `quiz_bank.json` / `course_outline.yaml` act as
-world-model reference artifacts only; the runtime pipeline still needs to generate quizzes/outlines on the fly.
+world-model reference artifacts only; the runtime pipeline now synthesizes quiz prompts from `concepts.yaml`
+(`evaluation.generate_runtime_quiz: true`) while the Teacher/TA loop still drafts fresh outlines.
 
 ```bash
 python scripts/ingest_handcrafted.py \

@@ -48,3 +48,8 @@ evaluation:
   rubrics_path: evals/rubrics.yaml
   quiz_bank_path: data/handcrafted/database_systems/quiz_bank.json
   max_mutations: 2
+  quiz_pass_threshold: 0.75
+  rubric_pass_threshold: 0.8
+  quiz_question_limit: 3
+  generate_runtime_quiz: true
+  runtime_quiz_limit: 5
