@@ -15,12 +15,18 @@ export type RunListItem = {
   has_lecture: boolean;
   has_eval_report: boolean;
   overall_score?: number | null;
+  rubric_engine?: string | null;
+  quiz_engine?: string | null;
   highlight_source?: string | null;
   world_model_store_exists?: boolean | null;
   scientific_metrics?: ScientificMetrics | null;
   scientific_metrics_artifact?: string | null;
   science_config_path?: string | null;
   ablations?: Record<string, boolean> | null;
+  teacher_rlm?: {
+    mode?: string | null;
+    reason?: string | null;
+  } | null;
   notebook_export_summary?: {
     total?: number;
     success?: number;
@@ -69,6 +75,8 @@ export type RunDetail = {
   evaluation?: {
     overall_score?: number | null;
     rubrics?: { name: string; passed: boolean; score?: number | null }[];
+    rubric_engine?: string | null;
+    quiz_engine?: string | null;
   } | null;
   course_plan_excerpt?: string | null;
   lecture_excerpt?: string | null;
@@ -83,6 +91,10 @@ export type RunDetail = {
   }[] | null;
   trace_files?: TraceFile[] | null;
   teacher_trace?: TeacherTraceMeta | null;
+  teacher_rlm?: {
+    mode?: string | null;
+    reason?: string | null;
+  } | null;
   notebook_export_summary?: {
     total?: number;
     success?: number;

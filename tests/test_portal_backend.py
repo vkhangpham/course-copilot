@@ -133,6 +133,24 @@ def _write_run(
     science_artifact = artifacts_dir / f"run-{run_id}-science.json"
     science_artifact.write_text(json.dumps({"agent": "scientific_evaluator", "metrics": scientific_metrics}), encoding="utf-8")
 
+    evaluation_block = {
+        "overall_score": 0.92,
+        "rubric_engine": "llm",
+        "quiz_engine": "heuristic",
+        "rubrics": [{"name": "Pedagogy", "passed": True}],
+        "attempts": [
+            {
+                "iteration": 1,
+                "rubrics": {"overall_score": 0.5, "rubrics": []},
+                "quiz": {"pass_rate": 0.5, "questions": [], "engine": "heuristic"},
+                "triggered_mutation": {
+                    "failing_rubrics": ["coverage"],
+                    "failing_questions": [],
+                },
+            }
+        ],
+    }
+
     manifest = {
         "ablations": {"use_students": True, "use_world_model": use_world_model, "allow_recursion": True},
         "course_plan": str(course_plan),
@@ -141,24 +159,14 @@ def _write_run(
         "provenance": str(provenance_path),
         "world_model_store": str(outputs_dir / "world_model" / "state.sqlite"),
         "dataset_summary": {"concept_count": 30},
-        "evaluation": {
-            "overall_score": 0.92,
-            "rubrics": [{"name": "Pedagogy", "passed": True}],
-            "attempts": [
-                {
-                    "iteration": 1,
-                    "rubrics": {"overall_score": 0.5, "rubrics": []},
-                    "quiz": {"pass_rate": 0.5, "questions": []},
-                    "triggered_mutation": {"failing_rubrics": ["coverage"], "failing_questions": []},
-                }
-            ],
-        },
+        "evaluation": evaluation_block,
         "world_model_highlights": {"concepts": [{"id": "relational_model", "summary": "Foundations"}]},
         "world_model_highlight_artifact": str(artifacts_dir / f"run-{run_id}-highlights.json"),
         "teacher_trace": str(teacher_trace_path),
         "scientific_metrics": scientific_metrics,
         "scientific_metrics_artifact": str(science_artifact),
         "science_config_path": str(science_config_path),
+        "teacher_rlm": {"mode": "simulation", "reason": None},
     }
     if highlight_source is not None and not omit_highlight_source:
         manifest["highlight_source"] = highlight_source
@@ -245,6 +253,8 @@ def test_list_runs_and_detail(portal_settings: PortalSettings) -> None:
     expected_manifest_rel = "artifacts/run-20250101-000000-manifest.json"
     assert runs[0]["has_course_plan"] is True
     assert runs[0]["overall_score"] == pytest.approx(0.92)
+    assert runs[0]["rubric_engine"] == "llm"
+    assert runs[0]["quiz_engine"] == "heuristic"
     assert runs[0]["notebook_export_summary"]["success"] == 1
     assert runs[0]["highlight_source"] == "world_model"
     assert runs[0]["world_model_store_exists"] is True
@@ -252,6 +262,7 @@ def test_list_runs_and_detail(portal_settings: PortalSettings) -> None:
     assert runs[0]["scientific_metrics_artifact"] == "artifacts/run-20250101-000000-science.json"
     assert runs[0]["ablations"]["use_world_model"] is True
     assert runs[0]["science_config_path"] == "config/scientific_config.yaml"
+    assert runs[0]["teacher_rlm"]["mode"] == "simulation"
     assert runs[0]["manifest_path"] == expected_manifest_rel
     assert runs[0]["scientific_metrics"]["pedagogical"]["blooms_alignment"] == pytest.approx(0.82)
 
@@ -270,10 +281,15 @@ def test_list_runs_and_detail(portal_settings: PortalSettings) -> None:
     assert "Course Plan" in detail["course_plan_excerpt"]
     assert detail["notebook_slug"] == "database-systems-poc"
     assert detail["highlight_source"] == "world_model"
+    evaluation_block = detail["evaluation"]
+    assert evaluation_block["rubric_engine"] == "llm"
+    assert evaluation_block["quiz_engine"] == "heuristic"
     assert detail["scientific_metrics"]["content_quality"]["citation_validity"] == pytest.approx(0.88)
     assert detail["manifest"]["scientific_metrics"]["learning_outcomes"]["predicted_retention"] == pytest.approx(0.73)
     assert detail["scientific_metrics_artifact"] == "artifacts/run-20250101-000000-science.json"
     assert detail["science_config_path"] == "config/scientific_config.yaml"
+    assert detail["teacher_rlm"]["mode"] == "simulation"
+    assert detail["manifest"]["teacher_rlm"]["mode"] == "simulation"
     assert detail["ablations"]["use_world_model"] is True
     first_export = detail["notebook_exports"][0]
     expected_manifest_export = _first_actual_export(manifest)

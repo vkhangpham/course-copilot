@@ -4,15 +4,25 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, Dict
 from unittest import mock
 
 import yaml
 
+from agents.teacher_rlm import TeacherActionRecord, TeacherRLMRun
 from ccopilot.core.config import read_yaml_file
 from ccopilot.core.dspy_runtime import DSPyModelHandles
 from ccopilot.pipeline import bootstrap_pipeline, run_pipeline
 from tests.mocks.notebook_api import NotebookAPIMock
+
+
+class FakeStudentLM:
+    def __call__(self, prompt=None, **_kwargs):
+        text = prompt or ""
+        if "Quiz Question ID" in text:
+            return '{"passed": true, "score": 1.0, "answer": "deterministic", "evidence": "quiz coverage"}'
+        return '{"overall_score": 0.95, "items": [{"item": "coverage", "passed": true, "score": 0.95, "evidence": "deterministic rubric"}]}'
 
 
 class PipelineRuntimeTests(unittest.TestCase):
@@ -44,7 +54,8 @@ class PipelineRuntimeTests(unittest.TestCase):
             auth_token=self.notebook_api.token,
         )
         self.output_dir = self.repo_root / "outputs"
-        self._dspy_handles = DSPyModelHandles(teacher=object(), ta=object(), student=object())
+        fake_student = FakeStudentLM()
+        self._dspy_handles = DSPyModelHandles(teacher=object(), ta=object(), coder=object(), student=fake_student)
         patcher = mock.patch(
             "ccopilot.pipeline.bootstrap.configure_dspy_models",
             autospec=True,
@@ -61,6 +72,18 @@ class PipelineRuntimeTests(unittest.TestCase):
         )
         self.addCleanup(registry_patcher.stop)
         self.mock_build_registry = registry_patcher.start()
+        self.codeact_patch = mock.patch(
+            "apps.orchestrator.teacher.TeacherOrchestrator._run_codeact_program",
+            side_effect=self._fake_codeact_program,
+        )
+        self.addCleanup(self.codeact_patch.stop)
+        self.codeact_patch.start()
+        self.teacher_run_patch = mock.patch(
+            "agents.teacher_rlm.TeacherRLM.run",
+            side_effect=self._fake_teacher_run,
+        )
+        self.addCleanup(self.teacher_run_patch.stop)
+        self.teacher_run_patch.start()
         os.environ["OPEN_NOTEBOOK_EXPORT_DIR"] = str(self.repo_root / "notebook_exports")
 
     def tearDown(self) -> None:
@@ -69,6 +92,43 @@ class PipelineRuntimeTests(unittest.TestCase):
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = value
+
+    @staticmethod
+    def _fake_codeact_program(name: str, **kwargs):
+        if name == "PlanCourse":
+            return SimpleNamespace(outline="### Week 1: Deterministic Plan")
+        if name == "DraftLectureSection":
+            return SimpleNamespace(section="## Draft Section\nContent")
+        if name == "EnforceCitations":
+            return SimpleNamespace(corrected_section=kwargs.get("md_section"))
+        return SimpleNamespace()
+
+    def _fake_teacher_run(self, *, prompt_path: Path, context: Dict[str, Any], tasks: list[Any], **_kwargs):
+        actions: list[TeacherActionRecord] = []
+        if tasks:
+            actions.append(
+                TeacherActionRecord(
+                    action="spawn_ta",
+                    target="SyllabusDesigner",
+                    payload=tasks[0].payload,
+                    result={"outline": "### Week 1: Deterministic Plan"},
+                )
+            )
+        if len(tasks) > 1:
+            actions.append(
+                TeacherActionRecord(
+                    action="spawn_ta",
+                    target="LectureAuthor",
+                    payload=tasks[1].payload,
+                    result={"section": "## Draft Section\nContent"},
+                )
+            )
+        return TeacherRLMRun(
+            mode="simulation",
+            prompt_path=prompt_path,
+            actions=actions,
+            summary="stub",
+        )
 
     def _write_pipeline_config(
         self,
@@ -85,6 +145,9 @@ class PipelineRuntimeTests(unittest.TestCase):
         dataset_dir = self.repo_root / "data" / "handcrafted"
         dataset_dir.mkdir(parents=True, exist_ok=True)
         self._seed_dataset(dataset_dir)
+        prompts_dir = self.repo_root / "prompts"
+        prompts_dir.mkdir(parents=True, exist_ok=True)
+        (prompts_dir / "teacher_seed.txt").write_text("Teacher seed prompt\n", encoding="utf-8")
 
         eval_dir = self.repo_root / "evals"
         eval_dir.mkdir(parents=True, exist_ok=True)
@@ -141,11 +204,11 @@ course:
   learning_objectives:
     - "Explain SQL basics"
 models:
-  teacher_model: gpt-4o
-  ta_model: gpt-4o-mini
-  student_model: gpt-4o-mini
-  temperature: 0.1
-  max_tokens: 512
+  teacher_model: gpt-5.1
+  ta_model: gpt-5-mini
+  student_model: gpt-5-mini
+  temperature: 1.0
+  max_tokens: 32000
 notebook:
   api_base: "{api_base}"
   notebook_slug: "test-notebook"
@@ -205,10 +268,6 @@ evaluation:
             '[{"id": "quiz_a", "learning_objectives": ["concept_a"]}]',
             encoding="utf-8",
         )
-        (dataset_dir / "course_outline.yaml").write_text(
-            yaml.safe_dump({"weeks": []}),
-            encoding="utf-8",
-        )
 
     def test_dry_run_skips_artifacts(self) -> None:
         ctx = bootstrap_pipeline(
@@ -239,7 +298,7 @@ evaluation:
             else:
                 os.environ["COURSEGEN_REPO_ROOT"] = original_root
 
-    def test_full_run_emits_stub_artifacts(self) -> None:
+    def test_full_run_emits_teacher_artifacts(self) -> None:
         ctx = bootstrap_pipeline(
             config_path=self.config_path,
             repo_root=self.repo_root,
@@ -259,7 +318,9 @@ evaluation:
         self.assertIsNotNone(artifacts.highlights)
         assert artifacts.highlights is not None
         self.assertTrue(artifacts.highlights.exists())
-        self.assertIsNone(artifacts.teacher_trace)
+        self.assertIsNotNone(artifacts.teacher_trace)
+        assert artifacts.teacher_trace is not None
+        self.assertTrue(artifacts.teacher_trace.exists())
         self.assertIsNotNone(artifacts.notebook_exports)
         self.assertIsNotNone(artifacts.notebook_export_summary)
         self.assertIsNotNone(artifacts.notebook_export_summary)
@@ -278,6 +339,20 @@ evaluation:
         self.assertIn("Test Course", plan_text)
         self.assertIn("Concept Highlights", plan_text)
         self.assertIn("concept_a", plan_text)
+        self.assertNotIn("Placeholder plan", plan_text)
+        self.assertNotIn("CodeAct outline unavailable", plan_text)
+
+        lecture_text = artifacts.lecture.read_text(encoding="utf-8")
+        self.assertIn("## Module Overview", lecture_text)
+        self.assertIn("## Reading Starter Pack", lecture_text)
+        self.assertIn("## Concept Highlights", lecture_text)
+        self.assertIn("Concept A", lecture_text)
+        self.assertIn("## Timeline Signals", lecture_text)
+        self.assertIn("## Suggested Practice", lecture_text)
+        self.assertIn("Exercise · Quiz A", lecture_text)
+        self.assertIn("## Sources & Citations", lecture_text)
+        self.assertNotIn("LectureAuthor TA output unavailable", lecture_text)
+        self.assertNotIn("stub", lecture_text.lower())
 
         manifest = json.loads(artifacts.manifest.read_text(encoding="utf-8"))
         self.assertEqual(manifest["course_plan"], str(artifacts.course_plan))
@@ -291,6 +366,12 @@ evaluation:
         self.assertIn("reading_list", highlights)
         self.mock_build_registry.assert_called_once_with(dspy_handles=self._dspy_handles)
         self.assertIn("exercise_ideas", highlights)
+
+        eval_contents = artifacts.eval_report.read_text(encoding="utf-8").splitlines()
+        self.assertTrue(eval_contents)
+        parsed = json.loads(eval_contents[0])
+        self.assertEqual(parsed.get("rubric_engine"), "llm")
+        self.assertEqual(parsed.get("quiz_engine"), "llm")
         self.assertIn("explanations", highlights)
         self.assertEqual(
             manifest.get("world_model_highlight_artifact"),
@@ -298,7 +379,12 @@ evaluation:
         )
         self.assertEqual(manifest.get("highlight_source"), "world_model")
         self.assertEqual(artifacts.highlight_source, "world_model")
-        self.assertTrue(manifest.get("teacher_trace") is None)
+        self.assertEqual(manifest.get("teacher_trace"), str(artifacts.teacher_trace))
+        teacher_meta = manifest.get("teacher_rlm")
+        self.assertIsNotNone(teacher_meta)
+        assert teacher_meta is not None
+        self.assertEqual(teacher_meta.get("mode"), artifacts.teacher_rlm_mode)
+        self.assertIsNone(teacher_meta.get("reason"))
         notebook_exports = manifest.get("notebook_exports")
         self.assertIsNotNone(notebook_exports)
         assert notebook_exports is not None
@@ -345,6 +431,10 @@ evaluation:
         self.assertTrue(highlight_payload["world_model_highlights"].get("reading_list"))
         self.assertTrue(highlight_payload["world_model_highlights"].get("exercise_ideas"))
         self.assertTrue(highlight_payload["world_model_highlights"].get("explanations"))
+        self.assertEqual(
+            highlight_payload.get("evaluation_engines"),
+            {"rubric": "llm", "quiz": "llm"},
+        )
 
     def test_missing_store_triggers_auto_ingest(self) -> None:
         ctx = bootstrap_pipeline(
@@ -486,19 +576,15 @@ evaluation:
         if expected_key:
             self.assertEqual(os.environ.get("OPEN_NOTEBOOK_API_KEY"), expected_key)
 
-    def test_world_model_ablation_skips_codeact(self) -> None:
+    def test_world_model_ablation_uses_dataset_outline(self) -> None:
         ctx = bootstrap_pipeline(
             config_path=self.config_path,
             repo_root=self.repo_root,
             output_dir=self.output_dir,
             ablations="no_world_model",
         )
-        with mock.patch(
-            "apps.orchestrator.teacher.TeacherOrchestrator._run_codeact_program",
-            side_effect=AssertionError("CodeAct programs should not run when world model is disabled"),
-        ):
-            with self.notebook_api.patch_open_notebook_client():
-                artifacts = run_pipeline(ctx, dry_run=False)
+        with self.notebook_api.patch_open_notebook_client():
+            artifacts = run_pipeline(ctx, dry_run=False)
 
         assert artifacts is not None
         self.assertIsNotNone(artifacts.highlights)
@@ -507,6 +593,8 @@ evaluation:
         self.assertFalse(manifest.get("world_model_store_exists"))
         self.assertEqual(manifest.get("highlight_source"), "dataset")
         self.assertEqual(artifacts.highlight_source, "dataset")
+        plan_text = artifacts.course_plan.read_text(encoding="utf-8")
+        self.assertIn("dataset syllabus snapshot", plan_text)
 
     def test_recursion_ablation_skips_teacher_rlm(self) -> None:
         ctx = bootstrap_pipeline(

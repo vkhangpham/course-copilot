@@ -7,13 +7,13 @@ import os
 from pathlib import Path
 from typing import Dict
 
-import yaml
 from dotenv import load_dotenv
 
 from ccopilot.core.ablation import AblationConfig, parse_ablation_flag
 from ccopilot.core.config import PipelineConfig, load_course_constraints, load_pipeline_config
 from ccopilot.core.dspy_runtime import DSPyConfigurationError, configure_dspy_models
 from ccopilot.core.provenance import ProvenanceEvent, ProvenanceLogger
+from ccopilot.core.validation import ValidationFailure, strict_validation, validate_handcrafted_dataset
 from scripts import ingest_handcrafted
 
 from .context import PipelineContext, PipelinePaths
@@ -163,6 +163,7 @@ def bootstrap_pipeline(
             payload={
                 "teacher_model": config.models.teacher_model,
                 "ta_model": config.models.ta_model,
+                "coder_model": config.models.coder.model,
                 "student_model": config.models.student_model,
             },
         )
@@ -187,10 +188,11 @@ def _load_scientific_config(path: Path | None) -> tuple[Dict[str, object] | None
         LOGGER.debug("Scientific config not found at %s; skipping", resolved)
         return None, None
     try:
-        with resolved.open("r", encoding="utf-8") as handle:
-            payload = yaml.safe_load(handle) or {}
-    except yaml.YAMLError as exc:  # pragma: no cover - defensive
+        result = strict_validation.validate_yaml_file(resolved)
+    except ValidationFailure as exc:  # pragma: no cover - defensive
         raise RuntimeError(f"Invalid scientific config at {resolved}: {exc}") from exc
+
+    payload = result.data or {}
     if not isinstance(payload, dict):
         raise RuntimeError(f"Scientific config at {resolved} must be a mapping")
     return payload, resolved
@@ -216,6 +218,7 @@ def _ensure_dataset_exists(dataset_dir: Path) -> None:
         raise FileNotFoundError(
             f"Handcrafted dataset not found at {resolved}. Run scripts/ingest_handcrafted.py or pass --dataset-dir with a valid path."
         )
+    validate_handcrafted_dataset(resolved)
     os.environ["COURSEGEN_DATASET_DIR"] = str(resolved)
 
 

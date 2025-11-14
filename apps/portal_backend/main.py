@@ -67,6 +67,8 @@ class RunListItem(BaseModel):
     has_lecture: bool
     has_eval_report: bool
     overall_score: float | None = None
+    rubric_engine: str | None = None
+    quiz_engine: str | None = None
     notebook_export_summary: Dict[str, Any] | None = None
     highlight_source: str | None = None
     world_model_store_exists: bool | None = None
@@ -74,6 +76,7 @@ class RunListItem(BaseModel):
     scientific_metrics_artifact: str | None = None
     ablations: Dict[str, Any] | None = None
     science_config_path: str | None = None
+    teacher_rlm: Dict[str, Any] | None = None
 
 
 class TraceFile(BaseModel):
@@ -128,9 +131,11 @@ class RunDetail(BaseModel):
     evaluation_attempts: List[EvaluationAttempt] = Field(default_factory=list)
     trace_files: List[TraceFile] = Field(default_factory=list)
     teacher_trace: TeacherTraceMeta | None = None
+    teacher_rlm: Dict[str, Any] | None = None
     scientific_metrics: Dict[str, Any] | None = None
     scientific_metrics_artifact: str | None = None
     science_config_path: str | None = None
+    teacher_rlm: Dict[str, Any] | None = None
 
 
 class HealthResponse(BaseModel):
@@ -193,6 +198,7 @@ def get_run_detail(run_id: str, settings: PortalSettings = Depends(get_settings)
     if store_exists is not None and "world_model_store_exists" not in sanitized_manifest:
         sanitized_manifest["world_model_store_exists"] = store_exists
     science_artifact_rel = sanitized_manifest.get("scientific_metrics_artifact")
+    teacher_rlm = manifest.get("teacher_rlm") if isinstance(manifest.get("teacher_rlm"), dict) else None
 
     return RunDetail(
         run_id=run_id,
@@ -211,12 +217,11 @@ def get_run_detail(run_id: str, settings: PortalSettings = Depends(get_settings)
         evaluation_attempts=evaluation_attempts,
         trace_files=trace_files,
         teacher_trace=teacher_trace,
+        teacher_rlm=teacher_rlm,
         scientific_metrics=manifest.get("scientific_metrics"),
         scientific_metrics_artifact=science_artifact_rel,
         science_config_path=sanitized_manifest.get("science_config_path"),
     )
-
-
 
 
 @app.get("/runs/{run_id}/course-plan", response_class=PlainTextResponse)
@@ -291,11 +296,14 @@ def _list_runs(settings: PortalSettings, *, limit: int | None = None, offset: in
         lecture = _safe_resolve(settings, manifest.get("lecture"))
         eval_report = _safe_resolve(settings, manifest.get("eval_report"))
         evaluation = manifest.get("evaluation") or {}
+        rubric_engine = _safe_str(evaluation.get("rubric_engine"))
+        quiz_engine = _safe_str(evaluation.get("quiz_engine"))
         notebook_summary = manifest.get("notebook_export_summary")
         store_exists = _derive_world_model_store_exists(manifest, settings)
         highlight_source = _derive_highlight_source(manifest, settings, store_exists=store_exists)
         science_artifact = _relative_manifest_path(settings, manifest.get("scientific_metrics_artifact"))
         science_config_rel = _relative_manifest_path(settings, manifest.get("science_config_path"))
+        teacher_rlm = manifest.get("teacher_rlm") if isinstance(manifest.get("teacher_rlm"), dict) else None
 
         items.append(
             RunListItem(
@@ -306,6 +314,8 @@ def _list_runs(settings: PortalSettings, *, limit: int | None = None, offset: in
                 has_lecture=bool(lecture and lecture.exists()),
                 has_eval_report=bool(eval_report and eval_report.exists()),
                 overall_score=evaluation.get("overall_score"),
+                rubric_engine=rubric_engine,
+                quiz_engine=quiz_engine,
                 notebook_export_summary=notebook_summary if isinstance(notebook_summary, dict) else None,
                 highlight_source=highlight_source,
                 world_model_store_exists=store_exists,
@@ -313,6 +323,7 @@ def _list_runs(settings: PortalSettings, *, limit: int | None = None, offset: in
                 scientific_metrics_artifact=science_artifact,
                 ablations=manifest.get("ablations") if isinstance(manifest.get("ablations"), dict) else None,
                 science_config_path=science_config_rel,
+                teacher_rlm=teacher_rlm,
             )
         )
     return items
@@ -438,8 +449,7 @@ def _sanitize_manifest_paths(manifest: Dict[str, Any], settings: PortalSettings)
         queued = export_summary.get("queued_exports")
         if isinstance(queued, list):
             export_summary["queued_exports"] = [
-                _relative_manifest_path(settings, item) if isinstance(item, str) else item
-                for item in queued
+                _relative_manifest_path(settings, item) if isinstance(item, str) else item for item in queued
             ]
 
     return sanitized
@@ -546,6 +556,12 @@ def _safe_score(overall_score: Any, rubrics_payload: Any) -> float | None:
 
 def _safe_float(value: Any) -> float | None:
     return float(value) if isinstance(value, (int, float)) else None
+
+
+def _safe_str(value: Any) -> str | None:
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
 
 
 def _safe_str_list(value: Any) -> List[str]:

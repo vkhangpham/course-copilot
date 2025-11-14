@@ -87,22 +87,39 @@ learning_objectives:
 ```
 
 ### 2.2 `config/model_config.yaml`
+
+The pipeline YAML now references a dedicated model-config file instead of duplicating each role:
+
+```yaml
+models:
+  path: config/model_config.yaml
+```
+
+`config/model_config.yaml` contains the per-role defaults:
+
 ```yaml
 teacher:
   provider: openai
-  model: gpt-4.1
-  temperature: 0.2
+  model: gpt-5.1
+  reasoning:
+    effort: high
+  temperature: 1.0
   api_key_env: OPENAI_API_KEY_TEACHER
 ta:
   provider: openai
-  model: gpt-4o-mini
-  temperature: 0.15
+  model: gpt-5-mini
+  temperature: 1.0
+coder:
+  provider: openai
+  model: gpt-5.1-codex-mini
+  temperature: 1.0
+  api_key_env: OPENAI_API_KEY_CODER
 student:
   provider: openai
-  model: gpt-4o-mini
-  temperature: 0.05
-default_temperature: 0.2
-default_max_tokens: 2048
+  model: gpt-5-mini
+  temperature: 1.0
+default_temperature: 1.0
+default_max_tokens: 32000
 ```
 
 Each role resolves credentials in this order: the optional `api_key_env`, then
@@ -181,7 +198,7 @@ All tools must be synchronous, side-effect free except for `record_claim` + `pus
 ## 5. Orchestrator Flow (RunPoC)
 
 1. **Load configs** and ablations.
-2. **Load/mount world model** snapshot (or stub if disabled).
+2. **Load/mount world model** snapshot (or dataset-only fallback if ablated).
 3. **Teacher RLM** (apps/orchestrator/teacher.py):
    - Imports `rlm.rlm_repl` from the vendored `vendor/rlm` directory by default; set `COURSEGEN_VENDOR_RLM_PATH=/abs/path/to/rlm` to point at a different checkout (useful for contributors iterating on the REPL without touching the submodule).
    - Initialize REPL environment with handles: `use_codeact(program_name)`, `spawn_ta(role)`, `wm.*` helpers.
@@ -190,9 +207,10 @@ All tools must be synchronous, side-effect free except for `record_claim` + `pus
    - Stage 3: run `grade_module` student loop; if score < threshold, mutate prompts/policy and re-run (max 2 passes).
    - Stage 4: export plan + lecture via `push_notebook_section` and log run metadata.
 4. **Evaluation hooks**: `apps/orchestrator/student_ops.py` collects quiz responses + rubric scores, writes to `outputs/evals/run-<ts>.jsonl`.
-5. **Provenance + summary**: `outputs/provenance/run-<ts>.jsonl` includes tool call transcripts, seeds, ablations used, and a pointer to the highlight artifact saved under `outputs/artifacts/run-<ts>-highlights.json` along with `highlight_source` ("world_model" vs "dataset").
-6. CLI returns exit code 0 on success, non-zero on failure, and prints (a) the evaluation summary (overall score + rubric pass/fail) whenever graders run and (b) the log path / reason when graders are skipped (dry run, `--ablations no_students`, missing rubrics). Highlight hints mirror the same source flag: `[highlights] saved to …` for world-model slices and `[highlights] (dataset) saved to …` when the `no_world_model` ablation forces the handcrafted fallback. Pass `--quiet` when scripting to suppress the `[eval]`/`[highlights]` hints while still writing every artifact; the standalone grader CLI (`python -m apps.orchestrator.eval_loop`) exposes the same flag.
-7. Notebook exports default to the environment variables populated during bootstrap: `OPEN_NOTEBOOK_API_BASE`, `OPEN_NOTEBOOK_API_KEY`, and `OPEN_NOTEBOOK_SLUG` (all derived from `PipelineConfig.notebook`). CodeAct tools fall back to these values whenever the orchestrator does not pass explicit overrides, keeping CLI + tools in sync.
+5. **Student LLM requirement**: unless `COURSEGEN_DISABLE_LLM_STUDENTS=1` is set, both the rubric graders and quiz evaluators must run on the configured `student` DSPy handle. Missing credentials now abort the run immediately; when you intentionally opt into heuristics, the highlight artifact (`run-*-highlights.json`) and portal run cards expose `evaluation_engines` (e.g., `rubric=llm`, `quiz=heuristic`) so it’s obvious which path was taken.
+6. **Provenance + summary**: `outputs/provenance/run-<ts>.jsonl` includes tool call transcripts, seeds, ablations used, and a pointer to the highlight artifact saved under `outputs/artifacts/run-<ts>-highlights.json` along with `highlight_source` ("world_model" vs "dataset").
+7. CLI returns exit code 0 on success, non-zero on failure, and prints (a) the evaluation summary (overall score + rubric pass/fail) whenever graders run and (b) the log path / reason when graders are skipped (dry run, `--ablations no_students`, missing rubrics). Highlight hints mirror the same source flag: `[highlights] saved to …` for world-model slices and `[highlights] (dataset) saved to …` when the `no_world_model` ablation forces the handcrafted fallback. Pass `--quiet` when scripting to suppress the `[eval]`/`[highlights]` hints while still writing every artifact; the standalone grader CLI (`python -m apps.orchestrator.eval_loop`) exposes the same flag.
+8. Notebook exports default to the environment variables populated during bootstrap: `OPEN_NOTEBOOK_API_BASE`, `OPEN_NOTEBOOK_API_KEY`, and `OPEN_NOTEBOOK_SLUG` (all derived from `PipelineConfig.notebook`). CodeAct tools fall back to these values whenever the orchestrator does not pass explicit overrides, keeping CLI + tools in sync.
 
 ## 6. Interface Contracts Between Workstreams
 
