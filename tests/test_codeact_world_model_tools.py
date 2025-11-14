@@ -15,6 +15,7 @@ from apps.codeact.tools.world_model import (
     record_claim,
     search_events,
 )
+from apps.codeact.tools_world_model import WorldModelTools
 from scripts.ingest_handcrafted import ingest
 from world_model.storage import WorldModelStore
 
@@ -200,3 +201,38 @@ def test_persist_outline_tool_records_artifact(tmp_path: Path) -> None:
         (artifact["id"],),
     )
     assert rows and rows[0][0] == "course_outline"
+
+
+def test_world_model_tools_query_prefers_store(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    tools = WorldModelTools(DATASET, store_path=store)
+    concept = tools.query("relational_model")
+    assert concept["id"] == "relational_model"
+    assert concept["summary"], "expected summary from store-backed payload"
+
+
+def test_world_model_tools_query_falls_back_to_dataset(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("WORLD_MODEL_STORE", str(tmp_path / "missing_store.sqlite"))
+    tools = WorldModelTools(DATASET)
+    concept = tools.query("relational_model")
+    assert concept["id"] == "relational_model"
+    assert concept["canonical_sources"], "dataset fallback should include canonical sources"
+    monkeypatch.delenv("WORLD_MODEL_STORE", raising=False)
+
+
+def test_world_model_tools_list_concepts_sorted_when_offline(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("WORLD_MODEL_STORE", str(tmp_path / "missing_store.sqlite"))
+    tools = WorldModelTools(DATASET)
+    concepts = tools.list_concepts()
+    assert concepts, "Expected dataset fallback to return concepts"
+    ids = [concept["id"] for concept in concepts]
+    assert ids == sorted(ids)
+    monkeypatch.delenv("WORLD_MODEL_STORE", raising=False)
+
+
+def test_world_model_tools_unknown_concept(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("WORLD_MODEL_STORE", str(tmp_path / "missing_store.sqlite"))
+    tools = WorldModelTools(DATASET)
+    with pytest.raises(KeyError):
+        tools.query("does_not_exist")
+    monkeypatch.delenv("WORLD_MODEL_STORE", raising=False)
