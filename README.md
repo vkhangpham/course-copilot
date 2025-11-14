@@ -3,7 +3,7 @@
 This repository hosts the proof-of-concept for Concepedia’s “CourseGen” pipeline. A Teacher RLM orchestrates TA agents inside a DSPy CodeAct sandbox, grounded by a handcrafted Database Systems world model, and publishes course artifacts to an Open Notebook instance.
 
 ## Current Status
-- `apps/orchestrator/run_poc.py` runs a stub pipeline that wires the CLI, config loading, and output directory management.
+- `apps/orchestrator/run_poc.py` drives the full Teacher RLM + CodeAct pipeline, wiring the CLI, config loading, and artifact management.
 - `docs/ARCHITECTURE.md` captures the concrete module/interface plan derived from `docs/PLAN.md` / `docs/PoC.md`.
 - `history/2025-11-11-chartreusestone-plan.md` documents the workstream split and outstanding coordination items.
 - Handcrafted Database Systems assets + ingestion pipeline are available under `data/handcrafted/database_systems/` and `scripts/ingest_handcrafted.py`; world-model tools now query the populated snapshot.
@@ -36,24 +36,19 @@ This repository hosts the proof-of-concept for Concepedia’s “CourseGen” pi
 
 ### Model configuration & OpenAI credentials
 
-- The `models` block inside `config/pipeline.yaml` (or `config/model_config.yaml`) can now use either the legacy flat form (`teacher_model`, `ta_model`, …) or the nested form:
+- The `models` block inside `config/pipeline.yaml` can now point directly at `config/model_config.yaml`, so you only edit the per-role settings in one place. Optional overrides (for experiments or ablations) can still be layered on top of the referenced file:
   ```yaml
   models:
+    path: config/model_config.yaml
+    # Optional inline overrides (merged with the referenced file)
     teacher:
-      provider: openai
-      model: gpt-4.1
-      api_key_env: OPENAI_API_KEY_TEACHER  # optional override
-    ta:
-      provider: openai
-      model: gpt-4o-mini
-      temperature: 0.1
-    student:
-      provider: openai
-      model: gpt-4o-mini
+      temperature: 0.8
+    default_temperature: 0.9
   ```
 - Per-role credentials are resolved in this order: the optional `api_key_env`, `OPENAI_API_KEY_<ROLE>` (e.g., `OPENAI_API_KEY_TA`), and finally the global `OPENAI_API_KEY`. Custom API bases follow the same pattern via `api_base`, `api_base_env`, `OPENAI_API_BASE_<ROLE>`, or `OPENAI_API_BASE`.
-- The DSPy CodeAct registry now consumes those handles directly: Plan/Lecture/Citation programs automatically run with the TA handle, so you shouldn’t reconfigure `dspy.settings` inside agent code. Future student-facing CodeAct programs will draw from the `student` handle the same way.
+- The DSPy CodeAct registry now consumes those handles directly: Plan/Lecture/Citation programs automatically run with the dedicated `coder` handle (gpt-5.1-codex-mini), so you shouldn’t reconfigure `dspy.settings` inside agent code. Future student-facing CodeAct programs will draw from the `student` handle the same way.
 - Any extra fields supplied under a role (timeouts, organization IDs, etc.) are passed straight to `dspy.OpenAI`, so you can tune provider-specific knobs without touching code.
+- **Offline fallback.** When you don’t have working OpenAI credentials, set `COURSEGEN_CODEACT_OFFLINE=1` before launching the CLI. The Teacher will skip all CodeAct programs and emit clearly labeled scaffolds for the course plan + lecture so the rest of the pipeline (students, Notebook export, provenance) can still run. Pair this with either `COURSEGEN_RLM_OFFLINE=1` **or** the new `--offline-teacher` CLI flag if you also need the Teacher RLM to remain in deterministic simulation even when `OPENAI_API_KEY` is present.
 
 ## Running the PoC CLI
 ### Quick start (apps/orchestrator entry point)
@@ -66,6 +61,8 @@ python apps/orchestrator/run_poc.py \
   --ablations no_students
 ```
 Only `--constraints`, `--concepts`, `--notebook`, and the optional `--ablations` flag are exposed; a hidden `--repo-root` argument keeps every relative path (config, dataset, outputs, science config, etc.) anchored to the repository root so you can run the shim from anywhere. Additional knobs such as `--output-dir`, `--dry-run`, `--quiet`, `--ingest-world-model`, or `--skip-notebook-create` live on the canonical CLI described below, and every ablation name maps directly to `no_world_model`, `no_students`, or `no_recursion`.
+
+Add `--offline-teacher` to either this shim or the canonical CLI when you want the teacher loop to bypass the vendor RLM entirely (the flag simply sets `COURSEGEN_RLM_OFFLINE=1` before bootstrapping).
 
 ### Full CLI (coursegen-poc)
 For advanced scenarios you can still invoke the canonical CLI exposed via the console script (or by running `python -m ccopilot.cli.run_poc`):
@@ -80,10 +77,24 @@ Regardless of the entry point, the pipeline emits:
 - `outputs/lectures/module_01.md`
 - `outputs/evals/run-<timestamp>.jsonl`
 - `outputs/provenance/run-<timestamp>.jsonl`
-- `outputs/artifacts/run-<timestamp>-highlights.json` (concept/timeline slices powering the stub plan/lecture). When `--ablations` includes `no_world_model`, this file still exists but is derived from the handcrafted dataset instead of SQLite; the manifest’s `highlight_source` flag indicates which path produced it.
+- `outputs/artifacts/run-<timestamp>-highlights.json` (concept/timeline slices powering the plan/lecture). When `--ablations` includes `no_world_model`, this file still exists but is derived from the handcrafted dataset instead of SQLite; the manifest’s `highlight_source` flag indicates which path produced it.
 - `outputs/artifacts/run-<timestamp>-science.json` (full dump of the scientific evaluator metrics described below)
 
+> Historical sample plans now live under `docs/samples/course_plan_sample.md`; `outputs/course_plan.md` is generated per run and ignored by git so every demo reflects fresh artifacts.
+
 After every non-dry run the CLI also prints a short evaluation summary (overall score plus rubric pass/fail). If the student graders are disabled or missing, it reports that status instead of a score so operators immediately know why no grade was recorded. Highlight hints now spell out the source: `[highlights] saved to …` when the world model is active and `[highlights] (dataset) saved to …` when the `no_world_model` ablation forces the handcrafted fallback. Pass `--quiet` when scripting to suppress these `[eval]` / `[highlights]` hints while still writing every artifact. A matching `[science] blooms=… | coherence=… | citations=… | …` line summarizes the scientific evaluator output; disable it with `--quiet` or by flipping the relevant flags in `config/scientific_config.yaml`.
+
+### Validation & common failure modes
+
+The shared validation framework (`ccopilot/core/validation.py`) now guards every input the pipeline consumes. Typical errors and remedies:
+
+- **`Invalid rubrics file … must define a mapping`** – `evals/rubrics.yaml` (or the override you passed via `--constraints`) is empty/malformed. Ensure the YAML root is a mapping of rubric names to metadata.
+- **`Quiz bank … must be a list of quiz entries/items`** – `data/handcrafted/database_systems/quiz_bank.json` is no longer a JSON array. Regenerate the handcrafted dataset or repair the file.
+- **`Directory … missing required files: authors.csv,…`** – the dataset directory is incomplete; rerun `scripts/ingest_handcrafted.py data/handcrafted/database_systems outputs/world_model/state.sqlite --jsonl outputs/world_model/snapshot.jsonl` to rebuild snapshots.
+- **`Invalid scientific config …`** – `config/scientific_config.yaml` failed strict YAML parsing. Fix indentation/keys or pass a validated override via `--science-config`.
+- **Notebook section validation errors** – the publisher now checks that each `NotebookSectionInput.path` resolves to a readable markdown file; regenerate the artifact or provide inline content when sections are missing.
+
+Validators fail fast before the orchestrator spins up, so fix the indicated file and re-run the CLI once the error disappears. The exception message always includes the absolute path to speed up debugging, and the same helpers back the handcrafted ingest script, TA roles, CodeAct tools, and Notebook publisher for consistent behavior.
 
 **Scientific evaluator configuration**
 
@@ -102,6 +113,9 @@ python -m apps.orchestrator.eval_loop --repo-root /path/to/ccopilot --quiet
 ```
 
 The CLI now resolves defaults relative to the repo root you pass (or `COURSEGEN_REPO_ROOT` if it’s already set), so you can launch it from any working directory without `cd`. Override `--artifacts-dir`, `--lectures-dir`, or `--rubric` explicitly when you want to point at custom folders, and add `--quiet` when you only care about the JSONL output under `<repo>/outputs/evaluations/`.
+
+Student evaluators now insist on the configured `student` DSPy handle whenever `use_students` is enabled. If the handle is missing or misconfigured, the teacher/eval CLI will fail fast with `student_llm_unavailable` instead of silently falling back to heuristics. Set `COURSEGEN_DISABLE_LLM_STUDENTS=1` when you intentionally want the legacy keyword heuristics (e.g., offline smoke tests); otherwise make sure your `.env` exposes the student model key so the graders and quiz loop stay LLM-backed.
+- Portal run cards and the `run-*-highlights.json` artifacts now include `evaluation_engines` (e.g., `rubric=llm`, `quiz=llm`) so you can immediately confirm whether the graders relied on the LLM handles or an explicit heuristic override. Automations can read the same metadata from the highlight artifact without parsing `outputs/evaluations/*.jsonl`.
 
 ### Portal backend + shadcn UI
 
@@ -141,7 +155,7 @@ Refer to `docs/PLAN.md`, `docs/PoC.md`, and `docs/ARCHITECTURE.md` for detailed 
 ## World-Model Tooling
 1. **Validate inputs** – `validate-handcrafted data/handcrafted/database_systems` (Typer CLI) fails fast when authors/papers/concepts/timeline/quiz rows drift out of sync. Run this before committing dataset edits.
 2. **Rebuild snapshots** – `python scripts/ingest_handcrafted.py data/handcrafted/database_systems outputs/world_model/state.sqlite --jsonl outputs/world_model/snapshot.jsonl` regenerates both the SQLite store and a JSON Lines dump. You can also pass `--ingest-world-model` to `coursegen-poc` to chain validation + ingest before the orchestrator runs.
-3. **Inspect data** – `wm-inspect concepts --topic transaction` (plus `timeline`, `claims`, `papers`, `authors`, `definitions`, `graph`, the newer `artifacts` command, and now `summary`) renders quick JSON tables without opening SQLite. The CLI auto-detects the snapshot under `outputs/world_model/state.sqlite`, so `--store` is only needed if you point at a custom path (or set `WORLD_MODEL_STORE`). Pass `wm-inspect artifacts --type quiz_bank` (or `course_outline`) to see just that class of assets, and use `wm-inspect summary --json` to print aggregate row counts for sanity-checking ingest in automation.
+3. **Inspect data** – `wm-inspect concepts --topic transaction` (plus `timeline`, `claims`, `papers`, `authors`, `definitions`, `graph`, the newer `artifacts` command, and now `summary`) renders quick JSON tables without opening SQLite. The CLI auto-detects the snapshot under `outputs/world_model/state.sqlite`, so `--store` is only needed if you point at a custom path (or set `WORLD_MODEL_STORE`). Pass `wm-inspect artifacts --type quiz_bank` (or `course_outline` if you keep that optional sample in your dataset) to see just that class of assets, and use `wm-inspect summary --json` to print aggregate row counts for sanity-checking ingest in automation.
 
 See `docs/WORLD_MODEL_TOOLING.md` for a full walkthrough (dataset layout, provenance expectations, troubleshooting tips).
 
