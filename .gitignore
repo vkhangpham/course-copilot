@@ -41,3 +41,6 @@ frontend/dist/
 
 # CodeAct sandbox
 .sandbox/
+
+# Agent planning history (local only)
+history/

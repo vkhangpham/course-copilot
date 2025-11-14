@@ -10,7 +10,13 @@ from fastapi.testclient import TestClient
 
 from fastapi import HTTPException
 
-from apps.portal_backend.main import app, get_settings, PortalSettings
+from apps.portal_backend.main import (
+    _derive_highlight_source,
+    _derive_world_model_store_exists,
+    app,
+    get_settings,
+    PortalSettings,
+)
 
 
 def _first_manifest_path(outputs_dir: Path) -> Path:
@@ -38,8 +44,10 @@ def _write_run(
     *,
     include_notebook: bool = False,
     notebook_slug: str = "database-systems-poc",
-    highlight_source: str = "world_model",
+    highlight_source: str | None = "world_model",
     world_model_store_exists: bool = True,
+    use_world_model: bool = True,
+    omit_highlight_source: bool = False,
 ) -> dict:
     artifacts_dir = outputs_dir / "artifacts"
     artifacts_dir.mkdir(parents=True, exist_ok=True)
@@ -129,12 +137,12 @@ def _write_run(
     science_artifact.write_text(json.dumps({"agent": "scientific_evaluator", "metrics": scientific_metrics}), encoding="utf-8")
 
     manifest = {
+        "ablations": {"use_students": True, "use_world_model": use_world_model, "allow_recursion": True},
         "course_plan": str(course_plan),
         "lecture": str(lecture_path),
         "eval_report": str(eval_report_path),
         "provenance": str(provenance_path),
         "world_model_store": str(outputs_dir / "world_model" / "state.sqlite"),
-        "ablations": {"use_students": True, "use_world_model": True, "allow_recursion": True},
         "dataset_summary": {"concept_count": 30},
         "evaluation": {
             "overall_score": 0.92,
@@ -151,12 +159,13 @@ def _write_run(
         "world_model_highlights": {"concepts": [{"id": "relational_model", "summary": "Foundations"}]},
         "world_model_highlight_artifact": str(artifacts_dir / f"run-{run_id}-highlights.json"),
         "teacher_trace": str(teacher_trace_path),
-        "highlight_source": highlight_source,
-        "world_model_store_exists": world_model_store_exists,
         "scientific_metrics": scientific_metrics,
         "scientific_metrics_artifact": str(science_artifact),
         "science_config_path": str(science_config_path),
     }
+    if highlight_source is not None and not omit_highlight_source:
+        manifest["highlight_source"] = highlight_source
+    manifest["world_model_store_exists"] = world_model_store_exists
     if notebook_exports is not None:
         manifest["notebook_exports"] = notebook_exports
         manifest["notebook_export_summary"] = notebook_summary
@@ -180,6 +189,12 @@ def _relative_from_manifest(entry: dict, settings: PortalSettings) -> str:
     return str(absolute.resolve().relative_to(settings.outputs_dir.resolve()))
 
 
+def _helper_settings_for_inference(tmp_path: Path) -> PortalSettings:
+    outputs = tmp_path / "outputs"
+    outputs.mkdir(parents=True, exist_ok=True)
+    return PortalSettings(repo_root=tmp_path, outputs_dir=outputs, notebook_slug="database-systems-poc")
+
+
 def test_health_without_runs(portal_settings: PortalSettings) -> None:
     client = TestClient(app)
     response = client.get("/health")
@@ -198,6 +213,27 @@ def test_health_reports_latest_run_id(portal_settings: PortalSettings) -> None:
     assert response.status_code == 200
     data = response.json()
     assert data["latest_run_id"] == "20250102-000000"
+
+
+def test_portal_infers_dataset_highlight_from_ablation(portal_settings: PortalSettings) -> None:
+    _write_run(
+        portal_settings.outputs_dir,
+        run_id="20250103-000000",
+        highlight_source=None,
+        omit_highlight_source=True,
+        world_model_store_exists=False,
+        use_world_model=False,
+    )
+
+    client = TestClient(app)
+    response = client.get("/health")
+    assert response.status_code == 200
+
+    detail_resp = client.get("/runs/latest")
+    assert detail_resp.status_code == 200
+    data = detail_resp.json()
+    assert data["highlight_source"] == "dataset"
+    assert data["world_model_store_exists"] is False
 
 
 def test_list_runs_and_detail(portal_settings: PortalSettings) -> None:
@@ -394,6 +430,32 @@ def test_portal_derives_dataset_highlight_from_missing_store(portal_settings: Po
     assert detail["highlight_source"] == "dataset"
     highlights_trace = next(trace for trace in detail["trace_files"] if trace["name"] == "highlights")
     assert highlights_trace["label"] == "Dataset highlights"
+
+
+def test_derive_world_model_store_exists_respects_highlight_source_and_ablation(tmp_path: Path) -> None:
+    settings = _helper_settings_for_inference(tmp_path)
+    manifest = {"highlight_source": "world_model", "ablations": {"use_world_model": False}}
+    assert _derive_world_model_store_exists(manifest, settings) is False
+    manifest["ablations"] = {"use_world_model": True}
+    assert _derive_world_model_store_exists(manifest, settings) is True
+    manifest.pop("highlight_source", None)
+    manifest.pop("ablations", None)
+    store_path = settings.outputs_dir / "world_model" / "state.sqlite"
+    store_path.parent.mkdir(parents=True, exist_ok=True)
+    store_path.write_text("", encoding="utf-8")
+    manifest["world_model_store"] = str(store_path)
+    assert _derive_world_model_store_exists(manifest, settings) is True
+
+
+def test_derive_highlight_source_falls_back_to_expected_values(tmp_path: Path) -> None:
+    settings = _helper_settings_for_inference(tmp_path)
+    manifest = {}
+    assert _derive_highlight_source(manifest, settings, store_exists=True) == "world_model"
+    manifest["ablations"] = {"use_world_model": False}
+    assert _derive_highlight_source(manifest, settings) == "dataset"
+    manifest.pop("ablations", None)
+    manifest["world_model_highlights"] = {"concepts": [{"id": "relational_model"}]}
+    assert _derive_highlight_source(manifest, settings) == "world_model"
 
 
 def test_notebook_export_reason_exposed(portal_settings: PortalSettings) -> None:

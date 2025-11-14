@@ -530,6 +530,39 @@ evaluation:
         manifest = json.loads(artifacts.manifest.read_text(encoding="utf-8"))
         self.assertIsNone(manifest.get("teacher_trace"))
 
+    def test_combined_ablations_enforce_all_toggles(self) -> None:
+        ctx = bootstrap_pipeline(
+            config_path=self.config_path,
+            repo_root=self.repo_root,
+            output_dir=self.output_dir,
+            ablations="no_world_model,no_students,no_recursion",
+        )
+        with self.notebook_api.patch_open_notebook_client():
+            artifacts = run_pipeline(ctx, dry_run=False)
+
+        assert artifacts is not None
+        manifest = json.loads(artifacts.manifest.read_text(encoding="utf-8"))
+        expected_ablations = {
+            "use_world_model": False,
+            "use_students": False,
+            "allow_recursion": False,
+        }
+        self.assertEqual(manifest.get("ablations"), expected_ablations)
+        self.assertEqual(manifest.get("highlight_source"), "dataset")
+        self.assertEqual(artifacts.highlight_source, "dataset")
+        self.assertIsNone(manifest.get("teacher_trace"))
+        self.assertIsNone(artifacts.teacher_trace)
+
+        eval_record = json.loads(artifacts.eval_report.read_text(encoding="utf-8").splitlines()[0])
+        self.assertFalse(eval_record["use_students"])
+        self.assertEqual(eval_record["status"], "students_disabled")
+
+        self.assertFalse(manifest.get("world_model_store_exists"))
+        self.assertTrue(
+            self.notebook_api.notes,
+            "Notebook export should remain available even when every ablation is active",
+        )
+
     def test_notebook_export_offline_queue_written(self) -> None:
         offline_config = self._write_pipeline_config(api_base="", filename="pipeline-offline.yaml")
         os.environ.pop("OPEN_NOTEBOOK_API_BASE", None)
