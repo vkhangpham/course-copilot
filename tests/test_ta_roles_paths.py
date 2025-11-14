@@ -88,6 +88,28 @@ def test_resolve_dataset_root_uses_repo_root(monkeypatch, tmp_path: Path) -> Non
     expected = (repo_root / "data" / "handcrafted" / "database_systems").resolve()
     assert resolved == expected
 
+
+def test_resolve_dataset_root_respects_repo_root_parameter(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("COURSEGEN_DATASET_DIR", raising=False)
+    monkeypatch.delenv("COURSEGEN_REPO_ROOT", raising=False)
+    repo_root = tmp_path / "explicit"
+    repo_root.mkdir(parents=True, exist_ok=True)
+
+    resolved = resolve_dataset_root(repo_root=repo_root)
+    expected = (repo_root / "data" / "handcrafted" / "database_systems").resolve()
+    assert resolved == expected
+
+
+def test_resolve_dataset_root_env_overrides_repo_param(monkeypatch, tmp_path: Path) -> None:
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    dataset_override = tmp_path / "dataset"
+    dataset_override.mkdir()
+    monkeypatch.setenv("COURSEGEN_DATASET_DIR", str(dataset_override))
+
+    resolved = resolve_dataset_root(repo_root=repo_root)
+    assert resolved == dataset_override.resolve()
+
 def test_explainer_honors_dataset_env(monkeypatch, tmp_path: Path) -> None:
     dataset_dir = tmp_path / "custom_dataset"
     _seed_dataset(dataset_dir)
