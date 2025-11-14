@@ -49,6 +49,10 @@ testpaths = [
 ]
 addopts = "-ra"
 
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["ccopilot*", "world_model*", "scripts*", "apps*"]
+
 [build-system]
 requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
