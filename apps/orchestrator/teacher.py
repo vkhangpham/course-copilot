@@ -20,6 +20,7 @@ from agents.teacher_rlm import (
 )
 from apps.codeact.registry import CodeActRegistry
 from apps.codeact.tools.world_model import fetch_concepts, lookup_paper, search_events
+from apps.codeact.tools_world_model import WorldModelTools
 from apps.orchestrator.notebook_publisher import (
     NotebookPublisher,
     NotebookSectionInput,
@@ -93,6 +94,7 @@ class TeacherOrchestrator:
         self.ta_roles: Dict[str, TARoleSpec] = {role.name: role for role in DEFAULT_ROLES}
         self._offline_codeact = _truthy_env("COURSEGEN_CODEACT_OFFLINE")
         self._latest_dataset_summary: Dict[str, Any] | None = None
+        self._world_model_tools: WorldModelTools | None = None
 
     @property
     def stage_errors(self) -> List[Dict[str, Any]]:
@@ -449,6 +451,41 @@ class TeacherOrchestrator:
             self.teacher_rlm.record_action("wm_snapshot", "world_model", {}, snapshot)
             return snapshot
 
+        def wm_get(concept_id: str, **_kwargs: Any) -> Dict[str, Any]:
+            payload = {"concept_id": concept_id}
+            tools = self._get_world_model_tools()
+            if tools is None:
+                result: Dict[str, Any] = {"status": "disabled", **payload}
+            else:
+                try:
+                    concept = tools.query(concept_id)
+                except KeyError:
+                    result = {"status": "not_found", **payload}
+                except ValueError as exc:
+                    result = {"status": "error", "error": str(exc), **payload}
+                except Exception as exc:  # pragma: no cover - defensive
+                    result = {"status": "error", "error": str(exc), **payload}
+                else:
+                    result = {"status": "ok", "concept": concept}
+            self.teacher_rlm.record_action("wm_get", concept_id, payload, result)
+            return result
+
+        def wm_list(topic: str | None = None, limit: int | None = None, **_kwargs: Any) -> Dict[str, Any]:
+            tools = self._get_world_model_tools()
+            payload = {"topic": topic, "limit": limit}
+            if tools is None:
+                result: Dict[str, Any] = {"status": "disabled"}
+            else:
+                try:
+                    limit_value = self._coerce_limit(limit)
+                    concepts = tools.list_concepts(topic=topic, limit=limit_value)
+                except Exception as exc:  # pragma: no cover - defensive
+                    result = {"status": "error", "error": str(exc)}
+                else:
+                    result = {"status": "ok", "concepts": concepts}
+            self.teacher_rlm.record_action("wm_list", "concepts", payload, result)
+            return result
+
         return {
             "use_codeact": use_codeact,
             "spawn_ta": spawn_ta,
@@ -456,6 +493,8 @@ class TeacherOrchestrator:
             "list_ta_roles": list_ta_roles,
             "log_event": log_event,
             "wm_snapshot": wm_snapshot,
+            "wm_get": wm_get,
+            "wm_list": wm_list,
         }
 
     def _summarize_codeact_result(self, program_name: str, result: Any) -> Dict[str, Any]:
@@ -518,6 +557,30 @@ class TeacherOrchestrator:
         return result
 
     # ------------------------------------------------------------------
+
+    def _get_world_model_tools(self) -> WorldModelTools | None:
+        if not self.ctx.ablations.use_world_model:
+            return None
+        if self._world_model_tools is None:
+            try:
+                self._world_model_tools = WorldModelTools(
+                    concept_root=self.shared_state.concept_root,
+                    store_path=self.ctx.config.world_model.sqlite_path,
+                )
+            except Exception as exc:  # pragma: no cover - defensive
+                self.logger.warning("World-model tools unavailable: %s", exc)
+                self._world_model_tools = None
+        return self._world_model_tools
+
+    @staticmethod
+    def _coerce_limit(value: Any) -> int | None:
+        if value is None:
+            return None
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return None
+        return parsed if parsed >= 0 else None
 
     def _emit_course_plan(
         self,
