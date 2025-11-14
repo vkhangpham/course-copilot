@@ -44,3 +44,6 @@ frontend/dist/
 
 # Agent planning history (local only)
 history/
+
+# Beads issue tracking (local only)
+.beads/

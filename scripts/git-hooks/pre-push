@@ -1,0 +1,101 @@
+#!/bin/sh
+#
+# pre-push hook for ccopilot
+#
+# Runs before git push to ensure code quality:
+# 1. Run ruff check (without auto-fix) to catch any issues
+# 2. Optionally run tests (commented out by default for speed)
+# 3. Check for sensitive data patterns
+#
+
+set -e
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+echo "${GREEN}[pre-push]${NC} Running pre-push checks..."
+
+# ============================================================================
+# 1. RUFF CHECK (NO AUTO-FIX)
+# ============================================================================
+if command -v ruff >/dev/null 2>&1; then
+    echo "${GREEN}[pre-push]${NC} Running ruff check on all Python files..."
+
+    # Run ruff check without --fix to ensure no issues remain
+    if ! ruff check . 2>&1; then
+        echo "${RED}[pre-push]${NC} ruff check found issues" >&2
+        echo "Please fix the issues before pushing" >&2
+        exit 1
+    fi
+
+    echo "${GREEN}[pre-push]${NC} Python lint checks passed"
+else
+    echo "${YELLOW}[pre-push]${NC} ruff not found, skipping Python lint"
+fi
+
+# ============================================================================
+# 2. OPTIONAL: RUN TESTS
+# ============================================================================
+# Uncomment to enable test running before push (may slow down push)
+# if command -v pytest >/dev/null 2>&1; then
+#     echo "${GREEN}[pre-push]${NC} Running pytest..."
+#
+#     if ! pytest tests/ -q 2>&1; then
+#         echo "${RED}[pre-push]${NC} Tests failed" >&2
+#         echo "Please fix failing tests before pushing" >&2
+#         exit 1
+#     fi
+#
+#     echo "${GREEN}[pre-push]${NC} All tests passed"
+# fi
+
+# ============================================================================
+# 3. CHECK FOR SENSITIVE DATA
+# ============================================================================
+echo "${GREEN}[pre-push]${NC} Checking for potential sensitive data..."
+
+# Check for common patterns that might indicate secrets
+SENSITIVE_PATTERNS=(
+    "api_key"
+    "api-key"
+    "apikey"
+    "password"
+    "secret"
+    "token"
+    "AUTH_TOKEN"
+    "PRIVATE_KEY"
+)
+
+for pattern in "${SENSITIVE_PATTERNS[@]}"; do
+    # Check staged files for pattern (case-insensitive)
+    if git diff --cached --name-only | xargs grep -iH "$pattern" 2>/dev/null | grep -v ".env" | grep -v "test" | grep -q .; then
+        echo "${YELLOW}[pre-push]${NC} Warning: Found potential sensitive data pattern '$pattern'" >&2
+        echo "Please review the files to ensure no secrets are committed" >&2
+        # Don't fail, just warn - secrets might be in comments/documentation
+    fi
+done
+
+# ============================================================================
+# 4. OPTIONAL: AST-GREP STRUCTURAL CHECKS
+# ============================================================================
+# Uncomment to enable ast-grep checks before push
+# if command -v ast-grep >/dev/null 2>&1; then
+#     echo "${GREEN}[pre-push]${NC} Running ast-grep structural checks..."
+#
+#     # Example: Check for TODO comments in production code
+#     if ast-grep --pattern 'TODO: $$$' apps/ ccopilot/ 2>/dev/null | grep -q .; then
+#         echo "${YELLOW}[pre-push]${NC} Warning: TODO comments found in code" >&2
+#     fi
+#
+#     # Example: Check for print/console statements
+#     if ast-grep --pattern 'print($$$)' apps/ ccopilot/ 2>/dev/null | grep -q .; then
+#         echo "${YELLOW}[pre-push]${NC} Warning: print() statements found" >&2
+#         echo "Consider using proper logging instead" >&2
+#     fi
+# fi
+
+echo "${GREEN}[pre-push]${NC} All pre-push checks passed!"
+exit 0

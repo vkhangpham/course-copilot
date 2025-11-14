@@ -1,0 +1,68 @@
+#!/bin/sh
+#
+# post-merge hook for ccopilot
+#
+# Runs after git pull/merge to:
+# 1. Import updated bd issues from .beads/issues.jsonl
+# 2. Update Python dependencies if requirements changed
+# 3. Notify about important changes
+#
+
+# Colors for output
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+echo "${GREEN}[post-merge]${NC} Running post-merge tasks..."
+
+# ============================================================================
+# 1. BD (BEADS) IMPORT
+# ============================================================================
+if command -v bd >/dev/null 2>&1 && [ -d .beads ]; then
+    echo "${GREEN}[post-merge]${NC} Importing updated bd issues..."
+
+    if [ -f .beads/issues.jsonl ]; then
+        if ! bd import -i .beads/issues.jsonl >/dev/null 2>&1; then
+            echo "${YELLOW}[post-merge]${NC} Warning: Failed to import bd changes after merge" >&2
+            echo "Run 'bd import -i .beads/issues.jsonl' manually to see the error" >&2
+            # Don't fail the merge, just warn
+        else
+            echo "${GREEN}[post-merge]${NC} bd issues imported successfully"
+        fi
+    fi
+fi
+
+# ============================================================================
+# 2. CHECK FOR DEPENDENCY CHANGES
+# ============================================================================
+CHANGED_FILES=$(git diff-tree -r --name-only --no-commit-id ORIG_HEAD HEAD)
+
+# Check if pyproject.toml or requirements changed
+if echo "$CHANGED_FILES" | grep -qE "(pyproject.toml|requirements.*\.txt|uv.lock)"; then
+    echo "${YELLOW}[post-merge]${NC} Python dependencies may have changed" >&2
+    echo "Consider running: uv pip sync or pip install -e ." >&2
+fi
+
+# Check if package.json changed (for frontend)
+if echo "$CHANGED_FILES" | grep -qE "(package.json|package-lock.json|pnpm-lock.yaml)"; then
+    echo "${YELLOW}[post-merge]${NC} Node dependencies may have changed" >&2
+    echo "Consider running: cd frontend && pnpm install" >&2
+fi
+
+# ============================================================================
+# 3. NOTIFY ABOUT IMPORTANT CHANGES
+# ============================================================================
+# Check if git hooks changed
+if echo "$CHANGED_FILES" | grep -q "scripts/git-hooks/"; then
+    echo "${YELLOW}[post-merge]${NC} Git hooks have been updated" >&2
+    echo "Run: scripts/install-hooks.sh to update your local hooks" >&2
+fi
+
+# Check if config files changed
+if echo "$CHANGED_FILES" | grep -qE "config/.*\.yaml"; then
+    echo "${YELLOW}[post-merge]${NC} Configuration files have been updated" >&2
+    echo "Please review changes in config/" >&2
+fi
+
+echo "${GREEN}[post-merge]${NC} Post-merge tasks completed"
+exit 0

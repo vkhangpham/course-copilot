@@ -207,6 +207,77 @@ pip install -e ".[dev]"
 
 # Initialize vendor submodules
 git submodule update --init --recursive
+
+# Install git hooks (recommended)
+./scripts/install-hooks.sh
+```
+
+### Git Hooks
+
+This repository includes automated git hooks for code quality and consistency:
+
+**Install hooks:**
+```bash
+# Install all hooks (interactive)
+./scripts/install-hooks.sh
+
+# Force install (overwrite existing)
+./scripts/install-hooks.sh --force
+```
+
+**Available hooks:**
+
+- **pre-commit**: Runs before commits to:
+  - Sync bd (beads) issues to `.beads/issues.jsonl`
+  - Format Python files with `ruff format`
+  - Lint Python files with `ruff check --fix`
+  - Format markdown/YAML/JSON with `prettier` (if available)
+  - Auto-stage formatted files
+
+- **commit-msg**: Validates commit message format:
+  - Enforces conventional commits: `type(scope): subject`
+  - Valid types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`
+  - Example: `feat(auth): add user login`
+
+- **pre-push**: Runs before push to:
+  - Run `ruff check` (without auto-fix) to catch remaining issues
+  - Check for potential sensitive data patterns
+  - Optional: Run tests (disabled by default for speed)
+
+- **post-merge**: Runs after merge/pull to:
+  - Import updated bd issues from `.beads/issues.jsonl`
+  - Notify about dependency changes (Python, Node)
+  - Warn about config file updates
+
+**Required tools:**
+- `ruff` - Python formatting and linting (required)
+  ```bash
+  brew install ruff
+  # or: pip install ruff
+  ```
+
+**Optional tools:**
+- `prettier` - Markdown/YAML/JSON formatting
+  ```bash
+  brew install prettier
+  # or: npm install -g prettier
+  ```
+- `ast-grep` - Structural code search
+  ```bash
+  brew install ast-grep
+  ```
+- `fastmod` - Code refactoring
+  ```bash
+  cargo install fastmod
+  ```
+
+**Bypassing hooks (use sparingly):**
+```bash
+# Skip pre-commit hook
+git commit --no-verify -m "message"
+
+# Skip pre-push hook
+git push --no-verify
 ```
 
 ### Running the Main Pipeline
