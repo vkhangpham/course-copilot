@@ -45,7 +45,7 @@ This repository hosts the proof-of-concept for Concepedia’s “CourseGen” pi
       temperature: 0.8
     default_temperature: 0.9
   ```
-- Per-role credentials are resolved in this order: the optional `api_key_env`, `OPENAI_API_KEY_<ROLE>` (e.g., `OPENAI_API_KEY_TA`), and finally the global `OPENAI_API_KEY`. Custom API bases follow the same pattern via `api_base`, `api_base_env`, `OPENAI_API_BASE_<ROLE>`, or `OPENAI_API_BASE`.
+- Per-role credentials are resolved in this order: the optional `api_key_env`, `OPENAI_API_KEY_<ROLE>` (e.g., `OPENAI_API_KEY_TA`), and finally the global `OPENAI_API_KEY`. Custom API bases follow the same pattern via `api_base`, `api_base_env`, `OPENAI_API_BASE_<ROLE>`, or `OPENAI_API_BASE`. **If you only have a single `OPENAI_API_KEY` in `.env`, every role automatically falls back to it—no need to duplicate secrets.**
 - The DSPy CodeAct registry now consumes those handles directly: Plan/Lecture/Citation programs automatically run with the dedicated `coder` handle (gpt-5.1-codex-mini), so you shouldn’t reconfigure `dspy.settings` inside agent code. Future student-facing CodeAct programs will draw from the `student` handle the same way.
 - Any extra fields supplied under a role (timeouts, organization IDs, etc.) are passed straight to `dspy.OpenAI`, so you can tune provider-specific knobs without touching code.
 - **Offline fallback.** When you don’t have working OpenAI credentials, set `COURSEGEN_CODEACT_OFFLINE=1` before launching the CLI. The Teacher will skip all CodeAct programs and emit clearly labeled scaffolds for the course plan + lecture so the rest of the pipeline (students, Notebook export, provenance) can still run. Pair this with either `COURSEGEN_RLM_OFFLINE=1` **or** the new `--offline-teacher` CLI flag if you also need the Teacher RLM to remain in deterministic simulation even when `OPENAI_API_KEY` is present.
@@ -89,7 +89,7 @@ After every non-dry run the CLI also prints a short evaluation summary (overall 
 The shared validation framework (`ccopilot/core/validation.py`) now guards every input the pipeline consumes. Typical errors and remedies:
 
 - **`Invalid rubrics file … must define a mapping`** – `evals/rubrics.yaml` (or the override you passed via `--constraints`) is empty/malformed. Ensure the YAML root is a mapping of rubric names to metadata.
-- **`Quiz bank … must be a list of quiz entries/items`** – `data/handcrafted/database_systems/quiz_bank.json` is no longer a JSON array. Regenerate the handcrafted dataset or repair the file.
+- **`Quiz bank … must be a list of quiz entries/items`** – this only triggers when you disable runtime quiz synthesis (`evaluation.generate_runtime_quiz: false`). The default demo path now generates quizzes directly from the world model, but if you opt back into the static JSON file make sure it remains a valid array of entries.
 - **`Directory … missing required files: authors.csv,…`** – the dataset directory is incomplete; rerun `scripts/ingest_handcrafted.py data/handcrafted/database_systems outputs/world_model/state.sqlite --jsonl outputs/world_model/snapshot.jsonl` to rebuild snapshots.
 - **`Invalid scientific config …`** – `config/scientific_config.yaml` failed strict YAML parsing. Fix indentation/keys or pass a validated override via `--science-config`.
 - **Notebook section validation errors** – the publisher now checks that each `NotebookSectionInput.path` resolves to a readable markdown file; regenerate the artifact or provide inline content when sections are missing.
@@ -101,6 +101,12 @@ Validators fail fast before the orchestrator spins up, so fix the indicated file
 - The evaluator reads `config/scientific_config.yaml` by default, but you can override it per run with either the `COURSEGEN_SCIENCE_CONFIG` env var **or** the new `--science-config /path/to/custom.yaml` flag on `coursegen-poc`. Use this file to toggle the module entirely (`enabled: true/false`) or to disable individual metrics (e.g., `evaluation_metrics.blooms_taxonomy: false`). Disabled metrics no longer count toward the aggregate scores or prediction heuristics.
 - The manifest embeds both a trimmed `scientific_metrics` block (used by the CLI/portal cards) and the full artifact path under `scientific_metrics_artifact`, plus a `science_config_path` field so every run records the exact evaluator profile. The CLI’s `[artifacts]` hint now includes `science=/path/to/run-*-science.json` and `science_config=/abs/path/to/config/scientific_config.yaml`, making it easy to download the JSON and confirm the config in automation.
 - The portal API and frontend expose the same information. `/runs` and `/runs/{id}` responses carry `scientific_metrics` plus `scientific_metrics_artifact`, the trace file list includes a “Scientific evaluator” download, and the run detail page shows a “Download metrics JSON” button so reviewers can inspect the raw payload from the browser.
+
+**Runtime quizzes vs. static quiz banks**
+
+- `evaluation.generate_runtime_quiz` (default `true` in `config/pipeline.yaml`) tells the orchestrator to synthesize quiz questions directly from `concepts.yaml`/the world model. The resulting question objects (id, prompt, answer sketch, objectives) are handed directly to `StudentQuizEvaluator` via the new `questions=` parameter.
+- `runtime_quiz_limit` lets you cap the number of generated questions. When unset it falls back to `quiz_question_limit`.
+- When you intentionally switch the feature off (`generate_runtime_quiz: false`) the evaluator reverts to loading `quiz_bank.json`, so keep that file valid or expect the schema validation error noted above. Either way, the demo no longer depends on a pre-authored quiz bank.
 
 Notebook exports pull their defaults from environment variables that `coursegen-poc` now sets during bootstrap: `OPEN_NOTEBOOK_API_BASE`, `OPEN_NOTEBOOK_API_KEY`, `OPEN_NOTEBOOK_SLUG`, and (new) `OPEN_NOTEBOOK_EXPORT_DIR` which points at `<repo>/outputs/notebook_exports` unless you override it. The CodeAct `push_notebook_section` tool will fall back to these values whenever the orchestrator does not pass explicit overrides, so make sure the config’s `notebook` section is filled in before running against a real instance. If you intentionally run without a live Open Notebook API, just leave `OPEN_NOTEBOOK_API_BASE` unset—the exporter will drop JSONL entries into the default `outputs/notebook_exports` directory (or whatever you place in `OPEN_NOTEBOOK_EXPORT_DIR`); set `OPEN_NOTEBOOK_EXPORT_MIRROR=1` to mirror every API push to disk for auditing. Pass `--skip-notebook-create` (or set `OPEN_NOTEBOOK_AUTO_CREATE=0`) when you don’t have permission to create notebooks; otherwise the publisher calls the API once per run to ensure the slug exists and records the outcome as a “preflight” entry in the manifest. Each course plan and lecture is automatically chunked into notebook-friendly slices (≤5 plan sections, ≤3 lecture sections) before publishing so Open Notebook receives concise, cited notes. A dedicated FastAPI mock + httpx transport now lives in `tests/mocks/notebook_api.py`—use the `NotebookAPIMock.patch_open_notebook_client()` helper in tests such as `tests/test_pipeline_runtime.py`, `tests/test_cli_run_poc.py`, and `tests/test_open_notebook_tools.py` to exercise the full pipeline without an external server while still capturing note IDs. The CLI’s `[notebook]` hint now mirrors the manifest metadata via `notebook_export_summary`: successful pushes list the exported note IDs (or queued export paths when offline) so you can jump straight into the Notebook or debug failed attempts without opening the manifest.
 
@@ -147,8 +153,11 @@ Optional env vars:
 - `.env` secrets (OpenAI/Open Notebook keys, etc.) are loaded from `<repo>/.env` even when you invoke `coursegen-poc` from another directory, so keep that file up to date and avoid duplicating credentials in your shell profile.
 - `pytest` is scoped to `tests/` by default so vendor/rlm suites that depend on optional packages don’t fail local runs. To exercise vendor tests manually, run `PYTHONPATH=$PWD pytest vendor/rlm/tests` after installing the required extras.
 - Workstreams:
-  - **A:** Handcrafted dataset + world-model ingestion (issue `ccopilot-o78`).
-  - **B:** Orchestrator CLI + CodeAct sandbox (issue `ccopilot-syy`).
+ - **A:** Handcrafted dataset + world-model ingestion (issue `ccopilot-o78`).
+ - **B:** Orchestrator CLI + CodeAct sandbox (issue `ccopilot-syy`).
+
+Notes on handcrafted artifacts:
+- `data/handcrafted/database_systems/quiz_bank.json` and `course_outline.yaml` ship as **world-model reference material only**. With `evaluation.generate_runtime_quiz: true` (default in `config/pipeline.yaml`), the orchestrator synthesizes quiz prompts from the concept graph every run, so those files are purely optional seeds for ingestion/wm-inspect tooling.
 
 Refer to `docs/PLAN.md`, `docs/PoC.md`, and `docs/ARCHITECTURE.md` for detailed acceptance criteria.
 
