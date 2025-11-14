@@ -1,4 +1,5 @@
 """Ingest handcrafted Database Systems assets into the world-model store."""
+
 from __future__ import annotations
 
 import argparse
@@ -11,8 +12,7 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
-import yaml
-
+from ccopilot.core.validation import strict_validation
 from ccopilot.utils.split_fields import split_fields
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -115,7 +115,7 @@ def _load_datasets(source_dir: Path) -> Dict[str, Any]:
             raise ValueError(f"Paper {row['id']} references unknown authors: {missing}")
         row["author_list"] = ids
 
-    concepts_raw = yaml.safe_load((source_dir / "concepts.yaml").read_text(encoding="utf-8")) or {}
+    concepts_raw = _load_yaml_mapping(source_dir / "concepts.yaml")
     concepts = concepts_raw.get("concepts", {})
     if not isinstance(concepts, dict):
         raise ValueError("concepts.yaml must define a mapping under 'concepts'")
@@ -147,45 +147,28 @@ def _load_datasets(source_dir: Path) -> Dict[str, Any]:
         else:
             row.pop("citation_id", None)
         if citation_id and citation_id not in paper_ids:
-            raise ValueError(
-                f"Timeline entry {event_label} references unknown citation {citation_id}"
-            )
+            raise ValueError(f"Timeline entry {event_label} references unknown citation {citation_id}")
         for cid in related:
             if cid not in concepts:
-                raise ValueError(
-                    f"Timeline entry {event_label} references unknown concept {cid}"
-                )
+                raise ValueError(f"Timeline entry {event_label} references unknown concept {cid}")
 
-    quiz_bank = json.loads((source_dir / "quiz_bank.json").read_text(encoding="utf-8"))
+    quiz_bank = _load_quiz_bank(source_dir / "quiz_bank.json")
     for quiz in quiz_bank:
         for objective in quiz.get("learning_objectives", []):
             if objective not in concepts:
                 raise ValueError(f"Quiz item {quiz['id']} references unknown concept {objective}")
 
+    graph = _load_optional_yaml_mapping(source_dir / "graph.yaml")
 
-    graph_path = source_dir / "graph.yaml"
-    graph = yaml.safe_load(graph_path.read_text(encoding="utf-8")) if graph_path.exists() else {}
-
-    definitions_path = source_dir / "definitions.yaml"
-    definitions_data = (
-        yaml.safe_load(definitions_path.read_text(encoding="utf-8"))
-        if definitions_path.exists()
-        else {}
-    )
-    definitions_list = (
-        definitions_data.get("definitions", []) if isinstance(definitions_data, dict) else []
-    )
+    definitions_data = _load_optional_yaml_mapping(source_dir / "definitions.yaml")
+    definitions_list = definitions_data.get("definitions", []) if isinstance(definitions_data, dict) else []
     for entry in definitions_list:
         concept_ref = entry.get("concept")
         if concept_ref not in concepts:
-            raise ValueError(
-                f"Definition {entry.get('id')} references unknown concept {concept_ref}"
-            )
+            raise ValueError(f"Definition {entry.get('id')} references unknown concept {concept_ref}")
         citation_ref = entry.get("citation")
         if citation_ref and citation_ref not in paper_ids:
-            raise ValueError(
-                f"Definition {entry.get('id')} references unknown citation {citation_ref}"
-            )
+            raise ValueError(f"Definition {entry.get('id')} references unknown citation {citation_ref}")
 
     edge_list = graph.get("edges", []) if isinstance(graph, dict) else []
     for edge in edge_list:
@@ -195,32 +178,13 @@ def _load_datasets(source_dir: Path) -> Dict[str, Any]:
                 raise ValueError(f"Graph edge references unknown concept {cid}")
         for citation_id in edge.get("citations", []) or []:
             if citation_id not in paper_ids:
-                raise ValueError(
-                    "Graph edge ("
-                    f"{edge.get('source')} -> {edge.get('target')}) "
-                    f"cites unknown paper {citation_id}"
-                )
+                raise ValueError(f"Graph edge ({edge.get('source')} -> {edge.get('target')}) cites unknown paper {citation_id}")
 
-    citations_path = source_dir / "citations.yaml"
-    citations = (
-        yaml.safe_load(citations_path.read_text(encoding="utf-8"))
-        if citations_path.exists()
-        else {}
-    )
+    citations = _load_optional_yaml_mapping(source_dir / "citations.yaml")
 
-    taxonomy_path = source_dir / "taxonomy.yaml"
-    taxonomy = (
-        yaml.safe_load(taxonomy_path.read_text(encoding="utf-8"))
-        if taxonomy_path.exists()
-        else {}
-    )
+    taxonomy = _load_optional_yaml_mapping(source_dir / "taxonomy.yaml")
 
-    course_outline_path = source_dir / "course_outline.yaml"
-    course_outline = (
-        yaml.safe_load(course_outline_path.read_text(encoding="utf-8"))
-        if course_outline_path.exists()
-        else {}
-    )
+    course_outline = _load_optional_yaml_mapping(source_dir / "course_outline.yaml")
 
     return {
         "authors": authors,
@@ -236,6 +200,28 @@ def _load_datasets(source_dir: Path) -> Dict[str, Any]:
     }
 
 
+def _load_yaml_mapping(path: Path) -> Dict[str, Any]:
+    result = strict_validation.validate_yaml_file(path)
+    data = result.data if result.data is not None else {}
+    if not isinstance(data, dict):
+        raise ValueError(f"{path} must contain a mapping at the root")
+    return data
+
+
+def _load_optional_yaml_mapping(path: Path) -> Dict[str, Any]:
+    if not path.exists():
+        return {}
+    return _load_yaml_mapping(path)
+
+
+def _load_quiz_bank(path: Path) -> List[Dict[str, Any]]:
+    result = strict_validation.validate_json_file(path)
+    data = result.data if result.data is not None else []
+    if not isinstance(data, list):
+        raise ValueError(f"Quiz bank at {path} must be a list of quiz items")
+    return data
+
+
 def _load_csv(path: Path) -> List[Dict[str, str]]:
     if not path.exists():
         raise FileNotFoundError(f"Expected CSV at {path}")
@@ -243,10 +229,7 @@ def _load_csv(path: Path) -> List[Dict[str, str]]:
         reader = csv.DictReader(handle)
         rows: List[Dict[str, str]] = []
         for row in reader:
-            cleaned = {
-                key: (value.strip() if isinstance(value, str) else value)
-                for key, value in row.items()
-            }
+            cleaned = {key: (value.strip() if isinstance(value, str) else value) for key, value in row.items()}
             has_value = False
             for value in cleaned.values():
                 if isinstance(value, str) and value.strip():
@@ -349,17 +332,14 @@ def _insert_relationships(conn: sqlite3.Connection, concepts: Dict[str, Dict[str
     for concept_id, payload in concepts.items():
         parent = payload.get("parent")
         if parent:
-            relations.append(
-                (concept_id, parent, "is_part_of", "Declared parent-child relationship")
-            )
+            relations.append((concept_id, parent, "is_part_of", "Declared parent-child relationship"))
         for prereq in payload.get("prerequisites", []) or []:
             if prereq not in concepts:
                 raise ValueError(f"Concept {concept_id} lists unknown prerequisite {prereq}")
             relations.append((prereq, concept_id, "prerequisite", "Concept prerequisite graph"))
     if relations:
         conn.executemany(
-            "INSERT INTO relationships (source_id, target_id, relation_type, justification) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO relationships (source_id, target_id, relation_type, justification) VALUES (?, ?, ?, ?)",
             relations,
         )
     LOGGER.info("Inserted %d relationships", len(relations))
@@ -403,8 +383,7 @@ def _insert_claims(
         )
     if claim_rows:
         conn.executemany(
-            "INSERT INTO claims (subject_id, body, citation, created_by, provenance, confidence) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO claims (subject_id, body, citation, created_by, provenance, confidence) VALUES (?, ?, ?, ?, ?, ?)",
             claim_rows,
         )
     LOGGER.info("Inserted %d claims", len(claim_rows))
@@ -428,8 +407,7 @@ def _insert_graph_edges(conn: sqlite3.Connection, edges: List[Dict[str, Any]]) -
         rows.append((source, target, relation_type, description))
     if rows:
         conn.executemany(
-            "INSERT INTO relationships (source_id, target_id, relation_type, justification) "
-            "VALUES (?, ?, ?, ?)",
+            "INSERT INTO relationships (source_id, target_id, relation_type, justification) VALUES (?, ?, ?, ?)",
             rows,
         )
         LOGGER.info("Inserted %d graph edges", len(rows))
@@ -456,8 +434,7 @@ def _insert_timeline(
             rows.append((year, event_label, description, concept_id, citation))
     if rows:
         conn.executemany(
-            "INSERT INTO observations (event_year, event_label, summary, "
-            "related_concept, citation) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO observations (event_year, event_label, summary, related_concept, citation) VALUES (?, ?, ?, ?, ?)",
             rows,
         )
     LOGGER.info("Inserted %d timeline observations", len(rows))

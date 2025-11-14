@@ -8,8 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Sequence
 
-import yaml
-
+from ccopilot.core.validation import ValidationFailure, strict_validation
 from ccopilot.utils.split_fields import split_fields
 
 from .dataset_paths import resolve_dataset_root
@@ -197,8 +196,10 @@ class Explainer:
 
     @staticmethod
     def _load_yaml(path: Path) -> Dict[str, object]:
-        with path.open("r", encoding="utf-8") as handle:
-            data = yaml.safe_load(handle) or {}
+        try:
+            data = strict_validation.validate_yaml_file(path).data or {}
+        except ValidationFailure as exc:
+            raise ValueError(f"Invalid YAML at {path}: {exc}") from exc
         if not isinstance(data, dict):
             return {}
         return data

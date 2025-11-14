@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Sequence
 
 from apps.codeact.tools.open_notebook import ensure_notebook_exists, push_notebook_section
+from ccopilot.core.validation import ValidationFailure, strict_validation
+
+LOGGER = logging.getLogger(__name__)
 
 _CITATION_PATTERN = re.compile(r"\[([^\]]+)\]")
 _ZERO_WIDTH_PREFIXES = "\ufeff\u200b\u200c\u200d\u2060\u202a\u202b\u202c\u202d\u202e"
@@ -69,8 +73,40 @@ class NotebookPublisher:
         if preflight_entry is not None:
             results.append(preflight_entry)
         for section in sections:
-            markdown = self._resolve_markdown(section)
+            try:
+                markdown = self._resolve_markdown(section)
+            except FileNotFoundError:
+                LOGGER.error("Notebook section path missing: %s", section.path)
+                results.append(
+                    {
+                        "title": section.title or "Notebook Section",
+                        "path": str(section.path) if section.path else None,
+                        "response": {"status": "skipped", "reason": "missing_markdown"},
+                    }
+                )
+                continue
+            except OSError as exc:  # pragma: no cover - defensive
+                LOGGER.error("Unable to read notebook section %s: %s", section.path, exc)
+                results.append(
+                    {
+                        "title": section.title or "Notebook Section",
+                        "path": str(section.path) if section.path else None,
+                        "response": {"status": "error", "error": str(exc)},
+                    }
+                )
+                continue
+            except ValidationFailure as exc:
+                LOGGER.error("Notebook section failed validation %s: %s", section.path, exc)
+                results.append(
+                    {
+                        "title": section.title or "Notebook Section",
+                        "path": str(section.path) if section.path else None,
+                        "response": {"status": "error", "error": str(exc)},
+                    }
+                )
+                continue
             if markdown is None:
+                LOGGER.warning("Empty notebook section skipped: %s", section.path)
                 continue
             title = self._resolve_title(section, markdown)
             citations = _extract_citations(markdown)
@@ -167,7 +203,12 @@ class NotebookPublisher:
         if section.path is None:
             return None
         if not section.path.exists():
-            return None
+            raise FileNotFoundError(section.path)
+        try:
+            strict_validation.validate_file_exists(section.path)
+        except ValidationFailure:
+            # Re-raise so callers can log the precise validation failure message
+            raise
         return section.path.read_text(encoding="utf-8")
 
     def _resolve_title(self, section: NotebookSectionInput, markdown: str) -> str:

@@ -1,4 +1,5 @@
 """Data-related helper tools surfaced to CodeAct."""
+
 from __future__ import annotations
 
 import json
@@ -9,7 +10,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import duckdb
-import yaml
+
+from ccopilot.core.validation import ValidationFailure, strict_validation
 
 logger = logging.getLogger("coursegen.codeact.data")
 
@@ -72,13 +74,13 @@ def load_dataset_asset(name: str, base_dir: Path | None = None) -> dict[str, Any
     suffix = asset_path.suffix.lower()
     if suffix in {".yaml", ".yml"}:
         try:
-            data = yaml.safe_load(text) or {}
-            if isinstance(data, dict):
-                return data
-            return {"asset": name, "data": data}
-        except yaml.YAMLError as exc:  # noqa: PERF203 - informative log
+            data = strict_validation.validate_yaml_file(asset_path).data or {}
+        except ValidationFailure as exc:  # noqa: PERF203 - informative log
             logger.warning("Failed to parse YAML asset %s: %s", asset_path, exc)
             return {"asset": name, "content": text}
+        if isinstance(data, dict):
+            return data
+        return {"asset": name, "data": data}
 
     try:
         return json.loads(text)
@@ -141,15 +143,9 @@ def _register_dataset_tables(conn: duckdb.DuckDBPyConnection, dataset_dir: Path)
             continue
         escaped = str(asset_path).replace("'", "''")
         if fmt == "csv":
-            conn.execute(
-                f"CREATE OR REPLACE TEMP VIEW \"{table_name}\" AS "
-                f"SELECT * FROM read_csv_auto('{escaped}', HEADER=TRUE)"
-            )
+            conn.execute(f"CREATE OR REPLACE TEMP VIEW \"{table_name}\" AS SELECT * FROM read_csv_auto('{escaped}', HEADER=TRUE)")
         elif fmt == "json":
-            conn.execute(
-                f"CREATE OR REPLACE TEMP VIEW \"{table_name}\" AS "
-                f"SELECT * FROM read_json_auto('{escaped}')"
-            )
+            conn.execute(f"CREATE OR REPLACE TEMP VIEW \"{table_name}\" AS SELECT * FROM read_json_auto('{escaped}')")
         else:
             logger.warning("Unsupported dataset format %s for table %s", fmt, table_name)
     _register_concepts_table(conn, dataset_dir / "concepts.yaml")
@@ -235,7 +231,11 @@ def _register_graph_table(conn: duckdb.DuckDBPyConnection, graph_path: Path) -> 
 def _load_concept_rows(path: Path) -> List[tuple[str, str | None, str | None, str | None, str, str]]:
     if not path.exists():
         return []
-    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    try:
+        data = strict_validation.validate_yaml_file(path).data or {}
+    except ValidationFailure as exc:
+        logger.warning("Invalid concepts asset %s: %s", path, exc)
+        return []
     concepts = data.get("concepts", {}) if isinstance(data, dict) else {}
     rows: List[tuple[str, str | None, str | None, str | None, str, str]] = []
     for concept_id, payload in concepts.items():
@@ -255,7 +255,11 @@ def _load_concept_rows(path: Path) -> List[tuple[str, str | None, str | None, st
 def _load_domain_rows(path: Path) -> List[tuple[str | None, str | None, str | None, str | None, str]]:
     if not path.exists():
         return []
-    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    try:
+        data = strict_validation.validate_yaml_file(path).data or {}
+    except ValidationFailure as exc:
+        logger.warning("Invalid taxonomy asset %s: %s", path, exc)
+        return []
     domains = data.get("domains", []) if isinstance(data, dict) else []
     rows: List[tuple[str | None, str | None, str | None, str | None, str]] = []
     for domain in domains:
@@ -280,7 +284,11 @@ def _load_domain_rows(path: Path) -> List[tuple[str | None, str | None, str | No
 def _load_definition_rows(path: Path) -> List[tuple[str | None, str | None, str | None, str | None, str | None]]:
     if not path.exists():
         return []
-    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    try:
+        data = strict_validation.validate_yaml_file(path).data or {}
+    except ValidationFailure as exc:
+        logger.warning("Invalid definitions asset %s: %s", path, exc)
+        return []
     entries = data.get("definitions", []) if isinstance(data, dict) else []
     rows: List[tuple[str | None, str | None, str | None, str | None, str | None]] = []
     for entry in entries:
@@ -299,7 +307,11 @@ def _load_definition_rows(path: Path) -> List[tuple[str | None, str | None, str 
 def _load_graph_rows(path: Path) -> List[tuple[str | None, str | None, str | None, str | None, str]]:
     if not path.exists():
         return []
-    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    try:
+        data = strict_validation.validate_yaml_file(path).data or {}
+    except ValidationFailure as exc:
+        logger.warning("Invalid graph asset %s: %s", path, exc)
+        return []
     edges = data.get("edges", []) if isinstance(data, dict) else []
     rows: List[tuple[str | None, str | None, str | None, str | None, str]] = []
     for edge in edges:

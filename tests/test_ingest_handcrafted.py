@@ -174,3 +174,19 @@ def test_ingest_preserves_existing_store_on_failure(tmp_path: Path) -> None:
         ingest.ingest(broken_dir, store_path)
 
     assert store_path.read_bytes() == original_bytes
+
+
+def test_load_datasets_rejects_non_mapping_concepts(tmp_path: Path) -> None:
+    dataset_dir = _write_minimal_dataset(tmp_path)
+    (dataset_dir / "concepts.yaml").write_text("- not-a-map\n", encoding="utf-8")
+
+    with pytest.raises(ValueError):
+        ingest._load_datasets(dataset_dir)
+
+
+def test_load_datasets_rejects_non_list_quiz_bank(tmp_path: Path) -> None:
+    dataset_dir = _write_minimal_dataset(tmp_path)
+    (dataset_dir / "quiz_bank.json").write_text("{}", encoding="utf-8")
+
+    with pytest.raises(ValueError):
+        ingest._load_datasets(dataset_dir)

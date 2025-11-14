@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import yaml
+from ccopilot.core.validation import ValidationFailure, strict_validation
 
 LOGGER = logging.getLogger("coursegen.hypothesis")
 
@@ -55,8 +55,11 @@ class CourseGenHypothesisGenerator:
     def _load_config(self) -> Dict[str, Any]:
         """Load scientific configuration."""
         if self.config_path.exists():
-            with open(self.config_path, "r") as f:
-                return yaml.safe_load(f) or {}
+            try:
+                return strict_validation.validate_yaml_file(self.config_path).data or {}
+            except ValidationFailure as exc:
+                LOGGER.error("Invalid scientific config %s: %s", self.config_path, exc)
+                raise ValueError(f"Invalid scientific config: {self.config_path}") from exc
         return self._default_config()
 
     def _default_config(self) -> Dict[str, Any]:

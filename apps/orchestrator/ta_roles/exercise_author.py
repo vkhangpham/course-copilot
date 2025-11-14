@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Sequence
 
-import yaml
+from ccopilot.core.validation import ValidationFailure, strict_validation
 
 from .dataset_paths import resolve_dataset_root
 
@@ -68,13 +67,20 @@ class ExerciseAuthor:
         path = self.dataset_root / "quiz_bank.json"
         if not path.exists():
             raise FileNotFoundError(path)
-        return json.loads(path.read_text(encoding="utf-8"))
+        result = strict_validation.validate_json_file(path)
+        data = result.data if result.data is not None else []
+        if not isinstance(data, list):
+            raise ValueError(f"Quiz bank at {path} must contain a list of quiz entries")
+        return data
 
     def _concept_summary_map(self) -> Dict[str, str]:
         concepts_path = self.dataset_root / "concepts.yaml"
         if not concepts_path.exists():
             return defaultdict(lambda: "Apply the concept in practice")
-        data = yaml.safe_load(concepts_path.read_text(encoding="utf-8")) or {}
+        try:
+            data = strict_validation.validate_yaml_file(concepts_path).data or {}
+        except ValidationFailure as exc:
+            raise ValueError(f"Invalid concepts.yaml: {exc}") from exc
         concepts = data.get("concepts") if isinstance(data, dict) else None
         if not isinstance(concepts, dict):
             return defaultdict(lambda: "Apply the concept in practice")

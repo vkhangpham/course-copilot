@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import List
 
 import pytest
@@ -64,3 +65,38 @@ def test_extract_citations_preserves_original_casing() -> None:
     citations = _extract_citations(markdown)
 
     assert citations == ["Garcia, 2021", "SQL2003"]
+
+
+def test_resolve_markdown_raises_for_missing_file(tmp_path: Path) -> None:
+    publisher = NotebookPublisher(notebook_slug="slug", auto_create=False)
+    section = NotebookSectionInput(title="Missing", path=tmp_path / "missing.md")
+
+    with pytest.raises(FileNotFoundError):
+        publisher._resolve_markdown(section)
+
+
+def test_publish_records_missing_markdown(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    publisher = NotebookPublisher(notebook_slug="slug")
+    section = NotebookSectionInput(title="Missing", path=tmp_path / "missing.md")
+
+    with caplog.at_level("ERROR"):
+        results = publisher.publish([section])
+
+    assert results
+    last_entry = results[-1]
+    assert last_entry["response"]["status"] == "skipped"
+    assert last_entry["response"]["reason"] == "missing_markdown"
+
+
+def test_publish_handles_non_file_sections(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
+    publisher = NotebookPublisher(notebook_slug="slug")
+    directory_path = tmp_path / "dir_section"
+    directory_path.mkdir()
+    section = NotebookSectionInput(title="Dir", path=directory_path)
+
+    with caplog.at_level("ERROR"):
+        results = publisher.publish([section])
+
+    assert any("failed validation" in record.message for record in caplog.records)
+    last_entry = results[-1]
+    assert last_entry["response"]["status"] == "error"

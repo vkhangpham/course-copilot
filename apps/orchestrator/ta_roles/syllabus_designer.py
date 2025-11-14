@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List
 
-import yaml
+from ccopilot.core.validation import ValidationFailure, strict_validation
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass
@@ -46,8 +49,9 @@ class SyllabusDesigner:
     def _load_taxonomy(self, dataset_root: Path) -> Dict[str, object]:
         taxonomy_path = dataset_root / "taxonomy.yaml"
         if not taxonomy_path.exists():
+            LOGGER.warning("taxonomy.yaml missing at %s; falling back to defaults", taxonomy_path)
             return {}
-        return self._load_yaml(taxonomy_path)
+        return self._load_yaml(taxonomy_path, label="taxonomy")
 
     def _modules_from_taxonomy_modules(self, taxonomy: Dict[str, object]) -> List[WeeklyModule]:
         modules_payload = taxonomy.get("modules")
@@ -57,8 +61,9 @@ class SyllabusDesigner:
         modules: List[WeeklyModule] = []
         for idx, entry in enumerate(modules_payload, start=1):
             if not isinstance(entry, dict):
+                LOGGER.warning("Ignoring non-dict module entry at index %s: %r", idx, entry)
                 continue
-            week_number = int(entry.get("week") or idx)
+            week_number = self._safe_week_number(entry.get("week"), default=idx)
             title = entry.get("title") or entry.get("id") or f"Week {week_number}"
             outcomes = self._string_list(entry.get("learning_objectives") or entry.get("outcomes") or entry.get("focus"))
             if not outcomes and entry.get("focus"):
@@ -82,6 +87,7 @@ class SyllabusDesigner:
         modules: List[WeeklyModule] = []
         for idx, domain in enumerate(domains, start=1):
             if not isinstance(domain, dict):
+                LOGGER.warning("Ignoring non-dict domain entry at index %s: %r", idx, domain)
                 continue
             title = domain.get("title") or domain.get("id") or f"Module {idx}"
             concepts = self._string_list(domain.get("concepts"))
@@ -98,12 +104,26 @@ class SyllabusDesigner:
         return modules
 
     @staticmethod
-    def _load_yaml(path: Path) -> Dict[str, object]:
-        with path.open("r", encoding="utf-8") as handle:
-            data = yaml.safe_load(handle) or {}
+    def _load_yaml(path: Path, *, label: str = "payload") -> Dict[str, object]:
+        try:
+            data = strict_validation.validate_yaml_file(path).data or {}
+        except ValidationFailure as exc:
+            LOGGER.error("Invalid YAML in %s (%s): %s", label, path, exc)
+            raise ValueError(f"Invalid YAML in {label}: {path}") from exc
         if not isinstance(data, dict):
-            return {}
+            LOGGER.error("%s (%s) did not contain a mapping", label, path)
+            raise ValueError(f"{label} must be a mapping: {path}")
         return data
+
+    @staticmethod
+    def _safe_week_number(value: object, *, default: int) -> int:
+        if value is None:
+            return default
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            LOGGER.warning("Invalid week value %r; using default %s", value, default)
+            return default
 
     @staticmethod
     def _string_list(values: Iterable[str] | None) -> List[str]:
