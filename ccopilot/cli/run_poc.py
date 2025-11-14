@@ -153,7 +153,7 @@ def main(argv: list[str] | None = None) -> int:
         _print_highlight_hint(artifacts, quiet=args.quiet)
         _print_notebook_hint(artifacts, quiet=args.quiet)
         _print_artifact_summary(artifacts, quiet=args.quiet)
-    except (FileNotFoundError, ValidationFailure) as exc:
+    except (FileNotFoundError, ValidationFailure, ValueError) as exc:
         parser.error(str(exc))
     except Exception as exc:  # noqa: BLE001 - bubble up to CLI for now
         print(f"[run_poc] error: {exc}", file=sys.stderr)
@@ -335,7 +335,16 @@ def _print_notebook_hint(artifacts: PipelineRunArtifacts | None, *, quiet: bool 
         elif queued_paths:
             detail = f" (queued at {', '.join(queued_paths)})"
         elif failures:
-            detail = f" ({len(failures)} skipped; see manifest)"
+            error_count = sum(1 for resp in failures if str(resp.get("status", "")).lower() == "error")
+            skipped_count = sum(1 for resp in failures if str(resp.get("status", "")).lower() == "skipped")
+            labels: list[str] = []
+            if error_count:
+                labels.append(f"{error_count} error{'s' if error_count != 1 else ''}")
+            if skipped_count:
+                labels.append(f"{skipped_count} skipped")
+            if not labels:
+                labels.append(f"{len(failures)} issue(s)")
+            detail = f" ({', '.join(labels)}; see manifest)"
         print(f"[notebook] exported {success_count or len(successes)}/{total} sections -> {slug_display}{detail}")
     else:
         status = responses[0].get("status", "error")
