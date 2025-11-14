@@ -49,15 +49,34 @@ class WorldModelTools:
 
         raise KeyError(f"Concept not found: {concept_id}")
 
-    def list_concepts(self) -> List[Dict[str, Any]]:
-        """Enumerate concepts, preferring the authoritative store when present."""
+    def list_concepts(
+        self,
+        *,
+        topic: str | None = None,
+        limit: int | None = None,
+    ) -> List[Dict[str, Any]]:
+        """Enumerate concepts with optional filtering.
 
-        records = self._fetch_from_store()
+        Parameters
+        ----------
+        topic:
+            Optional identifier/name fragment to filter by. Matches are case-insensitive
+            and check both concept ids and names.
+        limit:
+            Maximum number of rows to return. ``None`` preserves all matches.
+        """
+
+        normalized_topic = self._normalize_topic(topic)
+        records = self._fetch_from_store(topic=normalized_topic)
         if records:
-            return [self._merge_dataset_metadata(record) for record in records]
+            merged = [self._merge_dataset_metadata(record) for record in records]
+            if normalized_topic:
+                merged = [entry for entry in merged if self._matches_topic(entry, normalized_topic)]
+            return self._apply_limit(merged, limit)
 
         dataset_map = self._load_dataset_concepts()
-        return [dataset_map[key] for key in sorted(dataset_map.keys())]
+        filtered = self._iter_dataset_concepts(dataset_map, normalized_topic)
+        return self._apply_limit(filtered, limit)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -95,6 +114,19 @@ class WorldModelTools:
                 return payload
         return None
 
+    def _iter_dataset_concepts(
+        self,
+        dataset_map: dict[str, dict[str, Any]],
+        topic: str | None,
+    ) -> List[Dict[str, Any]]:
+        records: List[Dict[str, Any]] = []
+        for key in sorted(dataset_map.keys()):
+            payload = dataset_map[key]
+            if topic and not self._matches_topic(payload, topic):
+                continue
+            records.append(payload)
+        return records
+
     def _load_dataset_concepts(self) -> dict[str, dict[str, Any]]:
         if self._dataset_cache is not None:
             return self._dataset_cache
@@ -121,6 +153,13 @@ class WorldModelTools:
         if not identifier:
             return ""
         return identifier.strip()
+
+    @staticmethod
+    def _normalize_topic(topic: str | None) -> str | None:
+        if topic is None:
+            return None
+        normalized = topic.strip()
+        return normalized or None
 
     @staticmethod
     def _normalize_dataset_payload(concept_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -152,3 +191,16 @@ class WorldModelTools:
         if not merged.get("children") and meta.get("children"):
             merged["children"] = meta["children"]
         return merged
+
+    @staticmethod
+    def _matches_topic(payload: Dict[str, Any], topic: str) -> bool:
+        lowered = topic.lower()
+        if payload.get("id", "").lower().find(lowered) != -1:
+            return True
+        return payload.get("name", "").lower().find(lowered) != -1
+
+    @staticmethod
+    def _apply_limit(records: List[Dict[str, Any]], limit: int | None) -> List[Dict[str, Any]]:
+        if limit is None or limit < 0:
+            return records
+        return records[:limit]

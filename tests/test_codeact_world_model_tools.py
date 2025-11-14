@@ -253,3 +253,18 @@ def test_world_model_tools_list_concepts_merges_metadata(tmp_path: Path) -> None
     concepts = tools.list_concepts()
     relational = next(c for c in concepts if c["id"] == "relational_model")
     assert relational["canonical_sources"], "list_concepts should merge dataset canonical sources"
+
+
+def test_world_model_tools_list_concepts_topic_filter(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    tools = WorldModelTools(DATASET, store_path=store)
+    transactions = tools.list_concepts(topic="transaction", limit=5)
+    assert transactions, "Expected topic filter to yield matches"
+    assert any("transaction" in entry["id"] or "transaction" in entry["name"].lower() for entry in transactions)
+
+
+def test_world_model_tools_list_concepts_respects_limit(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    tools = WorldModelTools(DATASET, store_path=store)
+    subset = tools.list_concepts(limit=3)
+    assert len(subset) == 3

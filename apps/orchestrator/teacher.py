@@ -33,6 +33,7 @@ from apps.orchestrator.ta_roles.reading_curator import ReadingCurator
 from apps.orchestrator.ta_roles.syllabus_designer import SyllabusDesigner
 from apps.orchestrator.ta_roles.timeline_synthesizer import TimelineSynthesizer
 from ccopilot.core.provenance import ProvenanceEvent
+from ccopilot.core.validation import ValidationFailure
 from ccopilot.pipeline.context import PipelineContext
 
 from .shared_state import SharedStateHandles
@@ -1332,23 +1333,29 @@ class TeacherOrchestrator:
         if not publisher:
             return None
         sections: List[NotebookSectionInput] = []
-        sections.extend(
-            build_sections_from_markdown(
-                course_plan,
-                fallback_title=self._derive_course_plan_fallback(course_plan),
-                max_sections=5,
-            )
+        failure_entries: List[Dict[str, Any]] = []
+
+        course_sections, course_failures = self._collect_notebook_sections_for_export(
+            path=course_plan,
+            fallback_title=self._derive_course_plan_fallback(course_plan),
+            max_sections=5,
+            section_kind="course_plan",
         )
-        sections.extend(
-            build_sections_from_markdown(
-                lecture,
-                fallback_title=self._derive_lecture_fallback(lecture),
-                max_sections=3,
-            )
+        sections.extend(course_sections)
+        failure_entries.extend(course_failures)
+
+        lecture_sections, lecture_failures = self._collect_notebook_sections_for_export(
+            path=lecture,
+            fallback_title=self._derive_lecture_fallback(lecture),
+            max_sections=3,
+            section_kind="lecture",
         )
+        sections.extend(lecture_sections)
+        failure_entries.extend(lecture_failures)
         try:
             results = publisher.publish(sections)
-            return results or None
+            combined = failure_entries + (results or [])
+            return combined or None
         except ValueError as exc:
             self.logger.warning("Notebook export skipped: %s", exc)
             self._record_stage_error(
@@ -1356,7 +1363,7 @@ class TeacherOrchestrator:
                 "Notebook export skipped",
                 context={"error": str(exc)},
             )
-            return [
+            return failure_entries + [
                 {
                     "title": "notebook_export",
                     "path": None,
@@ -1370,13 +1377,89 @@ class TeacherOrchestrator:
                 "Notebook export failed",
                 context={"error": str(exc)},
             )
-            return [
+            return failure_entries + [
                 {
                     "title": "notebook_export",
                     "path": None,
                     "response": {"status": "error", "error": str(exc)},
                 }
             ]
+
+    def _collect_notebook_sections_for_export(
+        self,
+        *,
+        path: Path,
+        fallback_title: str,
+        max_sections: int,
+        section_kind: str,
+    ) -> tuple[List[NotebookSectionInput], List[Dict[str, Any]]]:
+        try:
+            sections = build_sections_from_markdown(
+                path,
+                fallback_title=fallback_title,
+                max_sections=max_sections,
+            )
+            return sections, []
+        except ValidationFailure as exc:
+            return [], [
+                self._notebook_section_error_entry(
+                    section_kind=section_kind,
+                    fallback_title=fallback_title,
+                    path=path,
+                    reason="validation_failure",
+                    error=str(exc),
+                )
+            ]
+        except FileNotFoundError as exc:  # pragma: no cover - defensive fallback
+            return [], [
+                self._notebook_section_error_entry(
+                    section_kind=section_kind,
+                    fallback_title=fallback_title,
+                    path=path,
+                    reason="missing_artifact",
+                    error=str(exc),
+                )
+            ]
+        except OSError as exc:  # pragma: no cover - defensive fallback
+            return [], [
+                self._notebook_section_error_entry(
+                    section_kind=section_kind,
+                    fallback_title=fallback_title,
+                    path=path,
+                    reason="read_error",
+                    error=str(exc),
+                )
+            ]
+
+    def _notebook_section_error_entry(
+        self,
+        *,
+        section_kind: str,
+        fallback_title: str,
+        path: Path,
+        reason: str,
+        error: str,
+    ) -> Dict[str, Any]:
+        self._record_stage_error(
+            "notebook_export",
+            f"{section_kind} notebook section unavailable",
+            context={
+                "path": str(path),
+                "reason": reason,
+                "error": error,
+            },
+        )
+        return {
+            "kind": "section_error",
+            "section": section_kind,
+            "title": fallback_title,
+            "path": str(path),
+            "response": {
+                "status": "error",
+                "reason": reason,
+                "error": error,
+            },
+        }
 
     def _build_notebook_publisher(self) -> NotebookPublisher | None:
         notebook_cfg = getattr(self.ctx.config, "notebook", None)

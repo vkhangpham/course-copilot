@@ -41,6 +41,7 @@ class TeacherRLMRun:
     prompt_path: Path
     actions: List[TeacherActionRecord]
     summary: str
+    reason: str | None = None
 
 
 @dataclass
@@ -50,6 +51,7 @@ class TeacherRLM:
     repl_factory: Callable[[], Any] | None = None
     tool_namespace: Dict[str, Callable[..., Any]] = field(default_factory=dict)
     console: Console = field(default_factory=Console)
+    action_log: List[TeacherActionRecord] = field(default_factory=list, init=False)
 
     def bootstrap(self) -> None:
         """Load the RLM REPL and inject the tool namespace."""
@@ -72,6 +74,19 @@ class TeacherRLM:
         if hasattr(self, "_repl"):
             setattr(self._repl, name, func)
 
+    def record_action(
+        self,
+        action: str,
+        target: str,
+        payload: Dict[str, Any],
+        result: Any,
+    ) -> TeacherActionRecord:
+        """Append a structured entry to the in-memory action log."""
+
+        record = TeacherActionRecord(action=action, target=target, payload=payload, result=result)
+        self.action_log.append(record)
+        return record
+
     def run(
         self,
         *,
@@ -88,6 +103,7 @@ class TeacherRLM:
             "[teacher] Starting loop",
             {"prompt": str(prompt_path), "tasks": len(tasks or [])},
         )
+        fallback_reason: str | None = None
         try:
             if hasattr(self, "_repl") and hasattr(self._repl, "completion"):
                 # TODO: invoke vendor RLM once the OpenAI plumbing is configured.
@@ -95,6 +111,7 @@ class TeacherRLM:
                 # so tests can run offline.
                 raise NotImplementedError("Vendor RLM execution not wired yet")
         except Exception as exc:  # pragma: no cover - guardrail
+            fallback_reason = str(exc)
             self.console.log(
                 "[teacher] Falling back to deterministic simulation",
                 f"reason={exc}",
@@ -108,6 +125,7 @@ class TeacherRLM:
             prompt_path=prompt_path,
             actions=actions,
             summary=summary,
+            reason=fallback_reason,
         )
 
     # ------------------------------------------------------------------

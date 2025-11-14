@@ -7,6 +7,8 @@ from types import SimpleNamespace
 import pytest
 
 from agents.ta_roles import DEFAULT_ROLES
+from agents.teacher_rlm import TeacherRLM
+from apps.orchestrator.notebook_publisher import NotebookSectionInput
 from apps.orchestrator.student_loop import MutationReason
 from apps.orchestrator.teacher import TeacherOrchestrator
 from ccopilot.core.ablation import AblationConfig
@@ -85,6 +87,17 @@ def _make_context(tmp_path: Path) -> PipelineContext:
         provenance=provenance,
         dspy_handles=DSPyModelHandles(teacher=object(), ta=object(), coder=object(), student=object()),
     )
+
+
+class RecordingTeacherRLM:
+    def __init__(self) -> None:
+        self._captured_actions: list[SimpleNamespace] = []
+        self.action_log: list[SimpleNamespace] = []
+
+    def record_action(self, action: str, role: str, payload: dict[str, object], result: dict[str, object]) -> None:
+        entry = SimpleNamespace(action=action, role=role, payload=payload, result=result)
+        self._captured_actions.append(entry)
+        self.action_log.append(entry)
 
 
 def _configure_eval_files(ctx: PipelineContext, tmp_path: Path) -> EvaluationConfig:
@@ -219,6 +232,7 @@ def test_recursion_ablation_keeps_notebook_exports_enabled(tmp_path: Path) -> No
 def test_teacher_hooks_expose_role_registry(tmp_path: Path, dataset_summary: dict[str, object]) -> None:
     ctx = _make_context(tmp_path)
     orch = TeacherOrchestrator(ctx)
+    orch.teacher_rlm = RecordingTeacherRLM()  # type: ignore[assignment]
     hooks = orch._build_teacher_hooks(world_model_highlights={})
     registry = hooks["list_ta_roles"]()
     assert isinstance(registry, list)
@@ -250,6 +264,7 @@ def test_codeact_offline_mode_uses_fallbacks(monkeypatch: pytest.MonkeyPatch, tm
 def test_request_ta_records_requester(tmp_path: Path, dataset_summary: dict[str, object]) -> None:
     ctx = _make_context(tmp_path)
     orch = TeacherOrchestrator(ctx)
+    orch.teacher_rlm = RecordingTeacherRLM()  # type: ignore[assignment]
     hooks = orch._build_teacher_hooks(world_model_highlights={})
     result = hooks["request_ta"]("SyllabusDesigner", requester="LectureAuthor", task={"week": 1})
     assert result.get("requested_by") == "LectureAuthor"
@@ -257,6 +272,51 @@ def test_request_ta_records_requester(tmp_path: Path, dataset_summary: dict[str,
         action.action == "spawn_ta" and action.payload.get("requested_by") == "LectureAuthor"
         for action in orch.teacher_rlm._captured_actions  # type: ignore[attr-defined]
     )
+
+
+def test_world_model_hooks_return_concepts(tmp_path: Path, dataset_summary: dict[str, object]) -> None:
+    ctx = _make_context(tmp_path)
+    orch = TeacherOrchestrator(ctx)
+    orch.teacher_rlm = TeacherRLM()
+
+    class _StubTools:
+        def query(self, concept_id: str) -> dict[str, str]:
+            if concept_id != "relational_model":
+                raise KeyError(concept_id)
+            return {"id": concept_id, "name": "Relational Model"}
+
+        def list_concepts(self, topic: str | None = None, limit: int | None = None) -> list[dict[str, str]]:
+            rows = [
+                {"id": "relational_model", "name": "Relational Model"},
+                {"id": "transactions", "name": "Transactions"},
+            ]
+            return rows if limit is None else rows[:limit]
+
+    orch._world_model_tools = _StubTools()  # type: ignore[attr-defined]
+    hooks = orch._build_teacher_hooks(world_model_highlights={})
+
+    result = hooks["wm_get"]("relational_model")
+    assert result["status"] == "ok"
+    assert result["concept"]["id"] == "relational_model"
+    assert orch.teacher_rlm.action_log[-1].action == "wm_get"
+
+    listing = hooks["wm_list"](topic="relational", limit=1)
+    assert listing["status"] == "ok"
+    assert len(listing["concepts"]) == 1
+    assert orch.teacher_rlm.action_log[-1].action == "wm_list"
+
+
+def test_world_model_hooks_handle_disabled_mode(tmp_path: Path, dataset_summary: dict[str, object]) -> None:
+    ctx = _make_context(tmp_path)
+    ctx.ablations.use_world_model = False
+    orch = TeacherOrchestrator(ctx)
+    orch.teacher_rlm = TeacherRLM()
+    hooks = orch._build_teacher_hooks(world_model_highlights={})
+
+    fetch_result = hooks["wm_get"]("relational_model")
+    list_result = hooks["wm_list"]()
+    assert fetch_result["status"] == "disabled"
+    assert list_result["status"] == "disabled"
 
 
 def test_build_teacher_tasks_covers_all_roles(tmp_path: Path, dataset_summary: dict[str, object]) -> None:
@@ -394,6 +454,7 @@ def test_stage_error_logged_when_rubrics_missing(tmp_path: Path) -> None:
 
 
 def test_stage_error_logged_when_student_loop_raises(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("COURSEGEN_DISABLE_LLM_STUDENTS", "1")
     ctx = _make_context(tmp_path)
     _configure_eval_files(ctx, tmp_path)
     lecture_path = tmp_path / "lecture.md"
@@ -412,6 +473,7 @@ def test_stage_error_logged_when_student_loop_raises(monkeypatch: pytest.MonkeyP
 
 
 def test_stage_error_logged_on_non_passing_status(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("COURSEGEN_DISABLE_LLM_STUDENTS", "1")
     ctx = _make_context(tmp_path)
     _configure_eval_files(ctx, tmp_path)
     lecture_path = tmp_path / "lecture.md"
@@ -507,6 +569,47 @@ def test_notebook_placeholder_reason_explains_missing_slug(tmp_path: Path, datas
     exports = manifest.get("notebook_exports") or []
     assert exports, "Expected placeholder notebook export"
     assert exports[0]["response"].get("reason") == "missing_notebook_slug"
+
+
+def test_publish_notebook_sections_reports_missing_plan(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    ctx = _make_context(tmp_path)
+    orch = TeacherOrchestrator(ctx)
+    ctx.paths.output_dir.mkdir(parents=True, exist_ok=True)
+    lecture_dir = ctx.paths.output_dir / "lectures"
+    lecture_dir.mkdir(parents=True, exist_ok=True)
+    lecture_path = lecture_dir / "module.md"
+    lecture_path.write_text("# Lecture\nBody", encoding="utf-8")
+    missing_plan = ctx.paths.output_dir / "course_plan.md"
+
+    class _StubPublisher:
+        def __init__(self) -> None:
+            self.calls: list[list[NotebookSectionInput]] = []
+
+        def publish(self, sections: list[NotebookSectionInput]) -> list[dict[str, object]]:
+            self.calls.append(list(sections))
+            payloads: list[dict[str, object]] = []
+            for idx, section in enumerate(sections, start=1):
+                payloads.append(
+                    {
+                        "title": section.title,
+                        "path": str(section.path) if section.path else None,
+                        "response": {"status": "ok", "note_id": f"note-{idx}"},
+                    }
+                )
+            return payloads
+
+    stub_publisher = _StubPublisher()
+    monkeypatch.setattr(TeacherOrchestrator, "_build_notebook_publisher", lambda self: stub_publisher)
+
+    exports = orch._publish_notebook_sections(missing_plan, lecture_path)
+
+    assert exports is not None
+    assert stub_publisher.calls, "Expected lecture sections to be sent to NotebookPublisher"
+    error_entries = [entry for entry in exports if entry.get("kind") == "section_error"]
+    assert error_entries, "Missing error entry for the absent course plan"
+    assert error_entries[0]["response"].get("reason") == "validation_failure"
+    assert error_entries[0]["section"] == "course_plan"
+    assert any(err["stage"] == "notebook_export" for err in orch.stage_errors)
 
 
 def test_world_model_highlights_source_reports_world_model(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
