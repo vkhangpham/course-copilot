@@ -5,11 +5,14 @@ from typing import List
 
 import pytest
 
+from apps.codeact.tools.open_notebook import _reset_auto_create_cache_for_testing
 from apps.orchestrator.notebook_publisher import (
     NotebookPublisher,
     NotebookSectionInput,
     _extract_citations,
+    build_sections_from_markdown,
 )
+from ccopilot.core.validation import ValidationFailure
 
 
 class StubExporter:
@@ -75,6 +78,19 @@ def test_resolve_markdown_raises_for_missing_file(tmp_path: Path) -> None:
         publisher._resolve_markdown(section)
 
 
+def test_build_sections_from_markdown_requires_existing_file(tmp_path: Path) -> None:
+    with pytest.raises(ValidationFailure):
+        build_sections_from_markdown(tmp_path / "missing.md", "Fallback")
+
+
+def test_build_sections_from_markdown_rejects_directories(tmp_path: Path) -> None:
+    directory = tmp_path / "dir"
+    directory.mkdir()
+
+    with pytest.raises(ValidationFailure):
+        build_sections_from_markdown(directory, "Dir")
+
+
 def test_publish_records_missing_markdown(tmp_path: Path, caplog: pytest.LogCaptureFixture) -> None:
     publisher = NotebookPublisher(notebook_slug="slug")
     section = NotebookSectionInput(title="Missing", path=tmp_path / "missing.md")
@@ -100,3 +116,46 @@ def test_publish_handles_non_file_sections(tmp_path: Path, caplog: pytest.LogCap
     assert any("failed validation" in record.message for record in caplog.records)
     last_entry = results[-1]
     assert last_entry["response"]["status"] == "error"
+
+
+def test_preflight_marks_notebook_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    _reset_auto_create_cache_for_testing()
+    import apps.codeact.tools.open_notebook as open_nb
+
+    orig_ensure = open_nb.ensure_notebook_exists
+    ensure_calls: list[tuple[str | None, str | None]] = []
+
+    def tracking_ensure(**kwargs):
+        ensure_calls.append((kwargs.get("api_base"), kwargs.get("notebook_slug")))
+        return orig_ensure(**kwargs)
+
+    monkeypatch.setattr(open_nb, "ensure_notebook_exists", tracking_ensure)
+    monkeypatch.setattr("apps.orchestrator.notebook_publisher.ensure_notebook_exists", tracking_ensure)
+
+    class FakeClient:
+        def __init__(self, config, *, client=None, timeout: float = 30.0) -> None:  # noqa: D401 - test stub
+            self._config = config
+            self._owns_client = True
+
+        def push_note(self, notebook_id: str, title: str, content_md: str, citations: list[str]) -> dict:
+            return {"status": "ok", "notebook": notebook_id, "note_id": f"{notebook_id}-0001"}
+
+        def ensure_notebook(self, notebook_id: str, *, description: str | None = None) -> dict:
+            return {"status": "created", "notebook": notebook_id, "description": description}
+
+        def close(self) -> None:  # pragma: no cover - no-op for test stub
+            pass
+
+    monkeypatch.setattr(open_nb, "OpenNotebookClient", FakeClient)
+
+    publisher = NotebookPublisher(
+        notebook_slug="test-notebook",
+        api_base="https://api.notebook.local",
+        api_key="token",
+        auto_create=True,
+    )
+    sections = [NotebookSectionInput(title="Plan", content="# Week 1\nBody")]
+
+    publisher.publish(sections)
+
+    assert ensure_calls == [("https://api.notebook.local", "test-notebook")]
