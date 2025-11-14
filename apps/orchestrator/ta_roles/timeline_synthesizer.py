@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, List, Sequence
 
+from ccopilot.utils.split_fields import split_fields
+
 
 @dataclass
 class TimelineEvent:
@@ -66,10 +68,7 @@ class TimelineSynthesizer:
 
     @staticmethod
     def _split_concepts(raw: str | None) -> List[str]:
-        if not raw:
-            return []
-        tokens = [token.strip() for token in raw.replace(";", ",").split(",")]
-        return [token for token in tokens if token]
+        return split_fields(raw)
 
     @staticmethod
     def _parse_year(value: str | None) -> int | None:

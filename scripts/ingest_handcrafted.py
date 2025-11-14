@@ -5,7 +5,6 @@ import argparse
 import csv
 import json
 import logging
-import re
 import sqlite3
 import sys
 from collections import OrderedDict
@@ -13,6 +12,8 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
 import yaml
+
+from ccopilot.utils.split_fields import split_fields
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -108,7 +109,7 @@ def _load_datasets(source_dir: Path) -> Dict[str, Any]:
         field = row.get("author_ids") or row.get("authors")
         if field is None:
             raise ValueError(f"Paper {row.get('id')} missing authors column")
-        ids = _split_list(field)
+        ids = split_fields(field)
         missing = [aid for aid in ids if aid not in author_ids]
         if missing:
             raise ValueError(f"Paper {row['id']} references unknown authors: {missing}")
@@ -130,7 +131,7 @@ def _load_datasets(source_dir: Path) -> Dict[str, Any]:
 
     timeline_rows = _load_csv(source_dir / "timeline.csv")
     for row in timeline_rows:
-        related = _split_list(row.get("related_concepts", ""))
+        related = split_fields(row.get("related_concepts", ""))
         row["concept_ids"] = related
         raw_event = row.get("event") or row.get("event_label")
         event_label = raw_event.strip() if isinstance(raw_event, str) else raw_event
@@ -257,13 +258,6 @@ def _load_csv(path: Path) -> List[Dict[str, str]]:
             if has_value:
                 rows.append(cleaned)
         return rows
-
-
-def _split_list(raw: str) -> List[str]:
-    if not raw:
-        return []
-    tokens = re.split(r"[;,]", raw)
-    return [token.strip() for token in tokens if token.strip()]
 
 
 # ---------------------------------------------------------------------------

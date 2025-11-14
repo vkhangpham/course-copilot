@@ -11,6 +11,7 @@ from typing import Dict, Iterable, List, Sequence
 import yaml
 
 from .dataset_paths import resolve_dataset_root
+from ccopilot.utils.split_fields import split_fields
 
 
 @dataclass
@@ -155,7 +156,7 @@ class Explainer:
                 if not isinstance(row, dict):
                     continue
                 related_raw = row.get("related_concepts") or row.get("concept_id") or ""
-                related = [token.strip() for token in related_raw.split(",") if token.strip()]
+                related = split_fields(related_raw)
                 if not related:
                     continue
                 event = {

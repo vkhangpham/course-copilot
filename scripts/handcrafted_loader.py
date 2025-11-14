@@ -8,9 +8,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Sequence
 
-import re
-
 import yaml
+
+from ccopilot.utils.split_fields import split_fields
 
 
 @dataclass
@@ -72,7 +72,7 @@ def validate_dataset(dataset: HandcraftedDataset) -> tuple[list[str], list[str]]
     # Validate papers -> authors
     for paper in dataset.papers:
         raw = paper.get("authors") or paper.get("author_ids") or ""
-        authors = _split(raw)
+        authors = split_fields(raw)
         missing = [aid for aid in authors if aid not in author_ids]
         if missing:
             errors.append(
@@ -127,7 +127,7 @@ def validate_dataset(dataset: HandcraftedDataset) -> tuple[list[str], list[str]]
         if isinstance(related_field, list):
             related = related_field
         else:
-            related = _split(row.get("related_concepts", ""))
+            related = split_fields(row.get("related_concepts", ""))
         for concept in related:
             if concept not in concept_ids:
                 errors.append(f"Timeline event '{event}' references unknown concept {concept}")
@@ -193,13 +193,6 @@ def _load_csv(path: Path, *, required: bool = True) -> list[dict[str, str]]:
                 continue
             rows.append(cleaned)
         return rows
-
-
-def _split(raw: str | None) -> list[str]:
-    if not raw:
-        return []
-    tokens = re.split(r"[;,]", raw)
-    return [token.strip() for token in tokens if token.strip()]
 
 
 def _unique_ids(rows: Sequence[dict[str, Any]], *, entity: str, errors: list[str]) -> set[str]:

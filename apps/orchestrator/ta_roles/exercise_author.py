@@ -42,7 +42,15 @@ class ExerciseAuthor:
             lo_tags = quiz.get("learning_objectives", []) or []
             if filter_set and not filter_set.intersection(tag.lower() for tag in lo_tags):
                 continue
-            summary_parts = [concept_summaries.get(tag, "Reinforce core concepts") for tag in lo_tags]
+
+            summary_parts = [
+                concept_summaries.get(tag.lower(), "Reinforce core concepts")
+                for tag in lo_tags
+                if isinstance(tag, str)
+            ]
+            if not summary_parts:
+                summary_parts = ["Reinforce core concepts"]
+
             description = quiz.get("prompt", "Solve the exercise.")
             outcome = "; ".join(summary_parts)
             exercises.append(
