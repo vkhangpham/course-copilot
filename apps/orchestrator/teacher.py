@@ -95,6 +95,7 @@ class TeacherOrchestrator:
         self._offline_codeact = _truthy_env("COURSEGEN_CODEACT_OFFLINE")
         self._latest_dataset_summary: Dict[str, Any] | None = None
         self._world_model_tools: WorldModelTools | None = None
+        self._world_model_store_path: Path | None = None
 
     @property
     def stage_errors(self) -> List[Dict[str, Any]]:
@@ -114,6 +115,7 @@ class TeacherOrchestrator:
         self._teacher_cache = {}
         self._stage_errors = []
         self._latest_dataset_summary = dataset_summary
+        self._set_world_model_store_path(world_model_store)
         ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
         output_dir = self.ctx.paths.output_dir
         lecture_dir = output_dir / "lectures"
@@ -565,7 +567,7 @@ class TeacherOrchestrator:
             try:
                 self._world_model_tools = WorldModelTools(
                     concept_root=self.shared_state.concept_root,
-                    store_path=self.ctx.config.world_model.sqlite_path,
+                    store_path=self._world_model_store_path or self.ctx.config.world_model.sqlite_path,
                 )
             except Exception as exc:  # pragma: no cover - defensive
                 self.logger.warning("World-model tools unavailable: %s", exc)
@@ -581,6 +583,13 @@ class TeacherOrchestrator:
         except (TypeError, ValueError):
             return None
         return parsed if parsed >= 0 else None
+
+    def _set_world_model_store_path(self, store_path: Path | None) -> None:
+        if store_path is None:
+            self._world_model_store_path = None
+        else:
+            self._world_model_store_path = Path(store_path).expanduser().resolve()
+        self._world_model_tools = None
 
     def _emit_course_plan(
         self,

@@ -319,6 +319,38 @@ def test_world_model_hooks_handle_disabled_mode(tmp_path: Path, dataset_summary:
     assert list_result["status"] == "disabled"
 
 
+def test_world_model_hook_tracks_runtime_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, dataset_summary: dict[str, object]) -> None:
+    ctx = _make_context(tmp_path)
+    orch = TeacherOrchestrator(ctx)
+    orch.teacher_rlm = TeacherRLM()
+
+    captured_paths: list[Path] = []
+
+    class RecorderTools:
+        def __init__(self, concept_root: Path, store_path: Path) -> None:
+            captured_paths.append(Path(store_path).resolve())
+
+        def query(self, concept_id: str) -> dict[str, str]:
+            return {"id": concept_id, "name": concept_id}
+
+        def list_concepts(self, topic: str | None = None, limit: int | None = None) -> list[dict[str, str]]:
+            return [{"id": "relational_model", "name": "Relational Model"}]
+
+    monkeypatch.setattr("apps.orchestrator.teacher.WorldModelTools", RecorderTools)
+
+    store_a = (tmp_path / "store_a.sqlite").resolve()
+    store_b = (tmp_path / "store_b.sqlite").resolve()
+
+    orch._set_world_model_store_path(store_a)  # type: ignore[attr-defined]
+    hooks = orch._build_teacher_hooks(world_model_highlights={})
+    hooks["wm_get"]("relational_model")
+    assert captured_paths[-1] == store_a
+
+    orch._set_world_model_store_path(store_b)  # type: ignore[attr-defined]
+    hooks["wm_get"]("relational_model")
+    assert captured_paths[-1] == store_b
+
+
 def test_build_teacher_tasks_covers_all_roles(tmp_path: Path, dataset_summary: dict[str, object]) -> None:
     ctx = _make_context(tmp_path)
     orch = TeacherOrchestrator(ctx)
