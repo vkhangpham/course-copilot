@@ -209,6 +209,7 @@ def test_world_model_tools_query_prefers_store(tmp_path: Path) -> None:
     concept = tools.query("relational_model")
     assert concept["id"] == "relational_model"
     assert concept["summary"], "expected summary from store-backed payload"
+    assert concept["canonical_sources"], "store results should inherit canonical sources"
 
 
 def test_world_model_tools_query_falls_back_to_dataset(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -236,3 +237,19 @@ def test_world_model_tools_unknown_concept(monkeypatch: pytest.MonkeyPatch, tmp_
     with pytest.raises(KeyError):
         tools.query("does_not_exist")
     monkeypatch.delenv("WORLD_MODEL_STORE", raising=False)
+
+
+def test_world_model_tools_dataset_children_populated(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("WORLD_MODEL_STORE", str(tmp_path / "missing_store.sqlite"))
+    tools = WorldModelTools(DATASET)
+    concept = tools.query("distributed")
+    assert concept["children"], "dataset fallback should expose child concepts"
+    monkeypatch.delenv("WORLD_MODEL_STORE", raising=False)
+
+
+def test_world_model_tools_list_concepts_merges_metadata(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    tools = WorldModelTools(DATASET, store_path=store)
+    concepts = tools.list_concepts()
+    relational = next(c for c in concepts if c["id"] == "relational_model")
+    assert relational["canonical_sources"], "list_concepts should merge dataset canonical sources"
