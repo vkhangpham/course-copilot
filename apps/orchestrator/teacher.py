@@ -20,11 +20,13 @@ from agents.teacher_rlm import (
 )
 from apps.codeact.registry import CodeActRegistry
 from apps.codeact.tools.world_model import fetch_concepts, lookup_paper, search_events
+from apps.codeact.tools_world_model import WorldModelTools
 from apps.orchestrator.notebook_publisher import (
     NotebookPublisher,
     NotebookSectionInput,
     build_sections_from_markdown,
 )
+from apps.orchestrator.runtime_quiz import generate_quiz_questions
 from apps.orchestrator.student_loop import MutationReason, StudentLoopConfig, StudentLoopRunner
 from apps.orchestrator.student_qa import StudentQuizEvaluator
 from apps.orchestrator.ta_roles.exercise_author import ExerciseAuthor
@@ -33,6 +35,7 @@ from apps.orchestrator.ta_roles.reading_curator import ReadingCurator
 from apps.orchestrator.ta_roles.syllabus_designer import SyllabusDesigner
 from apps.orchestrator.ta_roles.timeline_synthesizer import TimelineSynthesizer
 from ccopilot.core.provenance import ProvenanceEvent
+from ccopilot.core.validation import ValidationFailure
 from ccopilot.pipeline.context import PipelineContext
 
 from .shared_state import SharedStateHandles
@@ -92,6 +95,8 @@ class TeacherOrchestrator:
         self.ta_roles: Dict[str, TARoleSpec] = {role.name: role for role in DEFAULT_ROLES}
         self._offline_codeact = _truthy_env("COURSEGEN_CODEACT_OFFLINE")
         self._latest_dataset_summary: Dict[str, Any] | None = None
+        self._world_model_tools: WorldModelTools | None = None
+        self._world_model_store_path: Path | None = None
 
     @property
     def stage_errors(self) -> List[Dict[str, Any]]:
@@ -111,6 +116,7 @@ class TeacherOrchestrator:
         self._teacher_cache = {}
         self._stage_errors = []
         self._latest_dataset_summary = dataset_summary
+        self._set_world_model_store_path(world_model_store)
         ts = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
         output_dir = self.ctx.paths.output_dir
         lecture_dir = output_dir / "lectures"
@@ -448,6 +454,41 @@ class TeacherOrchestrator:
             self.teacher_rlm.record_action("wm_snapshot", "world_model", {}, snapshot)
             return snapshot
 
+        def wm_get(concept_id: str, **_kwargs: Any) -> Dict[str, Any]:
+            payload = {"concept_id": concept_id}
+            tools = self._get_world_model_tools()
+            if tools is None:
+                result: Dict[str, Any] = {"status": "disabled", **payload}
+            else:
+                try:
+                    concept = tools.query(concept_id)
+                except KeyError:
+                    result = {"status": "not_found", **payload}
+                except ValueError as exc:
+                    result = {"status": "error", "error": str(exc), **payload}
+                except Exception as exc:  # pragma: no cover - defensive
+                    result = {"status": "error", "error": str(exc), **payload}
+                else:
+                    result = {"status": "ok", "concept": concept}
+            self.teacher_rlm.record_action("wm_get", concept_id, payload, result)
+            return result
+
+        def wm_list(topic: str | None = None, limit: int | None = None, **_kwargs: Any) -> Dict[str, Any]:
+            tools = self._get_world_model_tools()
+            payload = {"topic": topic, "limit": limit}
+            if tools is None:
+                result: Dict[str, Any] = {"status": "disabled"}
+            else:
+                try:
+                    limit_value = self._coerce_limit(limit)
+                    concepts = tools.list_concepts(topic=topic, limit=limit_value)
+                except Exception as exc:  # pragma: no cover - defensive
+                    result = {"status": "error", "error": str(exc)}
+                else:
+                    result = {"status": "ok", "concepts": concepts}
+            self.teacher_rlm.record_action("wm_list", "concepts", payload, result)
+            return result
+
         return {
             "use_codeact": use_codeact,
             "spawn_ta": spawn_ta,
@@ -455,6 +496,8 @@ class TeacherOrchestrator:
             "list_ta_roles": list_ta_roles,
             "log_event": log_event,
             "wm_snapshot": wm_snapshot,
+            "wm_get": wm_get,
+            "wm_list": wm_list,
         }
 
     def _summarize_codeact_result(self, program_name: str, result: Any) -> Dict[str, Any]:
@@ -517,6 +560,37 @@ class TeacherOrchestrator:
         return result
 
     # ------------------------------------------------------------------
+
+    def _get_world_model_tools(self) -> WorldModelTools | None:
+        if not self.ctx.ablations.use_world_model:
+            return None
+        if self._world_model_tools is None:
+            try:
+                self._world_model_tools = WorldModelTools(
+                    concept_root=self.shared_state.concept_root,
+                    store_path=self._world_model_store_path or self.ctx.config.world_model.sqlite_path,
+                )
+            except Exception as exc:  # pragma: no cover - defensive
+                self.logger.warning("World-model tools unavailable: %s", exc)
+                self._world_model_tools = None
+        return self._world_model_tools
+
+    @staticmethod
+    def _coerce_limit(value: Any) -> int | None:
+        if value is None:
+            return None
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return None
+        return parsed if parsed >= 0 else None
+
+    def _set_world_model_store_path(self, store_path: Path | None) -> None:
+        if store_path is None:
+            self._world_model_store_path = None
+        else:
+            self._world_model_store_path = Path(store_path).expanduser().resolve()
+        self._world_model_tools = None
 
     def _emit_course_plan(
         self,
@@ -1053,7 +1127,7 @@ class TeacherOrchestrator:
         claims_payload = self._build_claim_payload(world_model_highlights)
         lecture_result = self._run_codeact_program(
             "DraftLectureSection",
-            module_payload=json.dumps(module_payload, indent=2),
+            module=json.dumps(module_payload, indent=2),
             claims=json.dumps(claims_payload, indent=2),
             role="LectureAuthor",
             lm_role="coder",
@@ -1332,23 +1406,29 @@ class TeacherOrchestrator:
         if not publisher:
             return None
         sections: List[NotebookSectionInput] = []
-        sections.extend(
-            build_sections_from_markdown(
-                course_plan,
-                fallback_title=self._derive_course_plan_fallback(course_plan),
-                max_sections=5,
-            )
+        failure_entries: List[Dict[str, Any]] = []
+
+        course_sections, course_failures = self._collect_notebook_sections_for_export(
+            path=course_plan,
+            fallback_title=self._derive_course_plan_fallback(course_plan),
+            max_sections=5,
+            section_kind="course_plan",
         )
-        sections.extend(
-            build_sections_from_markdown(
-                lecture,
-                fallback_title=self._derive_lecture_fallback(lecture),
-                max_sections=3,
-            )
+        sections.extend(course_sections)
+        failure_entries.extend(course_failures)
+
+        lecture_sections, lecture_failures = self._collect_notebook_sections_for_export(
+            path=lecture,
+            fallback_title=self._derive_lecture_fallback(lecture),
+            max_sections=3,
+            section_kind="lecture",
         )
+        sections.extend(lecture_sections)
+        failure_entries.extend(lecture_failures)
         try:
             results = publisher.publish(sections)
-            return results or None
+            combined = failure_entries + (results or [])
+            return combined or None
         except ValueError as exc:
             self.logger.warning("Notebook export skipped: %s", exc)
             self._record_stage_error(
@@ -1356,7 +1436,7 @@ class TeacherOrchestrator:
                 "Notebook export skipped",
                 context={"error": str(exc)},
             )
-            return [
+            return failure_entries + [
                 {
                     "title": "notebook_export",
                     "path": None,
@@ -1370,13 +1450,89 @@ class TeacherOrchestrator:
                 "Notebook export failed",
                 context={"error": str(exc)},
             )
-            return [
+            return failure_entries + [
                 {
                     "title": "notebook_export",
                     "path": None,
                     "response": {"status": "error", "error": str(exc)},
                 }
             ]
+
+    def _collect_notebook_sections_for_export(
+        self,
+        *,
+        path: Path,
+        fallback_title: str,
+        max_sections: int,
+        section_kind: str,
+    ) -> tuple[List[NotebookSectionInput], List[Dict[str, Any]]]:
+        try:
+            sections = build_sections_from_markdown(
+                path,
+                fallback_title=fallback_title,
+                max_sections=max_sections,
+            )
+            return sections, []
+        except ValidationFailure as exc:
+            return [], [
+                self._notebook_section_error_entry(
+                    section_kind=section_kind,
+                    fallback_title=fallback_title,
+                    path=path,
+                    reason="validation_failure",
+                    error=str(exc),
+                )
+            ]
+        except FileNotFoundError as exc:  # pragma: no cover - defensive fallback
+            return [], [
+                self._notebook_section_error_entry(
+                    section_kind=section_kind,
+                    fallback_title=fallback_title,
+                    path=path,
+                    reason="missing_artifact",
+                    error=str(exc),
+                )
+            ]
+        except OSError as exc:  # pragma: no cover - defensive fallback
+            return [], [
+                self._notebook_section_error_entry(
+                    section_kind=section_kind,
+                    fallback_title=fallback_title,
+                    path=path,
+                    reason="read_error",
+                    error=str(exc),
+                )
+            ]
+
+    def _notebook_section_error_entry(
+        self,
+        *,
+        section_kind: str,
+        fallback_title: str,
+        path: Path,
+        reason: str,
+        error: str,
+    ) -> Dict[str, Any]:
+        self._record_stage_error(
+            "notebook_export",
+            f"{section_kind} notebook section unavailable",
+            context={
+                "path": str(path),
+                "reason": reason,
+                "error": error,
+            },
+        )
+        return {
+            "kind": "section_error",
+            "section": section_kind,
+            "title": fallback_title,
+            "path": str(path),
+            "response": {
+                "status": "error",
+                "reason": reason,
+                "error": error,
+            },
+        }
 
     def _build_notebook_publisher(self) -> NotebookPublisher | None:
         notebook_cfg = getattr(self.ctx.config, "notebook", None)
@@ -1523,13 +1679,40 @@ class TeacherOrchestrator:
                 "rubrics_path": str(rubrics_path),
             }
 
+        runtime_questions = None
+        if evaluation_cfg.generate_runtime_quiz:
+            try:
+                runtime_limit = evaluation_cfg.runtime_quiz_limit or evaluation_cfg.quiz_question_limit
+                runtime_questions = generate_quiz_questions(
+                    self.ctx.config.world_model.dataset_dir,
+                    limit=runtime_limit,
+                )
+            except Exception as exc:  # pragma: no cover - defensive
+                self._record_stage_error(
+                    "student_eval",
+                    "Runtime quiz generation failed",
+                    context={"error": str(exc)},
+                )
+                runtime_questions = None
+
+        quiz_kwargs = {
+            "pass_threshold": evaluation_cfg.quiz_pass_threshold,
+            "question_limit": evaluation_cfg.quiz_question_limit,
+            "lm": student_lm,
+        }
+
         try:
-            quiz_engine = StudentQuizEvaluator(
-                evaluation_cfg.quiz_bank_path,
-                pass_threshold=evaluation_cfg.quiz_pass_threshold,
-                question_limit=evaluation_cfg.quiz_question_limit,
-                lm=student_lm,
-            )
+            if runtime_questions is not None:
+                quiz_engine = StudentQuizEvaluator(
+                    quiz_bank_path=None,
+                    questions=runtime_questions,
+                    **quiz_kwargs,
+                )
+            else:
+                quiz_engine = StudentQuizEvaluator(
+                    evaluation_cfg.quiz_bank_path,
+                    **quiz_kwargs,
+                )
         except FileNotFoundError:
             self._record_stage_error(
                 "student_eval",

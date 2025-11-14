@@ -1,12 +1,34 @@
+# Copy this file to config/model_config.yaml and customize per environment.
+
 teacher:
-  model: gpt-4.1
-  temperature: 0.2
-  max_tokens: 2000
-teaching_assistants:
-  default_model: gpt-4o-mini
-  temperature: 0.4
-  recursion_depth: 1
-students:
-  model: gpt-4o-mini
-  rubric_paths:
-    - evals/rubrics.yaml
+  provider: openai
+  model: gpt-5.1
+  reasoning:
+    effort: high
+  temperature: 1.0
+  max_tokens: 32000
+  api_key_env: OPENAI_API_KEY_TEACHER
+
+ta:
+  provider: openai
+  model: gpt-5-mini
+  temperature: 1.0
+  max_tokens: 32000
+  api_key_env: OPENAI_API_KEY_TA
+
+coder:
+  provider: openai
+  model: gpt-5.1-codex-mini
+  temperature: 1.0
+  max_tokens: 32000
+  api_key_env: OPENAI_API_KEY_CODER
+
+student:
+  provider: openai
+  model: gpt-5-mini
+  temperature: 1.0
+  max_tokens: 32000
+  api_key_env: OPENAI_API_KEY_STUDENT
+
+default_temperature: 1.0
+default_max_tokens: 32000

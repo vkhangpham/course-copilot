@@ -88,12 +88,15 @@ class CLIRunPocTests(unittest.TestCase):
             os.environ["OPEN_NOTEBOOK_AUTO_CREATE"] = self._auto_create_env
 
     def _prepare_repo(self) -> None:
-        (self.repo_root / "config").mkdir(parents=True, exist_ok=True)
+        config_dir = self.repo_root / "config"
+        config_dir.mkdir(parents=True, exist_ok=True)
         (self.repo_root / "world_model").mkdir(parents=True, exist_ok=True)
         (self.repo_root / "evals").mkdir(parents=True, exist_ok=True)
         dataset_dir = self.repo_root / "data" / "handcrafted" / "database_systems"
         dataset_dir.mkdir(parents=True, exist_ok=True)
         self.dataset_dir = dataset_dir
+
+        shutil.copy(REPO_ROOT / "config" / "model_config.yaml", config_dir / "model_config.yaml")
 
         schema_path = self.repo_root / "world_model" / "schema.sql"
         schema_path.write_text("CREATE TABLE IF NOT EXISTS concepts(id TEXT PRIMARY KEY);\n", encoding="utf-8")
@@ -138,18 +141,7 @@ course:
   audience:
     persona: "Tester"
 models:
-  default_temperature: 1.0
-  default_max_tokens: 32000
-  teacher:
-    model: "gpt-5.1"
-    reasoning:
-      effort: high
-  ta:
-    model: "gpt-5-mini"
-  coder:
-    model: "gpt-5.1-codex-mini"
-  student:
-    model: "gpt-5-mini"
+  path: "config/model_config.yaml"
 notebook:
   api_base: "{self.notebook_api.base_url}"
   notebook_slug: "cli-test-notebook"
@@ -327,6 +319,21 @@ evaluation:
         self.assertIn(str(lecture_path.resolve()), output)
         self.assertIn("science=", output)
         self.assertIn("science_config=", output)
+
+    def test_cli_notebook_exports_include_note_ids(self) -> None:
+        exit_code, output, output_dir = self._run_cli()
+        self.assertEqual(exit_code, 0)
+        manifest_path = next((output_dir / "artifacts").glob("run-*-manifest.json"))
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        exports = [entry for entry in manifest.get("notebook_exports", []) if entry.get("kind") != "preflight"]
+        self.assertTrue(exports, "Expected notebook export entries in manifest")
+        note_ids = [entry.get("response", {}).get("note_id") for entry in exports]
+        self.assertTrue(all(note_id and note_id.startswith("cli-test-notebook") for note_id in note_ids))
+        summary = manifest.get("notebook_export_summary") or {}
+        self.assertGreaterEqual(summary.get("success", 0), 1)
+        self.assertTrue(summary.get("note_ids"))
+        preview_id = summary["note_ids"][0]
+        self.assertIn(preview_id, output, "CLI notebook hint should surface note IDs")
 
     def test_stage_error_summary_prints_when_manifest_contains_errors(self) -> None:
         manifest_path = self.repo_root / "stage_manifest.json"

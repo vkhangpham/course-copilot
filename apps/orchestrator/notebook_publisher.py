@@ -307,10 +307,18 @@ def build_sections_from_markdown(
 ) -> List[NotebookSectionInput]:
     """Utility to build ``NotebookSectionInput`` instances from a markdown file."""
 
-    if not path.exists():
-        return []
+    try:
+        validation = strict_validation.validate_file_exists(path)
+    except ValidationFailure:
+        # Propagate so callers can convert into stage errors with context.
+        raise
 
-    markdown = path.read_text(encoding="utf-8")
+    resolved_path = Path(validation.data or path)
+    try:
+        markdown = resolved_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ValidationFailure(f"Unable to read notebook source {resolved_path}: {exc}") from exc
+
     sections: List[NotebookSectionInput] = []
     for title, content in chunk_markdown_sections(markdown, fallback_title):
         is_fallback_section = title == fallback_title
@@ -318,12 +326,12 @@ def build_sections_from_markdown(
         if line_count < min_lines:
             if line_count == 0 or is_fallback_section:
                 continue
-        sections.append(NotebookSectionInput(title=title, path=path, content=content))
+        sections.append(NotebookSectionInput(title=title, path=resolved_path, content=content))
         if max_sections is not None and len(sections) >= max_sections:
             break
 
     if not sections:
-        sections.append(NotebookSectionInput(title=fallback_title, path=path))
+        sections.append(NotebookSectionInput(title=fallback_title, path=resolved_path))
     return sections
 
 

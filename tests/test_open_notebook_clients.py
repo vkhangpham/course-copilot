@@ -23,12 +23,14 @@ class _MinimalNotebookClient:
         title: str,
         content_md: str,
         citations: List[str],
+        notebook_record_id: str | None = None,
     ) -> Dict[str, Any]:
         payload = {
             "notebook": notebook_id,
             "title": title,
             "content": content_md,
             "citations": citations,
+            "record": notebook_record_id,
         }
         self.push_calls.append(payload)
         return {"status": "ok", "notebook": notebook_id}

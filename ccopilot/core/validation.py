@@ -9,7 +9,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Type, TypeVar
+from typing import Any, Callable, Dict, List, Optional, Sequence, Type, TypeVar
 
 import yaml
 from pydantic import BaseModel, ValidationError
@@ -17,6 +17,14 @@ from pydantic import BaseModel, ValidationError
 # Type variables for generic validation
 T = TypeVar("T")
 F = TypeVar("F", bound=Callable[..., Any])
+
+
+class ValidationFailure(ValueError):
+    """Raised when validation fails in strict mode."""
+
+    def __init__(self, message: str, *, errors: Optional[List[str]] = None):
+        super().__init__(message)
+        self.errors = errors or []
 
 
 @dataclass
@@ -33,9 +41,10 @@ class ValidationResult:
         return len(self.warnings) > 0
 
     def raise_if_invalid(self) -> None:
-        """Raise ValidationError if validation failed."""
+        """Raise ValidationFailure if validation failed."""
         if not self.valid:
-            raise ValidationError(f"Validation failed: {'; '.join(self.errors)}")
+            message = "; ".join(self.errors) if self.errors else "Validation failed"
+            raise ValidationFailure(message, errors=list(self.errors))
 
 
 class ValidationFramework:
@@ -58,23 +67,24 @@ class ValidationFramework:
         """Validate that a file exists and is readable."""
         errors = []
         warnings = []
-        path_obj = Path(path)
+        path_obj = Path(path).expanduser().resolve()
 
         if not path_obj.exists():
-            errors.append(f"File does not exist: {path}")
+            errors.append(f"File does not exist: {path_obj}")
         elif not path_obj.is_file():
-            errors.append(f"Path is not a file: {path}")
+            errors.append(f"Path is not a file: {path_obj}")
         elif not path_obj.stat().st_size:
-            warnings.append(f"File is empty: {path}")
+            warnings.append(f"File is empty: {path_obj}")
 
-        try:
-            # Test readability
-            with path_obj.open("r", encoding="utf-8"):
-                pass
-        except PermissionError:
-            errors.append(f"No read permission for file: {path}")
-        except Exception as e:
-            errors.append(f"Cannot read file {path}: {e}")
+        if not errors:
+            try:
+                # Test readability
+                with path_obj.open("r", encoding="utf-8"):
+                    pass
+            except PermissionError:
+                errors.append(f"No read permission for file: {path_obj}")
+            except Exception as e:  # pragma: no cover - defensive
+                errors.append(f"Cannot read file {path_obj}: {e}")
 
         result = ValidationResult(
             valid=len(errors) == 0,
@@ -87,6 +97,45 @@ class ValidationFramework:
             self.logger.error(f"File validation failed: {result.errors}")
         elif result.has_warnings:
             self.logger.warning(f"File validation warnings: {result.warnings}")
+
+        if self.strict and not result.valid:
+            result.raise_if_invalid()
+
+        return result
+
+    def validate_directory(
+        self,
+        path: Path | str,
+        *,
+        required_files: Sequence[str] | None = None,
+    ) -> ValidationResult:
+        """Validate that a directory exists and optionally contains required files."""
+
+        errors: List[str] = []
+        warnings: List[str] = []
+        path_obj = Path(path).expanduser().resolve()
+
+        if not path_obj.exists():
+            errors.append(f"Directory does not exist: {path_obj}")
+        elif not path_obj.is_dir():
+            errors.append(f"Path is not a directory: {path_obj}")
+        elif required_files:
+            missing = []
+            for rel in required_files:
+                if not (path_obj / rel).exists():
+                    missing.append(rel)
+            if missing:
+                errors.append(f"Directory {path_obj} missing required files: {', '.join(sorted(missing))}")
+
+        result = ValidationResult(
+            valid=len(errors) == 0,
+            errors=errors,
+            warnings=warnings,
+            data=path_obj if not errors else None,
+        )
+
+        if not result.valid:
+            self.logger.error(f"Directory validation failed: {result.errors}")
 
         if self.strict and not result.valid:
             result.raise_if_invalid()
@@ -114,7 +163,7 @@ class ValidationFramework:
                 self.logger.info(f"Successfully loaded JSON from {path}")
         except json.JSONDecodeError as e:
             errors.append(f"Invalid JSON in {path}: {e}")
-        except Exception as e:
+        except Exception as e:  # pragma: no cover - defensive
             errors.append(f"Error reading JSON file {path}: {e}")
 
         result = ValidationResult(valid=len(errors) == 0, errors=errors, warnings=warnings, data=data)
@@ -151,7 +200,7 @@ class ValidationFramework:
                 self.logger.info(f"Successfully loaded YAML from {path}")
         except yaml.YAMLError as e:
             errors.append(f"Invalid YAML in {path}: {e}")
-        except Exception as e:
+        except Exception as e:  # pragma: no cover - defensive
             errors.append(f"Error reading YAML file {path}: {e}")
 
         result = ValidationResult(valid=len(errors) == 0, errors=errors, warnings=warnings, data=data)
@@ -432,9 +481,29 @@ class OrchestrationValidator(ValidationFramework):
         return ValidationResult(valid=len(errors) == 0, errors=errors, warnings=warnings, data=config)
 
 
+# ============== Specialized Validators ==============
+
+
+HANDCRAFTED_DATASET_FILES: tuple[str, ...] = (
+    "authors.csv",
+    "papers.csv",
+    "concepts.yaml",
+    "timeline.csv",
+    "quiz_bank.json",
+)
+
+
+def validate_handcrafted_dataset(
+    path: Path | str,
+    *,
+    framework: ValidationFramework | None = None,
+) -> ValidationResult:
+    validator = framework or strict_validation
+    return validator.validate_directory(path, required_files=HANDCRAFTED_DATASET_FILES)
+
+
 # ============== Global Instance ==============
 
-# Create a global validation instance for convenience
 validation = ValidationFramework(strict=False)
 strict_validation = ValidationFramework(strict=True)
 
@@ -442,7 +511,10 @@ strict_validation = ValidationFramework(strict=True)
 __all__ = [
     "ValidationFramework",
     "ValidationResult",
+    "ValidationFailure",
     "OrchestrationValidator",
+    "HANDCRAFTED_DATASET_FILES",
+    "validate_handcrafted_dataset",
     "validation",
     "strict_validation",
 ]

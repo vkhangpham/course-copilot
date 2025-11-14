@@ -48,5 +48,19 @@ class TeacherRLMVendorPathTests(unittest.TestCase):
             mock_import.assert_called_once_with("rlm.rlm_repl")
 
 
+class TeacherRLMActionLogTests(unittest.TestCase):
+    def test_record_action_appends_entry(self) -> None:
+        teacher = TeacherRLM()
+        payload = {"foo": "bar"}
+        result = {"status": "ok"}
+        teacher.record_action("log_event", "target", payload, result)
+        self.assertEqual(len(teacher.action_log), 1)
+        entry = teacher.action_log[0]
+        self.assertEqual(entry.action, "log_event")
+        self.assertEqual(entry.target, "target")
+        self.assertEqual(entry.payload, payload)
+        self.assertEqual(entry.result, result)
+
+
 if __name__ == "__main__":
     unittest.main()

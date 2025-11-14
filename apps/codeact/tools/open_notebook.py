@@ -24,7 +24,7 @@ DEFAULT_EXPORT_SUBPATH = Path("outputs/notebook_exports")
 AUTO_CREATE_ENV = "OPEN_NOTEBOOK_AUTO_CREATE"
 
 
-_ENSURED_NOTEBOOKS: set[tuple[str, str]] = set()
+_ENSURED_NOTEBOOKS: dict[tuple[str, str], str | None] = {}
 
 
 def _supports_push_notebook(instance: object) -> bool:
@@ -56,6 +56,17 @@ def _export_dir_configured() -> bool:
 
 def _cache_key(base_url: str, slug: str) -> tuple[str, str]:
     return (base_url.rstrip("/"), slug.strip().lower())
+
+
+def _mark_notebook_cached(base_url: str | None, slug: str | None, notebook_id: str | None = None) -> None:
+    if not base_url or not slug:
+        return
+    key = _cache_key(base_url, slug)
+    _ENSURED_NOTEBOOKS[key] = notebook_id
+
+
+def _get_cached_notebook_id(base_url: str, slug: str) -> str | None:
+    return _ENSURED_NOTEBOOKS.get(_cache_key(base_url, slug))
 
 
 def ensure_notebook_exists(
@@ -94,7 +105,10 @@ def ensure_notebook_exists(
         return {"status": "skipped", "reason": "client_missing_ensure", "notebook": slug}
     try:
         result = client.ensure_notebook(slug, description=description)
-        _ENSURED_NOTEBOOKS.add(cache_key)
+        record_id = None
+        if isinstance(result, dict):
+            record_id = result.get("id") or result.get("notebook")
+        _mark_notebook_cached(base_url, slug, record_id)
         logger.info(
             "ensure_notebook_exists succeeded",
             extra={"notebook": slug, "api_base": base_url},
@@ -163,12 +177,16 @@ def push_notebook_section(
                     api_key=token,
                     client=ensure_client,
                 )
-                _ENSURED_NOTEBOOKS.add(cache_key)
+                _mark_notebook_cached(base_url, slug)
+        record_id = _get_cached_notebook_id(base_url, slug)
+        if record_id is None:
+            record_id = _lookup_notebook_record_id(client, base_url, slug)
         response = client.push_note(
             slug,
             title,
             content_md,
             payload_citations,
+            notebook_record_id=record_id,
         )
         logger.info(
             "push_notebook_section succeeded",
@@ -256,3 +274,22 @@ def _auto_create_enabled(override: bool | None = None) -> bool:
 
 def _reset_auto_create_cache_for_testing() -> None:  # pragma: no cover - test helper
     _ENSURED_NOTEBOOKS.clear()
+
+
+def _lookup_notebook_record_id(client: object, base_url: str, slug: str) -> str | None:
+    lookup = getattr(client, "list_notebooks", None)
+    if not callable(lookup):
+        return None
+    try:
+        notebooks = lookup()
+    except Exception:  # pragma: no cover - best-effort lookup
+        return None
+    if not isinstance(notebooks, list):
+        return None
+    for entry in notebooks:
+        if isinstance(entry, dict) and entry.get("name") == slug:
+            record_id = entry.get("id")
+            if record_id:
+                _mark_notebook_cached(base_url, slug, record_id)
+                return record_id
+    return None

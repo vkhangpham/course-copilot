@@ -15,6 +15,7 @@ from apps.codeact.tools.world_model import (
     record_claim,
     search_events,
 )
+from apps.codeact.tools_world_model import WorldModelTools
 from scripts.ingest_handcrafted import ingest
 from world_model.storage import WorldModelStore
 
@@ -200,3 +201,70 @@ def test_persist_outline_tool_records_artifact(tmp_path: Path) -> None:
         (artifact["id"],),
     )
     assert rows and rows[0][0] == "course_outline"
+
+
+def test_world_model_tools_query_prefers_store(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    tools = WorldModelTools(DATASET, store_path=store)
+    concept = tools.query("relational_model")
+    assert concept["id"] == "relational_model"
+    assert concept["summary"], "expected summary from store-backed payload"
+    assert concept["canonical_sources"], "store results should inherit canonical sources"
+
+
+def test_world_model_tools_query_falls_back_to_dataset(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("WORLD_MODEL_STORE", str(tmp_path / "missing_store.sqlite"))
+    tools = WorldModelTools(DATASET)
+    concept = tools.query("relational_model")
+    assert concept["id"] == "relational_model"
+    assert concept["canonical_sources"], "dataset fallback should include canonical sources"
+    monkeypatch.delenv("WORLD_MODEL_STORE", raising=False)
+
+
+def test_world_model_tools_list_concepts_sorted_when_offline(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("WORLD_MODEL_STORE", str(tmp_path / "missing_store.sqlite"))
+    tools = WorldModelTools(DATASET)
+    concepts = tools.list_concepts()
+    assert concepts, "Expected dataset fallback to return concepts"
+    ids = [concept["id"] for concept in concepts]
+    assert ids == sorted(ids)
+    monkeypatch.delenv("WORLD_MODEL_STORE", raising=False)
+
+
+def test_world_model_tools_unknown_concept(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("WORLD_MODEL_STORE", str(tmp_path / "missing_store.sqlite"))
+    tools = WorldModelTools(DATASET)
+    with pytest.raises(KeyError):
+        tools.query("does_not_exist")
+    monkeypatch.delenv("WORLD_MODEL_STORE", raising=False)
+
+
+def test_world_model_tools_dataset_children_populated(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("WORLD_MODEL_STORE", str(tmp_path / "missing_store.sqlite"))
+    tools = WorldModelTools(DATASET)
+    concept = tools.query("distributed")
+    assert concept["children"], "dataset fallback should expose child concepts"
+    monkeypatch.delenv("WORLD_MODEL_STORE", raising=False)
+
+
+def test_world_model_tools_list_concepts_merges_metadata(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    tools = WorldModelTools(DATASET, store_path=store)
+    concepts = tools.list_concepts()
+    relational = next(c for c in concepts if c["id"] == "relational_model")
+    assert relational["canonical_sources"], "list_concepts should merge dataset canonical sources"
+
+
+def test_world_model_tools_list_concepts_topic_filter(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    tools = WorldModelTools(DATASET, store_path=store)
+    transactions = tools.list_concepts(topic="transaction", limit=5)
+    assert transactions, "Expected topic filter to yield matches"
+    assert any("transaction" in entry["id"] or "transaction" in entry["name"].lower() for entry in transactions)
+
+
+def test_world_model_tools_list_concepts_respects_limit(tmp_path: Path) -> None:
+    store = _build_store(tmp_path)
+    tools = WorldModelTools(DATASET, store_path=store)
+    subset = tools.list_concepts(limit=3)
+    assert len(subset) == 3

@@ -104,20 +104,26 @@ teacher:
   reasoning:
     effort: high
   temperature: 1.0
+  max_tokens: 32000
   api_key_env: OPENAI_API_KEY_TEACHER
 ta:
   provider: openai
   model: gpt-5-mini
   temperature: 1.0
+  max_tokens: 32000
+  api_key_env: OPENAI_API_KEY_TA
 coder:
   provider: openai
   model: gpt-5.1-codex-mini
   temperature: 1.0
+  max_tokens: 32000
   api_key_env: OPENAI_API_KEY_CODER
 student:
   provider: openai
   model: gpt-5-mini
   temperature: 1.0
+  max_tokens: 32000
+  api_key_env: OPENAI_API_KEY_STUDENT
 default_temperature: 1.0
 default_max_tokens: 32000
 ```
@@ -238,3 +244,4 @@ Each toggle must be reflected in `outputs/evals/...` (documented for acceptance 
 - Do we store Notebook IDs in `outputs/notebook_refs.json` for later diffing?
 
 Please comment in Agent Mail (once the `agents/**` lock clears) or in a follow-up history note before editing major sections.
+> _Reminder:_ `quiz_bank.json` and `course_outline.yaml` are treated as world-model reference artifacts. The orchestrator still synthesizes quizzes and outlines at runtime so the demo never depends on pre-generated course content.

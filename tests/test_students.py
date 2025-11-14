@@ -239,6 +239,35 @@ def test_student_quiz_evaluator_uses_llm(monkeypatch: pytest.MonkeyPatch, tmp_pa
     assert result["engine"] == "llm"
 
 
+def test_student_quiz_evaluator_falls_back_when_llm_returns_none(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    quiz_bank = tmp_path / "quiz.json"
+    quiz_bank.write_text(
+        """
+[
+  {
+    "id": "quiz-fallback",
+    "prompt": "Explain replication",
+    "answer_sketch": "replication",
+    "learning_objectives": ["replication"],
+    "difficulty": "medium"
+  }
+]
+        """.strip(),
+        encoding="utf-8",
+    )
+    lecture = _write_artifact(tmp_path, "Replication and consensus protocols are described.")
+    evaluator = StudentQuizEvaluator(quiz_bank_path=quiz_bank, question_limit=1, lm=object())
+
+    def fake_grade(self, question, excerpt):
+        return None
+
+    monkeypatch.setattr(StudentQuizEvaluator, "_grade_question_with_llm", fake_grade, raising=True)
+    result = evaluator.evaluate_path(lecture).as_dict()
+
+    assert result["engine"] == "heuristic"
+    assert result["questions"][0]["passed"] is True
+
+
 def test_student_grader_respects_disable_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("COURSEGEN_DISABLE_LLM_STUDENTS", "1")
     artifact = _write_artifact(tmp_path, "# Lecture\nFallback text")
