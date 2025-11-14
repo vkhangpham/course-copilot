@@ -20,7 +20,8 @@ REPO_ENV_VAR = "COURSEGEN_REPO_ROOT"
 _DATASET_SUBPATH = Path("data/handcrafted/database_systems")
 _FALLBACK_DATA_ROOT = Path(__file__).resolve().parents[3] / _DATASET_SUBPATH
 DATA_ROOT = _FALLBACK_DATA_ROOT  # preserved for backward compatibility
-_READ_ONLY_PREFIXES = {
+_FORBIDDEN_SQL_TOKENS = {
+    # Mutating / DDL statements
     "insert",
     "update",
     "delete",
@@ -34,6 +35,22 @@ _READ_ONLY_PREFIXES = {
     "call",
     "install",
     "set",
+    # File / external scanners that bypass dataset sandboxing
+    "read_csv",
+    "read_csv_auto",
+    "read_json",
+    "read_json_auto",
+    "read_parquet",
+    "read_ipc",
+    "read_orc",
+    "read_avro",
+    "read_excel",
+    "read_delta",
+    "read_text",
+    "sqlite_scan",
+    "postgres_scan",
+    "mysql_scan",
+    "httpfs_scan",
 }
 
 # Tables backed by raw handcrafted assets that DuckDB can load directly.
@@ -341,7 +358,7 @@ def _is_mutating_statement(statement: str) -> bool:
         return True  # multi-statement payloads are not allowed
 
     tokens = re.findall(r"\b[a-z_]+\b", segments[0])
-    return any(token in _READ_ONLY_PREFIXES for token in tokens)
+    return any(token in _FORBIDDEN_SQL_TOKENS for token in tokens)
 
 
 def _strip_literals_and_comments(sql: str) -> str:

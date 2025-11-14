@@ -173,6 +173,7 @@ class NotebookAPIMock:
                 title: str,
                 content_md: str,
                 citations: List[str],
+                notebook_record_id: str | None = None,
             ) -> Dict[str, Any]:
                 payload = {
                     "title": title,

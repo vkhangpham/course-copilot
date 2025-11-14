@@ -279,6 +279,7 @@ def test_world_model_hooks_return_concepts(tmp_path: Path, dataset_summary: dict
     ctx = _make_context(tmp_path)
     orch = TeacherOrchestrator(ctx)
     orch.teacher_rlm = TeacherRLM()
+    orch.registry = object()
 
     class _StubTools:
         def query(self, concept_id: str) -> dict[str, str]:
@@ -318,6 +319,45 @@ def test_world_model_hooks_handle_disabled_mode(tmp_path: Path, dataset_summary:
     list_result = hooks["wm_list"]()
     assert fetch_result["status"] == "disabled"
     assert list_result["status"] == "disabled"
+
+
+def test_codeact_lecture_section_passes_module_payload(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, dataset_summary: dict[str, object]
+) -> None:
+    ctx = _make_context(tmp_path)
+    orch = TeacherOrchestrator(ctx)
+    orch.teacher_rlm = TeacherRLM()
+    orch.registry = object()
+
+    fake_calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_run(self, name: str, **kwargs):  # type: ignore[override]
+        fake_calls.append((name, kwargs))
+        if name == "DraftLectureSection":
+            return SimpleNamespace(section="## Draft\nBody")
+        if name == "EnforceCitations":
+            return SimpleNamespace(corrected_section="## Draft\nBody")
+        return None
+
+    monkeypatch.setattr(TeacherOrchestrator, "_run_codeact_program", fake_run)
+
+    highlights = {
+        "syllabus_modules": [
+            {
+                "week": 1,
+                "title": "Relational Foundations",
+                "outcomes": ["Intro"],
+                "readings": ["codd-1970"],
+            }
+        ]
+    }
+
+    result = orch._generate_codeact_lecture_section(highlights, use_cache=False)
+    assert isinstance(result, str) and result.startswith("## Draft")
+    draft_call = fake_calls[0]
+    assert draft_call[0] == "DraftLectureSection"
+    assert "module" in draft_call[1]
+    assert "module_payload" not in draft_call[1]
 
 
 def test_world_model_hook_tracks_runtime_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, dataset_summary: dict[str, object]) -> None:

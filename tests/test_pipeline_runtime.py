@@ -16,6 +16,8 @@ from ccopilot.core.dspy_runtime import DSPyModelHandles
 from ccopilot.pipeline import bootstrap_pipeline, run_pipeline
 from tests.mocks.notebook_api import NotebookAPIMock
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
 
 class FakeStudentLM:
     def __call__(self, prompt=None, **_kwargs):
@@ -188,6 +190,7 @@ class PipelineRuntimeTests(unittest.TestCase):
         science_cfg_dir.mkdir(parents=True, exist_ok=True)
         science_cfg_path = science_cfg_dir / "scientific_config.yaml"
         science_cfg_path.write_text("enabled: true\n", encoding="utf-8")
+        shutil.copy(PROJECT_ROOT / "config" / "model_config.yaml", science_cfg_dir / "model_config.yaml")
 
         config_text = f"""
 course:
@@ -204,11 +207,7 @@ course:
   learning_objectives:
     - "Explain SQL basics"
 models:
-  teacher_model: gpt-5.1
-  ta_model: gpt-5-mini
-  student_model: gpt-5-mini
-  temperature: 1.0
-  max_tokens: 32000
+  path: "config/model_config.yaml"
 notebook:
   api_base: "{api_base}"
   notebook_slug: "test-notebook"
@@ -225,6 +224,21 @@ evaluation:
         config_path = self.repo_root / filename
         config_path.write_text(config_text.strip(), encoding="utf-8")
         return config_path
+
+    def test_bootstrap_pipeline_uses_canonical_model_config(self) -> None:
+        self.mock_configure_dspy.reset_mock()
+        ctx = bootstrap_pipeline(config_path=self.config_path, repo_root=self.repo_root)
+
+        self.mock_configure_dspy.assert_called_once()
+        (model_cfg,), _ = self.mock_configure_dspy.call_args
+        self.assertEqual(model_cfg.teacher.model, "gpt-5.1")
+        self.assertEqual(model_cfg.teacher.reasoning, {"effort": "high"})
+        self.assertEqual(model_cfg.ta.model, "gpt-5-mini")
+        self.assertEqual(model_cfg.coder.model, "gpt-5.1-codex-mini")
+        self.assertEqual(model_cfg.student.model, "gpt-5-mini")
+        self.assertEqual(model_cfg.default_temperature, 1.0)
+        self.assertEqual(model_cfg.default_max_tokens, 32000)
+        self.assertIs(ctx.dspy_handles, self._dspy_handles)
 
     def _seed_dataset(self, dataset_dir: Path) -> None:
         (dataset_dir / "authors.csv").write_text(

@@ -175,8 +175,15 @@ def test_auto_create_cache_scoped_per_api_base(monkeypatch: pytest.MonkeyPatch) 
         return {"status": "created"}
 
     class FakeClient:
-        def push_note(self, notebook_id: str, title: str, content_md: str, citations: list[str]) -> dict:
-            return {"status": "ok", "notebook": notebook_id}
+        def push_note(
+            self,
+            notebook_id: str,
+            title: str,
+            content_md: str,
+            citations: list[str],
+            notebook_record_id: str | None = None,
+        ) -> dict:
+            return {"status": "ok", "notebook": notebook_id, "record": notebook_record_id}
 
     monkeypatch.setattr("apps.codeact.tools.open_notebook.ensure_notebook_exists", fake_ensure)
     _reset_auto_create_cache_for_testing()
@@ -198,7 +205,6 @@ def test_auto_create_cache_scoped_per_api_base(monkeypatch: pytest.MonkeyPatch) 
 def test_missing_slug_raises_value_error() -> None:
     with pytest.raises(ValueError):
         push_notebook_section(title="Missing", content_md="No slug")
-
 
 
 def test_missing_api_base_without_export_dir_uses_default(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

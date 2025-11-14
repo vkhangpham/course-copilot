@@ -137,8 +137,20 @@ def test_preflight_marks_notebook_cache(monkeypatch: pytest.MonkeyPatch) -> None
             self._config = config
             self._owns_client = True
 
-        def push_note(self, notebook_id: str, title: str, content_md: str, citations: list[str]) -> dict:
-            return {"status": "ok", "notebook": notebook_id, "note_id": f"{notebook_id}-0001"}
+        def push_note(
+            self,
+            notebook_id: str,
+            title: str,
+            content_md: str,
+            citations: list[str],
+            notebook_record_id: str | None = None,
+        ) -> dict:
+            return {
+                "status": "ok",
+                "notebook": notebook_id,
+                "note_id": f"{notebook_id}-0001",
+                "record": notebook_record_id,
+            }
 
         def ensure_notebook(self, notebook_id: str, *, description: str | None = None) -> dict:
             return {"status": "created", "notebook": notebook_id, "description": description}

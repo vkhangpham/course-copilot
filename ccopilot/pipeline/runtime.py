@@ -28,6 +28,8 @@ class PipelineRunArtifacts:
     highlight_source: str | None = None
     use_world_model: bool = True
     teacher_trace: Path | None = None
+    teacher_rlm_mode: str | None = None
+    teacher_rlm_reason: str | None = None
     notebook_exports: List[Dict[str, Any]] | None = None
     notebook_export_summary: Dict[str, Any] | None = None
     scientific_metrics: Dict[str, Any] | None = None
@@ -134,6 +136,8 @@ def run_pipeline(ctx: PipelineContext, *, dry_run: bool = False) -> PipelineRunA
         highlight_source=orch_artifacts.highlight_source,
         use_world_model=ctx.ablations.use_world_model,
         teacher_trace=orch_artifacts.teacher_trace,
+        teacher_rlm_mode=orch_artifacts.teacher_rlm_mode,
+        teacher_rlm_reason=orch_artifacts.teacher_rlm_reason,
         notebook_exports=orch_artifacts.notebook_exports,
         notebook_export_summary=orch_artifacts.notebook_export_summary,
         scientific_metrics=scientific_metrics,

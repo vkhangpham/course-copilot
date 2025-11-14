@@ -77,6 +77,11 @@ def test_run_sql_query_blocks_multi_statement_payloads() -> None:
         run_sql_query("SELECT 1; DROP TABLE authors", dataset_dir=DATASET_DIR)
 
 
+def test_run_sql_query_blocks_direct_file_reads() -> None:
+    with pytest.raises(ValueError):
+        run_sql_query("SELECT * FROM read_csv_auto('/etc/passwd')", dataset_dir=DATASET_DIR)
+
+
 @pytest.mark.parametrize(
     "statement",
     [
@@ -136,9 +141,7 @@ def test_load_dataset_asset_honors_env_override(tmp_path: Path, monkeypatch: pyt
     assert "domains" in asset
 
 
-def test_run_sql_query_works_outside_repo_when_env_set(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_run_sql_query_works_outside_repo_when_env_set(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     custom_dataset = tmp_path / "dataset"
     shutil.copytree(DATASET_DIR, custom_dataset)
     monkeypatch.setenv("COURSEGEN_DATASET_DIR", str(custom_dataset))
@@ -151,9 +154,7 @@ def test_run_sql_query_works_outside_repo_when_env_set(
     assert rows and rows[0]["cnt"] >= 1
 
 
-def test_load_dataset_asset_uses_repo_root_override(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_load_dataset_asset_uses_repo_root_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repo_root = _seed_repo_root(tmp_path)
     monkeypatch.delenv("COURSEGEN_DATASET_DIR", raising=False)
     monkeypatch.setenv("COURSEGEN_REPO_ROOT", str(repo_root))
@@ -162,9 +163,7 @@ def test_load_dataset_asset_uses_repo_root_override(
     assert asset.get("domains")
 
 
-def test_run_sql_query_uses_repo_root_override(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_run_sql_query_uses_repo_root_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repo_root = _seed_repo_root(tmp_path)
     monkeypatch.delenv("COURSEGEN_DATASET_DIR", raising=False)
     monkeypatch.setenv("COURSEGEN_REPO_ROOT", str(repo_root))

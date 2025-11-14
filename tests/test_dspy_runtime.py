@@ -20,7 +20,7 @@ class ConfigureDSPyModelsTests(unittest.TestCase):
         handles = configure_dspy_models(self.model_cfg, api_key="sk-test")
 
         self.assertIsInstance(handles, DSPyModelHandles)
-        self.assertEqual(mock_dspy.OpenAI.call_count, 3)
+        self.assertEqual(mock_dspy.OpenAI.call_count, 4)
         mock_dspy.settings.configure.assert_called_once_with(lm=mock_dspy.OpenAI.return_value)
 
     @mock.patch("ccopilot.core.dspy_runtime.dspy")
@@ -29,7 +29,7 @@ class ConfigureDSPyModelsTests(unittest.TestCase):
         handles = configure_dspy_models(self.model_cfg, api_key="sk-test")
 
         self.assertIsInstance(handles, DSPyModelHandles)
-        self.assertEqual(mock_dspy.LM.call_count, 3)
+        self.assertEqual(mock_dspy.LM.call_count, 4)
         mock_dspy.settings.configure.assert_called_once()
 
     def test_missing_api_key_raises(self) -> None:
@@ -62,9 +62,11 @@ class ConfigureDSPyModelsTests(unittest.TestCase):
 
         teacher_kwargs = mock_dspy.OpenAI.call_args_list[0].kwargs
         ta_kwargs = mock_dspy.OpenAI.call_args_list[1].kwargs
-        student_kwargs = mock_dspy.OpenAI.call_args_list[2].kwargs
+        coder_kwargs = mock_dspy.OpenAI.call_args_list[2].kwargs
+        student_kwargs = mock_dspy.OpenAI.call_args_list[3].kwargs
         self.assertEqual(teacher_kwargs["api_key"], "sk-teacher")
         self.assertEqual(ta_kwargs["api_key"], "sk-ta")
+        self.assertEqual(coder_kwargs["api_key"], "sk-student")
         self.assertEqual(student_kwargs["api_key"], "sk-student")
 
     @mock.patch("ccopilot.core.dspy_runtime.dspy")
@@ -73,6 +75,7 @@ class ConfigureDSPyModelsTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {"OPENAI_API_KEY": "sk", "OPENAI_API_BASE": "https://proxy"}, clear=True):
             configure_dspy_models(self.model_cfg)
 
+        self.assertEqual(len(mock_dspy.OpenAI.call_args_list), 4)
         for call in mock_dspy.OpenAI.call_args_list:
             self.assertEqual(call.kwargs.get("api_base"), "https://proxy")
 

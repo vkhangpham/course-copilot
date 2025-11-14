@@ -58,6 +58,41 @@ class ConfigParsingTests(unittest.TestCase):
         self.assertIsInstance(config, PipelineConfig)
         self.assertEqual(config.notebook.api_base, "http://localhost:5055")
         self.assertTrue(config.world_model.dataset_dir.is_absolute())
+        self.assertEqual(config.models.teacher.model, "gpt-5.1")
+        self.assertEqual(config.models.ta.model, "gpt-5-mini")
+        self.assertEqual(config.models.coder.model, "gpt-5.1-codex-mini")
+        self.assertEqual(config.models.student.model, "gpt-5-mini")
+        self.assertEqual(config.models.default_temperature, 1.0)
+        self.assertEqual(config.models.default_max_tokens, 32000)
+
+    def test_load_pipeline_config_promotes_legacy_model_fields(self) -> None:
+        path = self._write_yaml(
+            """
+            course:
+              title: DBS
+              duration_weeks: 4
+              audience:
+                persona: undergrad
+            notebook:
+              api_base: http://localhost:5055
+            world_model:
+              schema_path: schema.sql
+              dataset_dir: data/handcrafted
+            models:
+              teacher_model: custom-teacher
+              ta_model: custom-ta
+              student_model: custom-student
+              temperature: 0.42
+              max_tokens: 4096
+            """
+        )
+        config = load_pipeline_config(path)
+
+        self.assertEqual(config.models.teacher.model, "custom-teacher")
+        self.assertEqual(config.models.ta.model, "custom-ta")
+        self.assertEqual(config.models.student.model, "custom-student")
+        self.assertEqual(config.models.default_temperature, 0.42)
+        self.assertEqual(config.models.default_max_tokens, 4096)
 
 
 class AblationParsingTests(unittest.TestCase):

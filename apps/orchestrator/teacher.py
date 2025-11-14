@@ -1127,7 +1127,7 @@ class TeacherOrchestrator:
         claims_payload = self._build_claim_payload(world_model_highlights)
         lecture_result = self._run_codeact_program(
             "DraftLectureSection",
-            module_payload=json.dumps(module_payload, indent=2),
+            module=json.dumps(module_payload, indent=2),
             claims=json.dumps(claims_payload, indent=2),
             role="LectureAuthor",
             lm_role="coder",

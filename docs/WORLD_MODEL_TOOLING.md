@@ -37,6 +37,8 @@ All IDs are lowercase snake_case and must match across files (concepts ↔ taxon
 | Show definitions | `wm-inspect definitions --concept transaction_management` |
 | Inspect graph edges | `wm-inspect graph --concept relational_model` |
 | Inspect stored artifacts | `wm-inspect artifacts --type quiz_bank` |
+
+> **Note:** The sample `quiz_bank.json` and `course_outline.yaml` entries are world-model context, not canonical outputs. Runtime runs must still generate fresh quizzes/lectures from the current world model + constraints.
 | Summarize snapshot counts | `wm-inspect summary --json` |
 | Run orchestrator with fresh ingest | `coursegen-poc --config config/pipeline.yaml --ingest-world-model` |
 

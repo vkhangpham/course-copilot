@@ -39,6 +39,7 @@ class OpenNotebookClient:
         title: str,
         content_md: str,
         citations: List[str],
+        notebook_record_id: str | None = None,
     ) -> Dict[str, Any]:
         """Create a notebook section via the Open Notebook API."""
 
@@ -52,11 +53,55 @@ class OpenNotebookClient:
             json=payload,
             headers=self._build_headers(),
         )
+        if response.status_code == 404:
+            return self._post_note_fallback(
+                notebook_record_id or notebook_id,
+                title,
+                content_md,
+                citations,
+            )
         response.raise_for_status()
         try:
-            return response.json()
+            data = response.json()
         except ValueError as exc:  # pragma: no cover - defensive
             raise RuntimeError("Open Notebook API returned non-JSON payload") from exc
+        if isinstance(data, dict):
+            data.setdefault("status", "ok")
+            data.setdefault("note_id", data.get("id"))
+            data.setdefault("notebook", notebook_id)
+        return data
+
+    def _post_note_fallback(
+        self,
+        notebook_id: str,
+        title: str,
+        content_md: str,
+        citations: List[str],
+    ) -> Dict[str, Any]:
+        """Fallback path for stacks that expose only /api/notes endpoints."""
+
+        payload = {
+            "title": title,
+            "content": _append_citations_block(content_md, citations),
+            "note_type": "ai",
+            "notebook_id": notebook_id,
+        }
+        response = self._client.post(
+            "/api/notes",
+            json=payload,
+            headers=self._build_headers(),
+        )
+        response.raise_for_status()
+        try:
+            data = response.json()
+        except ValueError as exc:  # pragma: no cover - defensive
+            raise RuntimeError("Open Notebook API returned non-JSON payload") from exc
+        if not isinstance(data, dict):
+            return {"status": "ok", "notebook": notebook_id, "note": data}
+        data.setdefault("status", "ok")
+        data.setdefault("note_id", data.get("id"))
+        data.setdefault("notebook", notebook_id)
+        return data
 
     def ensure_notebook(
         self,
@@ -88,6 +133,20 @@ class OpenNotebookClient:
             data.setdefault("notebook", notebook_id)
         return data
 
+    def list_notebooks(self) -> List[Dict[str, Any]]:
+        """Return notebooks exposed by the remote API (best effort)."""
+
+        response = self._client.get(
+            "/api/notebooks",
+            headers=self._build_headers(),
+        )
+        response.raise_for_status()
+        try:
+            data = response.json()
+        except ValueError as exc:  # pragma: no cover - defensive
+            raise RuntimeError("Open Notebook API returned non-JSON payload") from exc
+        return data if isinstance(data, list) else []
+
     def close(self) -> None:
         if getattr(self, "_owns_client", False):
             self._client.close()
@@ -102,3 +161,14 @@ class OpenNotebookClient:
 
     def __exit__(self, exc_type, exc, tb) -> None:  # pragma: no cover - convenience
         self.close()
+
+
+def _append_citations_block(content: str, citations: List[str]) -> str:
+    if not citations:
+        return content
+    cleaned = [cite.strip() for cite in citations if cite and cite.strip()]
+    if not cleaned:
+        return content
+    lines = [content.rstrip(), "", "## Citations"]
+    lines.extend(f"- {cite}" for cite in cleaned)
+    return "\n".join(lines)

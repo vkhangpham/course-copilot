@@ -58,8 +58,8 @@ def test_push_notebook_section_calls_api_when_base(monkeypatch, tmp_path):
         def __init__(self, config):
             self.config = config
 
-        def push_note(self, notebook_slug, title, content_md, citations):
-            calls.append((notebook_slug, title, content_md, citations, self.config.base_url))
+        def push_note(self, notebook_slug, title, content_md, citations, notebook_record_id=None):
+            calls.append((notebook_slug, title, content_md, citations, self.config.base_url, notebook_record_id))
             return {"ok": True}
 
         def close(self):
@@ -88,6 +88,7 @@ def test_push_notebook_section_calls_api_when_base(monkeypatch, tmp_path):
         ["spanner"],
     )
     assert calls[0][4] == "http://localhost:5055"
+    assert calls[0][5] is None
     assert calls[-1] == ("closed",)
     export_path = tmp_path / "db-poc.jsonl"
     assert not export_path.exists()
@@ -100,7 +101,7 @@ def test_push_notebook_section_skips_preflight_without_ensure(monkeypatch, tmp_p
         def __init__(self, config):
             self.config = config
 
-        def push_note(self, notebook_slug, title, content_md, citations):
+        def push_note(self, notebook_slug, title, content_md, citations, notebook_record_id=None):
             return {"ok": True}
 
         def close(self):

@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -35,7 +36,10 @@ def test_open_notebook_client_push_note_posts_payload() -> None:
         ["codd-1970"],
     )
 
-    assert result == {"id": "section-123"}
+    assert result["id"] == "section-123"
+    assert result["status"] == "ok"
+    assert result["note_id"] == "section-123"
+    assert result["notebook"] == "database-systems-poc"
     assert captured["method"] == "POST"
     assert captured["url"].endswith("/api/notebooks/database-systems-poc/sections")
     assert captured["authorization"] == "Bearer secret-token"
@@ -44,6 +48,44 @@ def test_open_notebook_client_push_note_posts_payload() -> None:
         "content": "## Lesson",
         "citations": ["codd-1970"],
     }
+
+
+def test_open_notebook_client_falls_back_to_notes_endpoint() -> None:
+    calls: list[tuple[str, dict[str, Any]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/sections"):
+            return httpx.Response(404, json={"detail": "Not Found"})
+        if request.url.path.endswith("/notes"):
+            calls.append((str(request.url), json.loads(request.content)))
+            return httpx.Response(201, json={"id": "note-42", "title": "Fallback"})
+        return httpx.Response(500)
+
+    transport = httpx.MockTransport(handler)
+    http_client = httpx.Client(transport=transport, base_url="https://notebook.live")
+    client = OpenNotebookClient(
+        OpenNotebookConfig(base_url="https://notebook.live", api_key="token"),
+        client=http_client,
+    )
+
+    result = client.push_note(
+        "database-systems-poc",
+        "Week 1",
+        "## Lesson",
+        ["codd-1970", "system-r-1976"],
+    )
+
+    assert result["status"] == "ok"
+    assert result["note_id"] == "note-42"
+    assert result["notebook"] == "database-systems-poc"
+    assert len(calls) == 1
+    url, payload = calls[0]
+    assert url.endswith("/api/notes")
+    assert payload["note_type"] == "ai"
+    assert payload["notebook_id"] == "database-systems-poc"
+    assert "## Citations" in payload["content"]
+    assert "codd-1970" in payload["content"]
+
 
 def test_open_notebook_client_raises_for_http_error() -> None:
     def handler(_: httpx.Request) -> httpx.Response:
@@ -123,8 +165,9 @@ def test_push_notebook_section_uses_env_defaults(monkeypatch) -> None:
         def __init__(self, config: OpenNotebookConfig):
             calls["config"] = config
 
-        def push_note(self, *args):
+        def push_note(self, *args, **kwargs):
             calls["args"] = args
+            calls["kwargs"] = kwargs
             return {"status": "ok"}
 
         def close(self) -> None:
@@ -148,6 +191,7 @@ def test_push_notebook_section_uses_env_defaults(monkeypatch) -> None:
     assert config.base_url == "https://env-base"
     assert config.api_key == "env-token"
     assert calls["args"][0] == "notebook-a"
+    assert "notebook_record_id" in calls.get("kwargs", {})
     assert calls.get("closed") is True
 
 
@@ -195,6 +239,8 @@ def test_push_notebook_section_reuses_auto_create_cache(monkeypatch) -> None:
 
     assert calls["ensure"] == 1, "ensure_notebook should only run once per base/slug"
     assert calls["push"] == 2
+
+
 @pytest.fixture(autouse=True)
 def _reset_cache() -> None:
     _reset_auto_create_cache_for_testing()
