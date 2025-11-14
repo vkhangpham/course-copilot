@@ -15,6 +15,14 @@ def test_explainer_uses_real_dataset():
     assert chunks[0].citations, "chunk should include citations"
 
 
+def test_explainer_history_line_parses_semicolon_concepts():
+    explainer = Explainer(dataset_root=DATASET_ROOT)
+    history_line, citation = explainer._history_line("relational_model")
+    assert history_line is not None, "Timeline should emit history for relational_model"
+    assert "1970" in history_line
+    assert citation == "codd-1970"
+
+
 def test_explainer_handles_custom_dataset(tmp_path):
     dataset = tmp_path / "dataset"
     dataset.mkdir()
