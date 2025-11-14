@@ -21,8 +21,8 @@ class DSPyModelHandles:
 
     teacher: object
     ta: object
-    coder: object | None = None
     student: object
+    coder: object | None = None
 
 
 def _build_openai_lm(
@@ -115,7 +115,7 @@ def configure_dspy_models(model_cfg: ModelConfig, *, api_key: str | None = None)
 
     dspy.settings.configure(lm=teacher)
 
-    return DSPyModelHandles(teacher=teacher, ta=ta, coder=coder, student=student)
+    return DSPyModelHandles(teacher=teacher, ta=ta, student=student, coder=coder)
 
 
 __all__ = [
