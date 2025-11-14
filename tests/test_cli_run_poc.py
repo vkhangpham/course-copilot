@@ -16,16 +16,26 @@ from ccopilot.cli.run_poc import (
     _print_artifact_summary,
     _print_highlight_hint,
     _print_scientific_summary,
+    _print_stage_error_summary,
     build_parser,
 )
 from ccopilot.cli.run_poc import (
     main as cli_main,
 )
+from ccopilot.core.dspy_runtime import DSPyModelHandles
 from tests.mocks.notebook_api import NotebookAPIMock
 
 
 def yaml_dump(data) -> str:
     return yaml.safe_dump(data, sort_keys=False)
+
+
+class FakeStudentLM:
+    def __call__(self, prompt=None, **_kwargs):
+        text = prompt or ""
+        if "Quiz Question ID" in text:
+            return '{"passed": true, "score": 1.0, "answer": "deterministic", "evidence": "quiz coverage"}'
+        return '{"overall_score": 0.9, "items": [{"item": "coverage", "passed": true, "score": 0.9, "evidence": "deterministic rubric"}]}'
 
 
 class CLIRunPocTests(unittest.TestCase):
@@ -38,6 +48,13 @@ class CLIRunPocTests(unittest.TestCase):
         self.notebook_api = NotebookAPIMock()
         self._stack.callback(self.notebook_api.close)
         self._stack.enter_context(self.notebook_api.patch_open_notebook_client())
+        fake_handles = DSPyModelHandles(
+            teacher=object(),
+            ta=object(),
+            coder=object(),
+            student=FakeStudentLM(),
+        )
+        self._stack.enter_context(patch("ccopilot.pipeline.bootstrap.configure_dspy_models", return_value=fake_handles))
         self._prepare_repo()
         self._openai_key = os.environ.get("OPENAI_API_KEY")
         os.environ["OPENAI_API_KEY"] = self._openai_key or "test-openai-key"
@@ -46,6 +63,11 @@ class CLIRunPocTests(unittest.TestCase):
         self.addCleanup(self._restore_notebook_env)
         self._auto_create_env = os.environ.get("OPEN_NOTEBOOK_AUTO_CREATE")
         self.addCleanup(self._restore_auto_create_env)
+        codeact_patch = patch(
+            "apps.orchestrator.teacher.TeacherOrchestrator._run_codeact_program",
+            side_effect=self._fake_codeact_program,
+        )
+        self._stack.enter_context(codeact_patch)
 
     def _restore_openai_key(self) -> None:
         if self._openai_key is None:
@@ -105,6 +127,9 @@ class CLIRunPocTests(unittest.TestCase):
         }
         rubrics_path.write_text(yaml_dump(rubrics_payload), encoding="utf-8")
         quiz_bank = dataset_dir / "quiz_bank.json"
+        prompts_dir = self.repo_root / "prompts"
+        prompts_dir.mkdir(parents=True, exist_ok=True)
+        (prompts_dir / "teacher_seed.txt").write_text("Teacher seed prompt\n", encoding="utf-8")
 
         pipeline_yaml = f"""
 course:
@@ -113,7 +138,18 @@ course:
   audience:
     persona: "Tester"
 models:
-  teacher_model: "gpt-4o"
+  default_temperature: 1.0
+  default_max_tokens: 32000
+  teacher:
+    model: "gpt-5.1"
+    reasoning:
+      effort: high
+  ta:
+    model: "gpt-5-mini"
+  coder:
+    model: "gpt-5.1-codex-mini"
+  student:
+    model: "gpt-5-mini"
 notebook:
   api_base: "{self.notebook_api.base_url}"
   notebook_slug: "cli-test-notebook"
@@ -152,6 +188,16 @@ evaluation:
             ),
             encoding="utf-8",
         )
+
+    @staticmethod
+    def _fake_codeact_program(name: str, **kwargs):
+        if name == "PlanCourse":
+            return SimpleNamespace(outline="### Week 1: Deterministic Plan")
+        if name == "DraftLectureSection":
+            return SimpleNamespace(section="## Draft Section\nContent")
+        if name == "EnforceCitations":
+            return SimpleNamespace(corrected_section=kwargs.get("md_section"))
+        return SimpleNamespace()
 
     def _seed_dataset(self, dataset_dir: Path, quiz_bank: Path) -> None:
         (dataset_dir / "authors.csv").write_text(
@@ -198,10 +244,6 @@ evaluation:
         quiz_bank.write_text('[{"id": "quiz_a", "learning_objectives": ["concept_a"]}]', encoding="utf-8")
         (dataset_dir / "citations.yaml").write_text(
             yaml_dump({"citations": {"paper_a": {"title": "Test Paper"}}}),
-            encoding="utf-8",
-        )
-        (dataset_dir / "course_outline.yaml").write_text(
-            yaml_dump({"weeks": [{"week": 1, "topic": "Intro"}]}),
             encoding="utf-8",
         )
         (dataset_dir / "graph.yaml").write_text(yaml_dump({"edges": []}), encoding="utf-8")
@@ -263,6 +305,8 @@ evaluation:
         eval_payload = json.loads(report_path.read_text().splitlines()[0])
         self.assertIn("overall_score", eval_payload)
         self.assertIn("[eval] overall=", output)
+        self.assertIn("rubric=llm", output)
+        self.assertIn("quiz=llm", output)
         self.assertIn("[highlights] (world_model) saved to", output)
         self.assertIn("[notebook]", output)
         self.assertIn("[science]", output)
@@ -283,6 +327,27 @@ evaluation:
         self.assertIn(str(lecture_path.resolve()), output)
         self.assertIn("science=", output)
         self.assertIn("science_config=", output)
+
+    def test_stage_error_summary_prints_when_manifest_contains_errors(self) -> None:
+        manifest_path = self.repo_root / "stage_manifest.json"
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "stage_errors": [
+                        {"stage": "student_eval", "message": "quiz bank missing"},
+                        {"stage": "notebook", "reason": "offline"},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        artifacts = SimpleNamespace(manifest=manifest_path)
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            _print_stage_error_summary(artifacts, quiet=False)
+
+        output = buffer.getvalue()
+        self.assertIn("[stage-errors] 2 issue(s)", output)
 
     def test_cli_no_recursion_skips_teacher_trace_hint(self) -> None:
         exit_code, output, output_dir = self._run_cli(["--ablations", "no_recursion"])
@@ -313,8 +378,42 @@ evaluation:
         eval_report_dir = output_dir / "evaluations"
         self.assertTrue(any(eval_report_dir.glob("run-*.jsonl")))
         self.assertIn("[eval] overall=", output)
+        self.assertIn("rubric=llm", output)
+        self.assertIn("quiz=llm", output)
         self.assertIn("[highlights] (world_model) saved to", output)
         self.assertIn("[notebook]", output)
+
+    def test_cli_rejects_invalid_dataset_override(self) -> None:
+        bad_dataset = self.repo_root / "bad_dataset"
+        bad_dataset.mkdir(parents=True, exist_ok=True)
+        args = [
+            "--config",
+            str(self.repo_root / "config" / "pipeline.yaml"),
+            "--repo-root",
+            str(self.repo_root),
+            "--output-dir",
+            str(self.repo_root / "outputs"),
+            "--dataset-dir",
+            str(bad_dataset),
+        ]
+        with self.assertRaises(SystemExit):
+            cli_main(args)
+
+    def test_cli_rejects_empty_constraints_file(self) -> None:
+        empty_constraints = self.repo_root / "empty_constraints.yaml"
+        empty_constraints.write_text("\n", encoding="utf-8")
+        args = [
+            "--config",
+            str(self.repo_root / "config" / "pipeline.yaml"),
+            "--repo-root",
+            str(self.repo_root),
+            "--output-dir",
+            str(self.repo_root / "outputs"),
+            "--constraints",
+            str(empty_constraints),
+        ]
+        with self.assertRaises(SystemExit):
+            cli_main(args)
 
     def test_cli_reports_students_disabled_when_ablation_set(self) -> None:
         exit_code, output, output_dir = self._run_cli(["--ablations", "no_students"])
@@ -425,6 +524,8 @@ evaluation:
             eval_report=eval_report,
             provenance=provenance,
             teacher_trace=trace,
+            teacher_rlm_mode="simulation",
+            teacher_rlm_reason=None,
         )
         buffer = io.StringIO()
         with redirect_stdout(buffer):
@@ -432,7 +533,7 @@ evaluation:
         text = buffer.getvalue()
         self.assertIn("[artifacts]", text)
         self.assertIn(str(trace.resolve()), text)
-        self.assertIn("[teacher] trace saved to", text)
+        self.assertIn("[teacher] mode=simulation", text)
 
     def test_cli_constraints_override_applied(self) -> None:
         exit_code, _, output_dir = self._run_cli(["--constraints", str(self.constraints_path)])
@@ -538,6 +639,37 @@ evaluation:
                 os.environ["OPEN_NOTEBOOK_EXPORT_DIR"] = previous_export_env
             if export_dir.exists():
                 shutil.rmtree(export_dir)
+
+    def test_offline_teacher_flag_sets_env(self) -> None:
+        previous = os.environ.get("COURSEGEN_RLM_OFFLINE")
+
+        def _restore_env() -> None:
+            if previous is None:
+                os.environ.pop("COURSEGEN_RLM_OFFLINE", None)
+            else:
+                os.environ["COURSEGEN_RLM_OFFLINE"] = previous
+
+        self.addCleanup(_restore_env)
+        os.environ["COURSEGEN_RLM_OFFLINE"] = "0"
+
+        args = [
+            "--repo-root",
+            str(self.repo_root),
+            "--config",
+            "config/pipeline.yaml",
+            "--offline-teacher",
+            "--dry-run",
+        ]
+
+        with (
+            patch("ccopilot.cli.run_poc.bootstrap_pipeline", return_value=object()) as mock_bootstrap,
+            patch("ccopilot.cli.run_poc.run_pipeline", return_value=None),
+        ):
+            exit_code = cli_main(args)
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(os.environ.get("COURSEGEN_RLM_OFFLINE"), "1")
+        mock_bootstrap.assert_called_once()
 
     def test_cli_loads_dotenv_from_repo_root_when_running_outside(self) -> None:
         env_path = self.repo_root / ".env"

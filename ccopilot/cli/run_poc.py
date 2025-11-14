@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 from typing import Any, Iterable, List
 
+from ccopilot.core.validation import ValidationFailure, strict_validation, validate_handcrafted_dataset
 from ccopilot.pipeline import PipelineRunArtifacts, bootstrap_pipeline, run_pipeline
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -54,9 +55,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--science-config",
         default=None,
-        help=(
-            "Override the scientific evaluator config (defaults to config/scientific_config.yaml when present)."
-        ),
+        help=("Override the scientific evaluator config (defaults to config/scientific_config.yaml when present)."),
     )
     parser.add_argument(
         "--notebook",
@@ -88,6 +87,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Suppress evaluation/highlight summaries on stdout.",
     )
+    parser.add_argument(
+        "--offline-teacher",
+        action="store_true",
+        help="Skip the vendor Teacher RLM and force COURSEGEN_RLM_OFFLINE=1 for deterministic runs.",
+    )
     return parser
 
 
@@ -110,6 +114,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
+        if args.offline_teacher:
+            os.environ["COURSEGEN_RLM_OFFLINE"] = "1"
         repo_root = _resolve_path(args.repo_root)
         os.environ["COURSEGEN_REPO_ROOT"] = str(repo_root)
         config_path = _resolve_path(args.config, base=repo_root)
@@ -119,6 +125,14 @@ def main(argv: list[str] | None = None) -> int:
         output_dir_override = _resolve_optional(args.output_dir, base=repo_root)
         world_model_store_override = _resolve_optional(args.world_model_store, base=repo_root)
         science_config_override = _resolve_optional(args.science_config, base=repo_root)
+
+        strict_validation.validate_file_exists(config_path)
+        if constraints_path is not None:
+            strict_validation.validate_file_exists(constraints_path)
+        if science_config_override is not None:
+            strict_validation.validate_file_exists(science_config_override)
+        if dataset_override is not None:
+            validate_handcrafted_dataset(dataset_override)
 
         ctx = bootstrap_pipeline(
             config_path=config_path,
@@ -139,7 +153,7 @@ def main(argv: list[str] | None = None) -> int:
         _print_highlight_hint(artifacts, quiet=args.quiet)
         _print_notebook_hint(artifacts, quiet=args.quiet)
         _print_artifact_summary(artifacts, quiet=args.quiet)
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, ValidationFailure) as exc:
         parser.error(str(exc))
     except Exception as exc:  # noqa: BLE001 - bubble up to CLI for now
         print(f"[run_poc] error: {exc}", file=sys.stderr)
@@ -172,8 +186,16 @@ def _print_eval_summary(artifacts: PipelineRunArtifacts | None, *, quiet: bool =
 
     overall = record.get("overall_score")
     overall_display = _format_score(overall)
+    engines: list[str] = []
+    rubric_engine = record.get("rubric_engine")
+    quiz_engine = record.get("quiz_engine")
+    if rubric_engine:
+        engines.append(f"rubric={rubric_engine}")
+    if quiz_engine:
+        engines.append(f"quiz={quiz_engine}")
+    engine_hint = f" ({', '.join(engines)})" if engines else ""
     rubric_summary = _format_rubric_summary(record.get("rubrics") or [])
-    print(f"[eval] overall={overall_display} | rubrics: {rubric_summary} | report={eval_path}")
+    print(f"[eval] overall={overall_display}{engine_hint} | rubrics: {rubric_summary} | report={eval_path}")
 
 
 def _print_scientific_summary(artifacts: PipelineRunArtifacts | None, *, quiet: bool = False) -> None:
@@ -294,11 +316,15 @@ def _print_notebook_hint(artifacts: PipelineRunArtifacts | None, *, quiet: bool 
     success_count = summary.get("success") if summary else len(successes)
     if successes:
         slug_display = target or "notebook"
-        note_ids = summary.get("note_ids", []) if summary else [
-            resp.get("note_id") or resp.get("id") for resp in successes if resp.get("note_id") or resp.get("id")
-        ]
-        queued_paths = summary.get("queued_exports", []) if summary else sorted(
-            {resp.get("export_path") for resp in successes if resp.get("status") == "queued" and resp.get("export_path")}
+        note_ids = (
+            summary.get("note_ids", [])
+            if summary
+            else [resp.get("note_id") or resp.get("id") for resp in successes if resp.get("note_id") or resp.get("id")]
+        )
+        queued_paths = (
+            summary.get("queued_exports", [])
+            if summary
+            else sorted({resp.get("export_path") for resp in successes if resp.get("status") == "queued" and resp.get("export_path")})
         )
         detail = ""
         if note_ids:
@@ -317,9 +343,7 @@ def _print_notebook_hint(artifacts: PipelineRunArtifacts | None, *, quiet: bool 
         reason = responses[0].get("reason")
         error_fragment = f", error={error}" if error else ""
         reason_fragment = f", reason={reason}" if reason else ""
-        print(
-            f"[notebook] export unavailable (status={status}{error_fragment}{reason_fragment}); see manifest for details"
-        )
+        print(f"[notebook] export unavailable (status={status}{error_fragment}{reason_fragment}); see manifest for details")
 
 
 def _print_artifact_summary(artifacts: PipelineRunArtifacts | None, *, quiet: bool = False) -> None:
@@ -353,9 +377,20 @@ def _print_artifact_summary(artifacts: PipelineRunArtifacts | None, *, quiet: bo
     if entries:
         print(f"[artifacts] {' | '.join(entries)}")
 
-    trace_path = _stringify_path(artifacts.teacher_trace)
-    if trace_path:
-        print(f"[teacher] trace saved to {trace_path}")
+    trace_path = _stringify_path(getattr(artifacts, "teacher_trace", None))
+    teacher_mode = getattr(artifacts, "teacher_rlm_mode", None)
+    teacher_reason = getattr(artifacts, "teacher_rlm_reason", None)
+    if trace_path or teacher_mode or teacher_reason:
+        fragments: list[str] = []
+        if teacher_mode:
+            fragments.append(f"mode={teacher_mode}")
+        if teacher_reason:
+            fragments.append(f"reason={teacher_reason}")
+        if trace_path:
+            fragments.append(f"trace={trace_path}")
+        print(f"[teacher] {' | '.join(fragments)}")
+
+    _print_stage_error_summary(artifacts, quiet=quiet)
 
 
 def _stringify_path(path_value: Path | str | None) -> str | None:
@@ -365,14 +400,8 @@ def _stringify_path(path_value: Path | str | None) -> str | None:
 
 
 def _read_manifest_path(manifest_path: Path | str | None, field: str) -> Path | None:
-    if not manifest_path:
-        return None
-    path = Path(manifest_path)
-    if not path.exists():
-        return None
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:  # pragma: no cover - defensive
+    payload = _load_manifest_json(manifest_path)
+    if payload is None:
         return None
     entry = payload.get(field)
     return Path(entry) if isinstance(entry, str) else None
@@ -384,6 +413,48 @@ def _read_science_path_from_manifest(manifest_path: Path | str | None) -> Path |
 
 def _read_science_config_from_manifest(manifest_path: Path | str | None) -> Path | None:
     return _read_manifest_path(manifest_path, "science_config_path")
+
+
+def _read_stage_errors_from_manifest(manifest_path: Path | str | None) -> list[dict[str, object]]:
+    payload = _load_manifest_json(manifest_path)
+    if payload is None:
+        return []
+    errors = payload.get("stage_errors")
+    if isinstance(errors, list):
+        return [entry for entry in errors if isinstance(entry, dict)]
+    return []
+
+
+def _print_stage_error_summary(artifacts: PipelineRunArtifacts | None, *, quiet: bool = False) -> None:
+    if artifacts is None or quiet:
+        return
+    manifest_path = getattr(artifacts, "manifest", None)
+    errors = _read_stage_errors_from_manifest(manifest_path)
+    if not errors:
+        return
+    preview = "; ".join(_format_stage_error(entry) for entry in errors[:2])
+    if len(errors) > 2:
+        preview += ", …"
+    print(f"[stage-errors] {len(errors)} issue(s) recorded ({preview}) | see manifest")
+
+
+def _format_stage_error(entry: dict[str, object]) -> str:
+    stage = entry.get("stage") or entry.get("phase") or "stage"
+    message = entry.get("message") or entry.get("error") or entry.get("reason")
+    return f"{stage}: {message}" if message else str(stage)
+
+
+def _load_manifest_json(manifest_path: Path | str | None) -> dict[str, object] | None:
+    if not manifest_path:
+        return None
+    path = Path(manifest_path)
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:  # pragma: no cover - defensive
+        return None
+    return payload if isinstance(payload, dict) else None
 
 
 if __name__ == "__main__":
